@@ -16,7 +16,8 @@ use std::io::Read;
 use std::sync::Arc;
 use std::sync::Mutex;
 use uuid::Uuid;
-
+use colored::Colorize;
+use std::io::Write;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretsDefinitions {
     product_name: String,
@@ -80,7 +81,8 @@ impl SecretsDefinitions {
             }
             Err(e) => {
                 warn!(
-                    "Unable to open YAML file: {}. Returning empty definition.",
+                    "Unable to open YAML file '{}': {}. Returning empty definition.",
+                    yaml_filename,
                     e
                 );
                 HashMap::new()
@@ -131,12 +133,10 @@ impl SecretsDefinitions {
                     GenerationMethod::Ask(prompt) => {
                         // Implement the logic to handle the ask generation
                         // Print the prompt to the CLI and get the input from the user
-                        println!("{}", prompt);
-                        let mut input = String::new();
-                        std::io::stdin()
-                            .read_line(&mut input)
-                            .expect("Failed to read input");
-                        GenerationResult::Value(input.trim().to_string())
+                        
+                        let prompt = format!("{} ", format!("\n{}:", prompt).white().bold());
+                        let password = rpassword::prompt_password(&prompt).unwrap();
+                        GenerationResult::Value(password)
                     }
                     GenerationMethod::RandomString(length) => {
                         // Generate a random string of the specified length

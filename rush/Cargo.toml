@@ -30,6 +30,7 @@ uuid = { version = "1.10.0", features = ["v4"] }
 chrono = "0.4.38"
 openssl = "0.10.66"
 ed25519-dalek = "2.1.1"
+rpassword = "7.3.1"
 
 [dev-dependencies]
 tempfile = "3.12.0"
