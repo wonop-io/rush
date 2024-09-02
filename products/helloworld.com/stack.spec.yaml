@@ -21,10 +21,6 @@ database:
   color: "yellow"
   port: 5432
   target_port: 5432
-  env:
-    POSTGRES_DB: "backend"
-    POSTGRES_PASSWORD: "admin"
-    POSTGRES_USER: "admin"
   volumes:
     "./postgres.db": "/var/lib/postgresql/data"
 
