@@ -1,10 +1,8 @@
-# Rushd
+# Rush
 
-Brought to you with ❤️ by [Wonop Studio](https://wonopstudio.com)
+`rush` is short for "Rush Deployment". The key aim of this tool is to bring the development experience as close to the production experience as possible.
 
-`rushd` is short for "Rush Deployment". The key aim of this tool is to bring the development experience as close to the production experience as possible.
-
-`rushd` solves a few different problems:
+`rush` solves a few different problems:
 
 1. It compiles `x86` Docker images on `arm64` to make it possible to deploy `x86` images from Apple Silicon.
 2. Images a build by cross compiling into the target architecture. This makes it superfast to build your docker images.
@@ -17,10 +15,10 @@ Brought to you with ❤️ by [Wonop Studio](https://wonopstudio.com)
 This is how you install:
 
 ```bash
-cargo install --git https://github.com/wonop-io/rushd.git rushd
+cargo install --git https://github.com/wonop-io/rush.git rush
 ```
 
-Note, however, that `rushd` is making use of cross compiling and also compiles frontends, so you will need a few extras to make it work.
+Note, however, that `rush` is making use of cross compiling and also compiles frontends, so you will need a few extras to make it work.
 
 ## Prerequisite
 
@@ -45,12 +43,12 @@ mv trunk wasm-trunk
 popd
 ```
 
-`rushd` works with either `trunk` or `wasm-trunk` as the executable name. 
+`rush` works with either `trunk` or `wasm-trunk` as the executable name. 
 
-Next we install `rushd`, the Rust based deployment tool:
+Next we install `rush`, the Rust based deployment tool:
 
 ```sh
-cargo install --git https://github.com/wonop-io/rushd.git rushd
+cargo install --git https://github.com/wonop-io/rush.git rush
 ```
 
 Make sure that the cargo bin directory is in your path:
@@ -59,7 +57,7 @@ Make sure that the cargo bin directory is in your path:
 source $HOME/.cargo/env
 ```
 
-If you are on Apple Silicon, `rushd` will cross compile all your components into `x86` docker images to make sure that you can deploy them from Apple Silicon onto a Kubernetes cluster. In order to perform cross compiliation, `rushd` requires `Docker` and `buildx` to be installed alongside with an `x86_64` toolchain. This  can be installed via brew:
+If you are on Apple Silicon, `rush` will cross compile all your components into `x86` docker images to make sure that you can deploy them from Apple Silicon onto a Kubernetes cluster. In order to perform cross compiliation, `rush` requires `Docker` and `buildx` to be installed alongside with an `x86_64` toolchain. This  can be installed via brew:
 
 ```sh
 arch -arm64 brew install SergioBenitez/osxct/x86_64-unknown-linux-gnu
@@ -77,7 +75,7 @@ rustup target add x86_64-unknown-linux-gnu
 After following the installation above, you can try out one of our examples by checking out this repository and running following command (from anywhere within the repository):
 
 ```sh
-rushd helloworld.com dev
+rush helloworld.com dev
 ```
 
 Over time we will add more examples in to `products` directory.
