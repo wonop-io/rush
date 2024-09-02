@@ -6,6 +6,7 @@ mod builder;
 mod gitignore;
 mod vault;
 mod dotenv_utils;
+mod public_env_defs;
 
 use crate::toolchain::Platform;
 use clap::{arg, Command,Arg};
@@ -26,6 +27,8 @@ use log::{info, error, debug};
 use vault::{OnePassword, Vault, DotenvVault};
 use std::sync::Mutex;
 use crate::vault::SecretsDefinitions;
+use crate::public_env_defs::PublicEnvironmentDefinitions;
+use crate::vault::Base64SecretsEncoder;
 
 fn setup_environment() {
     info!("Setting up environment");
@@ -262,13 +265,22 @@ async fn main() -> io::Result<()> {
         }
     };
 
-    let secrets_context = SecretsDefinitions::new(product_name.clone(), &format!("{}/secrets.yaml", config.product_path()));
+    // Loading secrets definitions and creating the vault
+    let secrets_context = SecretsDefinitions::new(product_name.clone(), &format!("{}/stack.env.secrets.yaml", config.product_path()));
     let product_path = std::path::PathBuf::from(config.product_path());
     let vault =  match config.vault_name() {
-        ".env" => Arc::new(Mutex::new(DotenvVault::new(product_path))) as Arc<Mutex<dyn Vault + Send>>,
+        ".env" => Arc::new(Mutex::new(DotenvVault::new(product_path.clone()))) as Arc<Mutex<dyn Vault + Send>>,
         "1Password" => Arc::new(Mutex::new(OnePassword::new())) as Arc<Mutex<dyn Vault + Send>>,
         _ => panic!("Invalid vault"),
     };
+
+    // TODO: Check that all secrets are defined in the vault
+
+    let secrets_encoder = Arc::new(Base64SecretsEncoder);
+
+    // Creating environment
+    let public_environment = PublicEnvironmentDefinitions::new(product_name.clone(), &format!("{}/stack.env.public.yaml", config.product_path()));
+    public_environment.generate_dotenv_files().expect("Unable to generate dotenv files");
 
 
     let toolchain = Arc::new(ToolchainContext::new(Platform::default(), Platform::new(&target_os, &target_arch)));
@@ -276,7 +288,7 @@ async fn main() -> io::Result<()> {
     debug!("Toolchain set up");
 
     
-    let mut reactor = match ContainerReactor::from_product_dir(config.clone(), toolchain.clone(), vault.clone()) {
+    let mut reactor = match ContainerReactor::from_product_dir(config.clone(), toolchain.clone(), vault.clone(), secrets_encoder) {
         Ok(reactor) => reactor,
         Err(e) => {
             error!("Failed to create ContainerReactor: {}", e);
@@ -355,7 +367,7 @@ async fn main() -> io::Result<()> {
             for component in manifests.components() {
                 println!("{} -> {}", component.input_directory().display(), component.output_directory().display());                
                 let spec = component.spec();
-                let secrets = vault.lock().unwrap().get(&product_name, &component.name(), &environment).await.unwrap_or_default();
+                let secrets = vault.lock().unwrap().get(&product_name, &spec.component_name, &environment).await.unwrap_or_default();
                 let ctx = spec.generate_build_context(Some(toolchain.clone()), secrets);
                 for manifest in component.manifests() {
                     println!("{}", manifest.render(&ctx));

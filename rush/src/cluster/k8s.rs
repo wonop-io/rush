@@ -144,14 +144,6 @@ impl K8ComponentManifests {
         self.manifests.push(manifest);
     }
 
-    pub fn render_all(&self, context: &BuildContext) -> Result<(), std::io::Error> {
-        std::fs::create_dir_all(&self.output_directory)?;
-        for manifest in &self.manifests {
-            manifest.render_to_file(context);
-        }
-        Ok(())
-    }
-
     pub async fn apply(&self) -> Result<(), String> {
         let toolchain = match &self.toolchain {
             Some(toolchain) => toolchain.clone(),

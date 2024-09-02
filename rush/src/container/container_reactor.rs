@@ -11,6 +11,7 @@ use crate::gitignore::GitIgnore;
 use crate::toolchain::ToolchainContext;
 use crate::utils::run_command;
 use crate::utils::Directory;
+use crate::vault::Vault;
 use colored::Colorize;
 use glob::glob;
 use log::{debug, error, info, warn};
@@ -24,7 +25,7 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
-use crate::vault::Vault;
+use crate::vault::EncodeSecrets;
 
 // TODO: This ought to split into a spec and a reactor
 pub struct ContainerReactor {
@@ -39,9 +40,11 @@ pub struct ContainerReactor {
     terminate_receiver: BroadcastReceiver<()>,
     toolchain: Option<Arc<ToolchainContext>>,
     services: Arc<ServicesSpec>,
+
+    secrets_encoder: Arc<dyn EncodeSecrets>,
     cluster_manifests: K8ClusterManifests,
     infrastructure_repo: InfrastructureRepo,
-    vault: Arc<Mutex<dyn Vault + Send>>
+    vault: Arc<Mutex<dyn Vault + Send>>,
 }
 
 impl ContainerReactor {
@@ -145,7 +148,8 @@ impl ContainerReactor {
     pub fn from_product_dir(
         config: Arc<Config>,
         toolchain: Arc<ToolchainContext>,
-        vault: Arc<Mutex<dyn Vault + Send>>
+        vault: Arc<Mutex<dyn Vault + Send>>,
+        secrets_encoder: Arc<dyn EncodeSecrets>,
     ) -> Result<Self, String> {
         let git_hash = match toolchain.get_git_folder_hash(config.product_path()) {
             Ok(hash) => hash,
@@ -174,7 +178,7 @@ impl ContainerReactor {
 
         let variables = Variables::new("variables.yaml", config.environment());
 
-        let stack_config = match std::fs::read_to_string("stack.yaml") {
+        let stack_config = match std::fs::read_to_string("stack.spec.yaml") {
             Ok(config) => config,
             Err(e) => return Err(format!("Failed to read stack config: {}", e)),
         };
@@ -306,9 +310,10 @@ impl ContainerReactor {
             terminate_receiver,
             toolchain: Some(toolchain),
             services,
+            secrets_encoder,
             cluster_manifests,
             infrastructure_repo,
-            vault
+            vault,
         })
         //        Ok(Self::new(&product_name, &product_path, images, toolchain))
     }
@@ -388,12 +393,7 @@ impl ContainerReactor {
             &output_dir
         };
 
-        /*
-        let mut files = Vec::new();
-        for component in self.cluster_manifests.components() {
-            files.extend(component.manifests().iter().map(|m| m.ou));
-        }
-        */
+ 
 
         match run_command(
             "apply".white().bold(),
@@ -408,33 +408,6 @@ impl ContainerReactor {
                 return Err(e.to_string());
             }
         }
-
-        /*
-        let mut yaml_files = glob(&format!("{}/**/
-*.yaml", output_dir)).expect("Failed to read glob pattern")            
-            .filter_map(|e| match e {
-                Ok(e) => {
-                    if e.extension().and_then(std::ffi::OsStr::to_str) == Some("yaml") {
-                        Some(e)
-                    } else {
-                        None
-                    }
-                }
-                Err(_) => None
-            })    
-            .collect::<Vec<_>>();
-        yaml_files.sort();        
-        for yaml_file in yaml_files {
-            let file =  yaml_file.display().to_string();
-            match run_command("apply".white().bold(), kubectl, vec!["apply", "-f", &file]).await {
-                Ok(_) => println!("Manifests applied successfully"),
-                Err(e) => {
-                    eprintln!("Failed to apply manifests: {}", e);
-                    return Err(e.to_string());
-                }
-            }
-        }
-        */
 
 
         Ok(())
@@ -660,11 +633,19 @@ impl ContainerReactor {
             let current_dir = std::env::current_dir().unwrap();
             let spec = component.spec();
 
-
             let secrets = {
                 let vault = self.vault.lock().unwrap();
-                vault.get(&spec.product_name, &spec.component_name, &spec.config.environment().to_string()).await.unwrap_or_default()
+                vault
+                    .get(
+                        &spec.product_name,
+                        &spec.component_name,
+                        &spec.config.environment().to_string(),
+                    )
+                    .await
+                    .unwrap_or_default()
             };
+            // Encoding secrets
+            let secrets = self.secrets_encoder.encode_secrets(secrets);
 
             let ctx = spec.generate_build_context(self.toolchain.clone(), secrets);
             for manifest in component.manifests() {
@@ -937,8 +918,8 @@ impl ContainerReactor {
                         println!("*****************       GRACEFUL SHUTDOWN        *****************");
                         println!("******************************************************************");
                         println!("******************************************************************");
-                        
-                        
+
+
                         let _ = self.terminate_sender.send(());
                         self.update_image_statuses();
 
@@ -1083,7 +1064,10 @@ impl ContainerReactor {
                             Status::InProgress => println!("Image {} is running", id),
                             Status::StartupCompleted => println!("Image {} is ready", id),
                             Status::Finished(code) => {
-                                println!("Image {} ({}) exited with code {}", id, component_name, code)
+                                println!(
+                                    "Image {} ({}) exited with code {}",
+                                    id, component_name, code
+                                )
                             }
                             _ => (),
                         }

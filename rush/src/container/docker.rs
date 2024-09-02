@@ -7,16 +7,16 @@ use crate::builder::BuildType;
 use crate::builder::ComponentBuildSpec;
 use crate::builder::Config;
 use crate::utils::{handle_stream, run_command, run_command_in_window};
+use crate::vault::Vault;
 use crate::Directory;
 use crate::{toolchain::ToolchainContext, utils::DockerCrossCompileGuard};
 use colored::Colorize;
 use log::{debug, error, info, warn};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::process::Command;
-use crate::vault::Vault;
-use std::collections::HashMap;
 
 impl TryInto<DockerImage> for Arc<Mutex<ComponentBuildSpec>> {
     type Error = String;
@@ -43,7 +43,7 @@ pub struct DockerImage {
     config: Arc<Config>,
     spec: Arc<Mutex<ComponentBuildSpec>>,
     toolchain: Option<Arc<ToolchainContext>>,
-    vault: Option<Arc<Mutex<dyn Vault + Send >>>,
+    vault: Option<Arc<Mutex<dyn Vault + Send>>>,
     network_name: Option<String>,
 }
 
@@ -706,7 +706,19 @@ impl DockerImage {
             .to_str()
             .expect("Failed to convert dockerfile name to str");
 
-        let secrets = self.vault.as_ref().expect("Vault not set").lock().unwrap().get(&spec.product_name, &spec.component_name, &spec.config.environment().to_string()).await.unwrap_or_default();
+        let secrets = self
+            .vault
+            .as_ref()
+            .expect("Vault not set")
+            .lock()
+            .unwrap()
+            .get(
+                &spec.product_name,
+                &spec.component_name,
+                &spec.config.environment().to_string(),
+            )
+            .await
+            .unwrap_or_default();
         let ctx = self.generate_build_context(secrets);
 
         // Creating artefacts if needed

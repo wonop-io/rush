@@ -1,7 +1,7 @@
 use async_trait::async_trait;
+use core::fmt::Debug;
 use std::collections::HashMap;
 use std::error::Error;
-use core::fmt::Debug;
 
 impl Debug for dyn Vault {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

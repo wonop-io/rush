@@ -91,8 +91,11 @@ impl Config {
 
         let vault_name = match environment.as_str() {
             "dev" => std::env::var("DEV_VAULT").expect("DEV_VAULT environment variable not found"),
-            "prod" => std::env::var("PROD_VAULT").expect("PROD_VAULT environment variable not found"),
-            "staging" => std::env::var("STAGING_VAULT").expect("STAGING_VAULT environment variable not found"),
+            "prod" => {
+                std::env::var("PROD_VAULT").expect("PROD_VAULT environment variable not found")
+            }
+            "staging" => std::env::var("STAGING_VAULT")
+                .expect("STAGING_VAULT environment variable not found"),
             _ => panic!("Invalid environment"),
         };
 

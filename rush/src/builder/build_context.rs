@@ -1,9 +1,9 @@
 use crate::builder::BuildType;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use crate::container::ServicesSpec;
 use crate::toolchain::Platform;
 use crate::ToolchainContext;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::str;
 
 #[derive(Serialize, Deserialize, Debug)]

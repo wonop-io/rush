@@ -1,22 +1,21 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
 use crate::vault::Vault;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::error::Error;
-use rand::{distributions::Alphanumeric, Rng};
 use base64;
-use log::{warn, info};
-use uuid::Uuid;
 use chrono::Utc;
-use openssl::rsa::Rsa;
-use openssl::ec::{EcKey, EcGroup};
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use log::{info, warn};
+use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
-use ed25519_dalek::{SigningKey, VerifyingKey, Signer};
-
+use openssl::rsa::Rsa;
+use rand::{distributions::Alphanumeric, Rng};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::error::Error;
+use std::fs::File;
+use std::io::Read;
+use std::sync::Arc;
+use std::sync::Mutex;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretsDefinitions {
@@ -32,6 +31,7 @@ pub struct ComponentSecrets {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GenerationMethod {
     Static(String),
+    Base64EncodedStatic(String), // Added Base64 encoded static string
     Ask(String),
     RandomString(usize),
     RandomAlphanumeric(usize),
@@ -40,11 +40,11 @@ pub enum GenerationMethod {
     RandomUUID,
     Timestamp,
     Ref(String),
-    RSAKeyPair(usize, bool), // Added bool to specify base64 encoding
+    RSAKeyPair(usize, bool),    // Added bool to specify base64 encoding
     ECDSAKeyPair(String, bool), // Added bool to specify base64 encoding
-    Ed25519KeyPair(bool), // Added bool to specify base64 encoding
-    AESKey(usize, bool), // Added bool to specify base64 encoding
-    HMACKey(usize, bool), // Added bool to specify base64 encoding
+    Ed25519KeyPair(bool),       // Added bool to specify base64 encoding
+    AESKey(usize, bool),        // Added bool to specify base64 encoding
+    HMACKey(usize, bool),       // Added bool to specify base64 encoding
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,28 +55,34 @@ pub enum GenerationResult {
     None,
 }
 
-
 impl SecretsDefinitions {
     pub fn new(product_name: String, yaml_filename: &str) -> Self {
         let components = match File::open(yaml_filename) {
             Ok(mut file) => {
                 let mut contents = String::new();
                 match file.read_to_string(&mut contents) {
-                    Ok(_) => {
-                        match serde_yaml::from_str(&contents) {
-                            Ok(parsed_components) => parsed_components,
-                            Err(e) => {
-                                panic!("Unable to parse YAML file: {}. Returning empty definition.", e);
-                            }
+                    Ok(_) => match serde_yaml::from_str(&contents) {
+                        Ok(parsed_components) => parsed_components,
+                        Err(e) => {
+                            panic!(
+                                "Unable to parse YAML file: {}. Returning empty definition.",
+                                e
+                            );
                         }
                     },
                     Err(e) => {
-                        panic!("Unable to read YAML file: {}. Returning empty definition.", e);
+                        panic!(
+                            "Unable to read YAML file: {}. Returning empty definition.",
+                            e
+                        );
                     }
                 }
-            },
+            }
             Err(e) => {
-                warn!("Unable to open YAML file: {}. Returning empty definition.", e);
+                warn!(
+                    "Unable to open YAML file: {}. Returning empty definition.",
+                    e
+                );
                 HashMap::new()
             }
         };
@@ -119,12 +125,17 @@ impl SecretsDefinitions {
             if let Some(generation_method) = component.secrets.get(secret_name) {
                 match generation_method {
                     GenerationMethod::Static(value) => GenerationResult::Value(value.clone()),
+                    GenerationMethod::Base64EncodedStatic(value) => {
+                        GenerationResult::Value(base64::encode(value))
+                    }
                     GenerationMethod::Ask(prompt) => {
                         // Implement the logic to handle the ask generation
                         // Print the prompt to the CLI and get the input from the user
                         println!("{}", prompt);
                         let mut input = String::new();
-                        std::io::stdin().read_line(&mut input).expect("Failed to read input");
+                        std::io::stdin()
+                            .read_line(&mut input)
+                            .expect("Failed to read input");
                         GenerationResult::Value(input.trim().to_string())
                     }
                     GenerationMethod::RandomString(length) => {
@@ -147,12 +158,14 @@ impl SecretsDefinitions {
                     }
                     GenerationMethod::RandomHex(length) => {
                         // Generate a random hex string of the specified length
-                        let random_bytes: Vec<u8> = (0..*length).map(|_| rand::random::<u8>()).collect();
+                        let random_bytes: Vec<u8> =
+                            (0..*length).map(|_| rand::random::<u8>()).collect();
                         GenerationResult::Value(hex::encode(random_bytes))
                     }
                     GenerationMethod::RandomBase64(length) => {
                         // Generate a random base64 string of the specified length
-                        let random_bytes: Vec<u8> = (0..*length).map(|_| rand::random::<u8>()).collect();
+                        let random_bytes: Vec<u8> =
+                            (0..*length).map(|_| rand::random::<u8>()).collect();
                         GenerationResult::Value(base64::encode(random_bytes))
                     }
                     GenerationMethod::RandomUUID => {
@@ -171,18 +184,23 @@ impl SecretsDefinitions {
                     }
                     GenerationMethod::RSAKeyPair(bits, base64_encode) => {
                         // Generate RSA key pair
-                        let rsa = Rsa::generate((*bits).try_into().unwrap()).expect("Failed to generate RSA key pair");
-                        let private_key = rsa.private_key_to_pem().expect("Failed to get private key PEM");
-                        let public_key = rsa.public_key_to_pem().expect("Failed to get public key PEM");
+                        let rsa = Rsa::generate((*bits).try_into().unwrap())
+                            .expect("Failed to generate RSA key pair");
+                        let private_key = rsa
+                            .private_key_to_pem()
+                            .expect("Failed to get private key PEM");
+                        let public_key = rsa
+                            .public_key_to_pem()
+                            .expect("Failed to get public key PEM");
                         if *base64_encode {
                             GenerationResult::KeyPair(
                                 base64::encode(&private_key),
-                                base64::encode(&public_key)
+                                base64::encode(&public_key),
                             )
                         } else {
                             GenerationResult::KeyPair(
                                 String::from_utf8_lossy(&private_key).to_string(),
-                                String::from_utf8_lossy(&public_key).to_string()
+                                String::from_utf8_lossy(&public_key).to_string(),
                             )
                         }
                     }
@@ -193,20 +211,26 @@ impl SecretsDefinitions {
                             "secp256k1" => Nid::SECP256K1,
                             _ => panic!("Unsupported curve: {}", curve),
                         };
-                        let group = EcGroup::from_curve_name(nid).expect("Failed to create EC group");
+                        let group =
+                            EcGroup::from_curve_name(nid).expect("Failed to create EC group");
                         let key = EcKey::generate(&group).expect("Failed to generate EC key");
-                        let pkey = PKey::from_ec_key(key).expect("Failed to create PKey from EC key");
-                        let private_key = pkey.private_key_to_pem_pkcs8().expect("Failed to get private key PEM");
-                        let public_key = pkey.public_key_to_pem().expect("Failed to get public key PEM");
+                        let pkey =
+                            PKey::from_ec_key(key).expect("Failed to create PKey from EC key");
+                        let private_key = pkey
+                            .private_key_to_pem_pkcs8()
+                            .expect("Failed to get private key PEM");
+                        let public_key = pkey
+                            .public_key_to_pem()
+                            .expect("Failed to get public key PEM");
                         if *base64_encode {
                             GenerationResult::KeyPair(
                                 base64::encode(&private_key),
-                                base64::encode(&public_key)
+                                base64::encode(&public_key),
                             )
                         } else {
                             GenerationResult::KeyPair(
                                 String::from_utf8_lossy(&private_key).to_string(),
-                                String::from_utf8_lossy(&public_key).to_string()
+                                String::from_utf8_lossy(&public_key).to_string(),
                             )
                         }
                     }
@@ -217,18 +241,18 @@ impl SecretsDefinitions {
                         if *base64_encode {
                             GenerationResult::KeyPair(
                                 base64::encode(signing_key.to_bytes()),
-                                base64::encode(verifying_key.to_bytes())
+                                base64::encode(verifying_key.to_bytes()),
                             )
                         } else {
                             GenerationResult::KeyPair(
                                 hex::encode(signing_key.to_bytes()),
-                                hex::encode(verifying_key.to_bytes())
+                                hex::encode(verifying_key.to_bytes()),
                             )
                         }
                     }
                     GenerationMethod::AESKey(bits, base64_encode) => {
                         // Generate AES key
-                        let key: Vec<u8> = (0..bits/8).map(|_| rand::random::<u8>()).collect();
+                        let key: Vec<u8> = (0..bits / 8).map(|_| rand::random::<u8>()).collect();
                         if *base64_encode {
                             GenerationResult::Value(base64::encode(key))
                         } else {
@@ -237,7 +261,7 @@ impl SecretsDefinitions {
                     }
                     GenerationMethod::HMACKey(bits, base64_encode) => {
                         // Generate HMAC key
-                        let key: Vec<u8> = (0..bits/8).map(|_| rand::random::<u8>()).collect();
+                        let key: Vec<u8> = (0..bits / 8).map(|_| rand::random::<u8>()).collect();
                         if *base64_encode {
                             GenerationResult::Value(base64::encode(key))
                         } else {
@@ -253,7 +277,11 @@ impl SecretsDefinitions {
         }
     }
 
-    pub async fn populate(&self, vault: Arc<Mutex<dyn Vault + Send>>, env: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn populate(
+        &self,
+        vault: Arc<Mutex<dyn Vault + Send>>,
+        env: &str,
+    ) -> Result<(), Box<dyn Error>> {
         let mut all_secrets = HashMap::new();
         let mut all_references = HashMap::new();
         for (component_name, component_secrets) in &self.components {
@@ -261,7 +289,7 @@ impl SecretsDefinitions {
             let mut references = Vec::new();
             info!("Generating secret for component: {}", component_name);
 
-            for secret_name in component_secrets.secrets.keys() {                
+            for secret_name in component_secrets.secrets.keys() {
                 let secret_value = self.generate_secret(component_name, secret_name);
                 match secret_value {
                     GenerationResult::Value(value) => {
@@ -270,12 +298,15 @@ impl SecretsDefinitions {
                     GenerationResult::KeyPair(private_key, public_key) => {
                         secrets.insert(format!("{}_PRIVATE_KEY", secret_name), private_key);
                         secrets.insert(format!("{}_PUBLIC_KEY", secret_name), public_key);
-                    }   
+                    }
                     GenerationResult::Ref(component, secret) => {
                         references.push((secret_name.clone(), component.clone(), secret.clone()));
                     }
                     GenerationResult::None => {
-                        panic!("Failed to get secret value for {} in component {}", secret_name, component_name);
+                        panic!(
+                            "Failed to get secret value for {} in component {}",
+                            secret_name, component_name
+                        );
                     }
                 }
             }
@@ -299,15 +330,26 @@ impl SecretsDefinitions {
                     if let Some(ref_value) = ref_secrets.get(ref_secret) {
                         secrets.insert(secret_name.clone(), ref_value.clone());
                     } else {
-                        panic!("Failed to get reference secret value for {} in component {}", ref_secret, ref_component);
+                        panic!(
+                            "Failed to get reference secret value for {} in component {}",
+                            ref_secret, ref_component
+                        );
                     }
                 } else {
-                    panic!("Failed to get reference secrets for component {}: Choices are {:?}", ref_component, all_secrets.keys());
+                    panic!(
+                        "Failed to get reference secrets for component {}: Choices are {:?}",
+                        ref_component,
+                        all_secrets.keys()
+                    );
                 }
             }
-            
-            vault.lock().unwrap().set(&product_name, component_name, &env, secrets).await.expect("Failed to set reference secrets in vault");
 
+            vault
+                .lock()
+                .unwrap()
+                .set(&product_name, component_name, &env, secrets)
+                .await
+                .expect("Failed to set reference secrets in vault");
         }
         Ok(())
     }

@@ -5,10 +5,10 @@ use crate::builder::Config;
 use crate::builder::{BuildScript, BuildType};
 use crate::container::{ServiceSpec, ServicesSpec};
 use crate::dotenv_utils::load_dotenv;
+use crate::vault::Vault;
 use crate::ToolchainContext;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::vault::Vault;
 use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
@@ -409,7 +409,11 @@ impl ComponentBuildSpec {
         ret
     }
 
-    pub fn generate_build_context(&self, toolchain: Option<Arc<ToolchainContext>>, secrets: HashMap<String, String>) -> BuildContext {
+    pub fn generate_build_context(
+        &self,
+        toolchain: Option<Arc<ToolchainContext>>,
+        secrets: HashMap<String, String>,
+    ) -> BuildContext {
         let services = self
             .services
             .clone()
@@ -434,8 +438,7 @@ impl ComponentBuildSpec {
         let toolchain = toolchain.clone().expect("No toolchain available");
 
         let product_name = self.product_name.clone();
-        let product_uri = slug::slugify(&product_name);        
-        
+        let product_uri = slug::slugify(&product_name);
 
         BuildContext {
             toolchain: (*toolchain).clone(),
@@ -452,7 +455,7 @@ impl ComponentBuildSpec {
             component: self.component_name.clone(),
             docker_registry: self.config.docker_registry().to_string(),
             image_name: self.tagged_image_name.clone().unwrap_or_default(),
-            secrets
+            secrets,
         }
     }
 }

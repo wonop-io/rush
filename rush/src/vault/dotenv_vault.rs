@@ -14,11 +14,12 @@ pub struct DotenvVault {
 
 impl DotenvVault {
     pub fn new(product_dir: PathBuf) -> Self {
-        let stack_yaml_path = product_dir.join("stack.yaml");
+        // TODO: It shouldn't read that here, but rather et it from the config
+        let stack_yaml_path = product_dir.join("stack.spec.yaml");
         let stack_yaml_content =
-            fs::read_to_string(&stack_yaml_path).expect("Unable to read stack.yaml");
+            fs::read_to_string(&stack_yaml_path).expect("Unable to read stack.spec.yaml");
         let stack_yaml: Value =
-            serde_yaml::from_str(&stack_yaml_content).expect("Unable to parse stack.yaml");
+            serde_yaml::from_str(&stack_yaml_content).expect("Unable to parse stack.spec.yaml");
 
         let mut components = HashMap::new();
         if let Some(components_map) = stack_yaml.as_mapping() {
@@ -27,15 +28,19 @@ impl DotenvVault {
                     component_name.as_str(),
                     component_info.get("location").and_then(|v| v.as_str()),
                 ) {
-                    let absolute_path = product_dir.join(location).canonicalize()
-                        .expect(&format!("Failed to get absolute path for component: {}", component_name));
+                    let absolute_path = product_dir.join(location).canonicalize().expect(&format!(
+                        "Failed to get absolute path for component: {}",
+                        component_name
+                    ));
                     components.insert(component_name.to_string(), absolute_path);
                 }
             }
         }
 
         Self {
-            product_dir: product_dir.canonicalize().expect("Failed to get absolute path for product_dir"),
+            product_dir: product_dir
+                .canonicalize()
+                .expect("Failed to get absolute path for product_dir"),
             components,
         }
     }
@@ -43,8 +48,12 @@ impl DotenvVault {
     fn get_env_path(&self, component_name: &str) -> PathBuf {
         self.components
             .get(component_name)
-            .expect("Component not found")
-            .join(".env")
+            .expect(&format!(
+                "Component '{}' not found. Choices are: {:#?}",
+                component_name,
+                self.components.keys()
+            ))
+            .join(".env.secrets")
     }
 }
 
