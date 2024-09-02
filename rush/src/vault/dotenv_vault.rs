@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
+use log::warn;
 
 pub struct DotenvVault {
     product_dir: PathBuf,
@@ -45,15 +46,8 @@ impl DotenvVault {
         }
     }
 
-    fn get_env_path(&self, component_name: &str) -> PathBuf {
-        self.components
-            .get(component_name)
-            .expect(&format!(
-                "Component '{}' not found. Choices are: {:#?}",
-                component_name,
-                self.components.keys()
-            ))
-            .join(".env.secrets")
+    fn get_env_path(&self, component_name: &str) -> Option<PathBuf> {
+        self.components.get(component_name).map(|path| path.join(".env.secrets"))
     }
 }
 
@@ -65,11 +59,15 @@ impl Vault for DotenvVault {
         component_name: &str,
         _environment: &str,
     ) -> Result<HashMap<String, String>, Box<dyn Error>> {
-        let env_path = self.get_env_path(component_name);
-        if env_path.exists() {
-            let env_map = load_dotenv(&env_path)?;
-            Ok(env_map)
+        if let Some(env_path) = self.get_env_path(component_name) {
+            if env_path.exists() {
+                let env_map = load_dotenv(&env_path)?;
+                Ok(env_map)
+            } else {
+                Ok(HashMap::new())
+            }
         } else {
+            warn!("Component '{}' not found. Choices are: {:#?}", component_name, self.components.keys());
             Ok(HashMap::new())
         }
     }
@@ -81,9 +79,13 @@ impl Vault for DotenvVault {
         _environment: &str,
         secrets: HashMap<String, String>,
     ) -> Result<(), Box<dyn Error>> {
-        let env_path = self.get_env_path(component_name);
-        save_dotenv(&env_path, secrets)?;
-        Ok(())
+        if let Some(env_path) = self.get_env_path(component_name) {
+            save_dotenv(&env_path, secrets)?;
+            Ok(())
+        } else {
+            warn!("Component '{}' not found. Choices are: {:#?}", component_name, self.components.keys());
+            Ok(())
+        }
     }
 
     async fn create_vault(&mut self, _product_name: &str) -> Result<(), Box<dyn Error>> {
@@ -97,11 +99,15 @@ impl Vault for DotenvVault {
         component_name: &str,
         _environment: &str,
     ) -> Result<(), Box<dyn Error>> {
-        let env_path = self.get_env_path(component_name);
-        if env_path.exists() {
-            fs::remove_file(env_path)?;
+        if let Some(env_path) = self.get_env_path(component_name) {
+            if env_path.exists() {
+                fs::remove_file(env_path)?;
+            }
+            Ok(())
+        } else {
+            warn!("Component '{}' not found. Choices are: {:#?}", component_name, self.components.keys());
+            Ok(())
         }
-        Ok(())
     }
 
     async fn check_if_vault_exists(&self, _product_name: &str) -> Result<bool, Box<dyn Error>> {
