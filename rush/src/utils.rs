@@ -50,7 +50,7 @@ impl DockerCrossCompileGuard {
         // Set default Docker and Kubernetes target platforms
         env::set_var("CROSS_CONTAINER_OPTS", format!("--platform {}", target));
         env::set_var("DOCKER_DEFAULT_PLATFORM", target);
-        info!(
+        trace!(
             "Set CROSS_CONTAINER_OPTS and DOCKER_DEFAULT_PLATFORM to {}",
             target
         );
@@ -99,7 +99,7 @@ pub struct Directory {
 
 impl Directory {
     pub fn chdir(dir: &str) -> Self {
-        info!("Changing directory to: {}", dir);
+        trace!("Changing directory to: {}", dir);
         let previous = env::current_dir().expect("Failed to get current directory");
         debug!("Previous directory: {:?}", previous);
         env::set_current_dir(dir)
@@ -108,7 +108,7 @@ impl Directory {
     }
 
     pub fn chpath(dir: &Path) -> Self {
-        info!("Changing directory to: {:?}", dir);
+        trace!("Changing directory to: {:?}", dir);
         let previous = env::current_dir().expect("Failed to get current directory");
         debug!("Previous directory: {:?}", previous);
         env::set_current_dir(dir)
@@ -119,7 +119,7 @@ impl Directory {
 
 impl Drop for Directory {
     fn drop(&mut self) {
-        info!("Restoring previous directory: {:?}", self.previous);
+        trace!("Restoring previous directory: {:?}", self.previous);
         env::set_current_dir(self.previous.clone())
             .expect("Failed to set current directory to previous");
     }
@@ -151,7 +151,7 @@ pub fn which(tool: &str) -> Option<String> {
         debug!("Tool '{}' not found", tool);
         None
     } else {
-        info!("Found tool '{}' at path: {}", tool, which);
+        trace!("Found tool '{}' at path: {}", tool, which);
         Some(which)
     }
 }
@@ -160,9 +160,10 @@ pub fn first_which(candidates: Vec<&str>) -> Option<String> {
     debug!("Searching for first available tool among: {:?}", candidates);
     for candidate in &candidates {
         if let Some(path) = which(candidate) {
-            info!(
+            trace!(
                 "Found first available tool '{}' at path: {}",
-                candidate, path
+                candidate,
+                path
             );
             return Some(path);
         }
@@ -188,7 +189,7 @@ pub fn resolve_toolchain_path(path: &str, tool: &str) -> Option<String> {
         .find(|entry| entry.file_name().to_string_lossy().contains(tool))
         .map(|entry| entry.path().to_string_lossy().into_owned());
     match &result {
-        Some(path) => info!("Resolved toolchain path for '{}': {}", tool, path),
+        Some(path) => trace!("Resolved toolchain path for '{}': {}", tool, path),
         None => warn!("Failed to resolve toolchain path for '{}'", tool),
     }
     result
@@ -217,7 +218,7 @@ pub async fn run_command_in_window(
     args: Vec<&str>,
 ) -> Result<String, String> {
     let debug_args = args.join(" ");
-    info!("Running command in window: {} {}", command, debug_args);
+    trace!("Running command in window: {} {}", command, debug_args);
 
     // Creating a clear space for the window
     for _ in 0..=window_size {
@@ -293,7 +294,7 @@ pub async fn run_command_in_window(
             error!("Command failed with exit code: {}", code);
             Err(lines.join("\n"))
         } else {
-            info!("Command completed successfully");
+            trace!("Command completed successfully");
             Ok(output)
         }
     } else {
@@ -308,7 +309,7 @@ pub async fn run_command(
     args: Vec<&str>,
 ) -> Result<String, String> {
     let debug_args = args.join(" ");
-    info!("Running command: {} {}", command, debug_args);
+    trace!("Running command: {} {}", command, debug_args);
 
     // Settting process up
     let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
@@ -352,7 +353,7 @@ pub async fn run_command(
             error!("Command failed with exit code: {}", code);
             Err(lines.join("\n"))
         } else {
-            info!("Command completed successfully");
+            trace!("Command completed successfully");
             Ok(output)
         }
     } else {

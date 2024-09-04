@@ -7,6 +7,7 @@ pub struct VariablesFile {
     pub dev: HashMap<String, String>,
     pub staging: HashMap<String, String>,
     pub prod: HashMap<String, String>,
+    pub local: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,6 +26,7 @@ impl Variables {
                         dev: HashMap::new(),
                         staging: HashMap::new(),
                         prod: HashMap::new(),
+                        local: HashMap::new(),
                     },
                     env: env.to_lowercase(),
                 })
@@ -45,6 +47,7 @@ impl Variables {
             "dev" => self.values.dev.get(key).cloned(),
             "staging" => self.values.staging.get(key).cloned(),
             "prod" => self.values.prod.get(key).cloned(),
+            "local" => self.values.local.get(key).cloned(),
             _ => None,
         }
     }

@@ -11,7 +11,7 @@ use crate::vault::Vault;
 use crate::Directory;
 use crate::{toolchain::ToolchainContext, utils::DockerCrossCompileGuard};
 use colored::Colorize;
-use log::{debug, error, info, warn};
+use log::{debug, error, trace, warn};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -109,7 +109,7 @@ impl DockerImage {
         };
 
         let (port, target_port, exposes) = if let Some(dockerfile_path) = dockerfile_path {
-            info!("Reading Dockerfile: {}", dockerfile_path);
+            trace!("Reading Dockerfile: {}", dockerfile_path);
             let dockerfile_contents =
                 std::fs::read_to_string(&dockerfile_path).unwrap_or_else(|_| {
                     panic!(
@@ -181,9 +181,10 @@ impl DockerImage {
             .map(move |s| format!("{}-{}", product_name, s))
             .collect::<Vec<String>>();
 
-        info!(
+        trace!(
             "Created DockerImage for {}-{}",
-            spec.product_name, spec.component_name
+            spec.product_name,
+            spec.component_name
         );
         Ok(DockerImage {
             image_name,
@@ -328,7 +329,7 @@ impl DockerImage {
             _ => (None, None),
         };
 
-        info!("Launching docker image: {}", self.identifier());
+        trace!("Launching docker image: {}", self.identifier());
         tokio::spawn(async move {
             let spec = task.spec.lock().unwrap().clone();
             let env_guard = DockerImage::create_cross_compile_guard(&spec.build_type, &toolchain);
@@ -393,7 +394,7 @@ impl DockerImage {
                 args.push(command.clone());
             }
 
-            info!(
+            trace!(
                 "Running docker for {}: {}",
                 spec.component_name,
                 args.join(" ")
@@ -510,9 +511,9 @@ impl DockerImage {
                         vec!["kill", &output],
                     )
                     .await;
-                    info!("Killed Docker container for {}", component_name);
+                    trace!("Killed Docker container for {}", component_name);
                 } else {
-                    info!(
+                    trace!(
                         "No running container found for {}. Skipping kill.",
                         component_name
                     );
@@ -535,7 +536,7 @@ impl DockerImage {
             }
         };
         let component_name = self.spec.lock().unwrap().component_name.clone();
-        info!(
+        trace!(
             "Cleaning Docker container for component: {}",
             component_name
         );
@@ -550,7 +551,7 @@ impl DockerImage {
                     let remove_args = vec!["rm", "-f", &component_name];
                     match run_command("clean".white().bold(), toolchain.docker(), remove_args).await
                     {
-                        Ok(_) => info!(
+                        Ok(_) => trace!(
                             "Successfully removed Docker container for {}",
                             component_name
                         ),
@@ -560,7 +561,7 @@ impl DockerImage {
                         ),
                     }
                 } else {
-                    info!(
+                    trace!(
                         "No container found for {}. Skipping removal.",
                         component_name
                     );

@@ -1,8 +1,9 @@
 use crate::vault::Vault;
 use base64;
 use chrono::Utc;
+use colored::Colorize;
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
-use log::{info, warn};
+use log::{trace, warn};
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
@@ -13,11 +14,10 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
 use uuid::Uuid;
-use colored::Colorize;
-use std::io::Write;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretsDefinitions {
     product_name: String,
@@ -34,6 +34,7 @@ pub enum GenerationMethod {
     Static(String),
     Base64EncodedStatic(String), // Added Base64 encoded static string
     Ask(String),
+    AskWithDefault(String, String), // Added AskWithDefault with prompt and default value
     RandomString(usize),
     RandomAlphanumeric(usize),
     RandomHex(usize),
@@ -82,8 +83,7 @@ impl SecretsDefinitions {
             Err(e) => {
                 warn!(
                     "Unable to open YAML file '{}': {}. Returning empty definition.",
-                    yaml_filename,
-                    e
+                    yaml_filename, e
                 );
                 HashMap::new()
             }
@@ -133,10 +133,28 @@ impl SecretsDefinitions {
                     GenerationMethod::Ask(prompt) => {
                         // Implement the logic to handle the ask generation
                         // Print the prompt to the CLI and get the input from the user
-                        
+
                         let prompt = format!("{} ", format!("\n{}:", prompt).white().bold());
                         let password = rpassword::prompt_password(&prompt).unwrap();
                         GenerationResult::Value(password)
+                    }
+                    GenerationMethod::AskWithDefault(prompt, default) => {
+                        // Implement the logic to handle the ask with default generation
+                        // Print the prompt to the CLI and get the input from the user
+
+                        let prompt = format!(
+                            "{} ",
+                            format!("\n{} [default: {}]:", prompt, default)
+                                .white()
+                                .bold()
+                        );
+                        let input = rpassword::prompt_password(&prompt).unwrap();
+                        let value = if input.is_empty() {
+                            default.clone()
+                        } else {
+                            input
+                        };
+                        GenerationResult::Value(value)
                     }
                     GenerationMethod::RandomString(length) => {
                         // Generate a random string of the specified length
@@ -284,10 +302,12 @@ impl SecretsDefinitions {
     ) -> Result<(), Box<dyn Error>> {
         let mut all_secrets = HashMap::new();
         let mut all_references = HashMap::new();
+        let mut overwrite_all = None;
+
         for (component_name, component_secrets) in &self.components {
             let mut secrets = HashMap::new();
             let mut references = Vec::new();
-            info!("Generating secret for component: {}", component_name);
+            trace!("Generating secret for component: {}", component_name);
 
             for secret_name in component_secrets.secrets.keys() {
                 let secret_value = self.generate_secret(component_name, secret_name);
@@ -341,6 +361,51 @@ impl SecretsDefinitions {
                         ref_component,
                         all_secrets.keys()
                     );
+                }
+            }
+
+            let existing_secrets = match vault
+                .lock()
+                .unwrap()
+                .get(&product_name, component_name, &env)
+                .await
+            {
+                Ok(secrets) => secrets,
+                Err(e) => HashMap::new(),
+            };
+            for (key, value) in secrets.clone() {
+                if let Some(value) = existing_secrets.get(&key) {
+                    if let Some(false) = overwrite_all {
+                        secrets.insert(key.clone(), value.clone());
+                    } else if overwrite_all.is_none() {
+                        let mut input = String::new();
+                        let mut ok = false;
+                        while !ok {
+                            println!(
+                                "Secret '{}' already exists. Overwrite? (Yes/No/All/nOne)",
+                                key
+                            );
+                            ok = true;
+                            std::io::stdin().read_line(&mut input)?;
+                            match input.trim().to_lowercase().as_str() {
+                                "y" | "yes" => {}
+                                "n" | "no" => {
+                                    secrets.insert(key.clone(), value.clone());
+                                }
+                                "a" | "all" => {
+                                    overwrite_all = Some(true);
+                                }
+                                "o" | "none" => {
+                                    overwrite_all = Some(false);
+                                    secrets.insert(key.clone(), value.clone());
+                                }
+                                _ => {
+                                    println!("Invalid input. Please enter Yes/No/All/nOne.");
+                                    ok = false;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

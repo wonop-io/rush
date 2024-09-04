@@ -1,3 +1,4 @@
+use log::error;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -33,10 +34,22 @@ pub fn load_dotenv(path: &Path) -> Result<HashMap<String, String>, std::io::Erro
 }
 
 pub fn save_dotenv(path: &Path, env_map: HashMap<String, String>) -> Result<(), std::io::Error> {
-    let mut file = File::create(path)?;
+    let mut file = match File::create(path) {
+        Ok(file) => file,
+        Err(e) => {
+            error!("Failed to create dotenv file '{}': {}", path.display(), e);
+            return Err(e);
+        }
+    };
 
     for (key, value) in env_map {
-        writeln!(file, "{}=\"{}\"", key, value)?;
+        match writeln!(file, "{}=\"{}\"", key, value) {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Failed to write to dotenv file '{}': {}", path.display(), e);
+                return Err(e);
+            }
+        }
     }
 
     Ok(())

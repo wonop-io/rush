@@ -1,4 +1,5 @@
 mod infrastructure;
+mod k8_encoder;
 mod k8s;
 
 use crate::toolchain::ToolchainContext;
@@ -8,6 +9,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 pub use infrastructure::InfrastructureRepo;
+pub use k8_encoder::{K8Encoder, NoopEncoder, SealedSecretsEncoder};
 pub use k8s::K8ClusterManifests;
 
 pub struct Minikube {

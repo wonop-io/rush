@@ -17,9 +17,14 @@ pub struct Config {
     docker_registry: String,
     root_path: String,
     vault_name: String,
+    k8s_encoder: String,
 }
 
 impl Config {
+    pub fn k8s_encoder(&self) -> &str {
+        &self.k8s_encoder
+    }
+
     pub fn vault_name(&self) -> &str {
         &self.vault_name
     }
@@ -68,7 +73,7 @@ impl Config {
         let environment = environment.to_string();
         let docker_registry = docker_registry.to_string();
 
-        let valid_environments = ["dev", "prod", "staging"]
+        let valid_environments = ["local", "dev", "prod", "staging"]
             .iter()
             .map(|e| e.to_string())
             .collect::<Vec<_>>();
@@ -86,6 +91,9 @@ impl Config {
             "staging" => {
                 std::env::var("STAGING_CTX").expect("STAGING_CTX environment variable not found")
             }
+            "local" => {
+                std::env::var("LOCAL_CTX").expect("LOCAL_CTX environment variable not found")
+            }
             _ => panic!("Invalid environment"),
         };
 
@@ -96,20 +104,29 @@ impl Config {
             }
             "staging" => std::env::var("STAGING_VAULT")
                 .expect("STAGING_VAULT environment variable not found"),
+            "local" => {
+                std::env::var("LOCAL_VAULT").expect("LOCAL_VAULT environment variable not found")
+            }
             _ => panic!("Invalid environment"),
         };
 
-        let domain_template = match environment.as_str() {
-            "dev" => {
-                std::env::var("DEV_DOMAIN").expect("DEV_DOMAIN environment variable not found")
-            }
-            "prod" => {
-                std::env::var("PROD_DOMAIN").expect("PROD_DOMAIN environment variable not found")
-            }
-            "staging" => std::env::var("STAGING_DOMAIN")
-                .expect("STAGING_DOMAIN environment variable not found"),
-            _ => panic!("Invalid environment"),
-        };
+        let k8s_encoder = std::env::var("K8S_ENCODER")
+            .expect("K8S_ENCODER environment variable not found")
+            .to_string();
+
+        let domain_template =
+            match environment.as_str() {
+                "dev" => {
+                    std::env::var("DEV_DOMAIN").expect("DEV_DOMAIN environment variable not found")
+                }
+                "prod" => std::env::var("PROD_DOMAIN")
+                    .expect("PROD_DOMAIN environment variable not found"),
+                "staging" => std::env::var("STAGING_DOMAIN")
+                    .expect("STAGING_DOMAIN environment variable not found"),
+                "local" => std::env::var("LOCAL_DOMAIN")
+                    .expect("LOCAL_DOMAIN environment variable not found"),
+                _ => panic!("Invalid environment"),
+            };
 
         let infrastructure_repository = std::env::var("INFRASTRUCTURE_REPOSITORY")
             .expect("INFRASTRUCTURE_REPOSITORY environment variable not found");
@@ -130,6 +147,7 @@ impl Config {
             infrastructure_repository,
             docker_registry,
             vault_name,
+            k8s_encoder,
         };
 
         let context = Context::from_serialize(&ret).expect("Could not create config context");

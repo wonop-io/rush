@@ -1,6 +1,6 @@
 use crate::vault::Vault;
 use async_trait::async_trait;
-use log::{debug, error, info};
+use log::{debug, error, trace};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
@@ -10,7 +10,7 @@ pub struct OnePassword;
 
 impl OnePassword {
     pub fn new() -> Self {
-        info!("Creating new OnePassword instance");
+        trace!("Creating new OnePassword instance");
         OnePassword
     }
 
@@ -24,7 +24,7 @@ impl OnePassword {
             Ok(stdout)
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            error!("1Password CLI command failed: {}", stderr);
+            debug!("1Password CLI command failed: {}", stderr);
             Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 stderr,
@@ -41,9 +41,11 @@ impl Vault for OnePassword {
         component_name: &str,
         environment: &str,
     ) -> Result<HashMap<String, String>, Box<dyn Error>> {
-        info!(
+        trace!(
             "Getting secrets for {}-{} in vault {}",
-            component_name, environment, product_name
+            component_name,
+            environment,
+            product_name
         );
         let item_name = format!("{}-{}", component_name, environment);
         let output = self.run_op_command(
@@ -72,7 +74,7 @@ impl Vault for OnePassword {
             }
         }
 
-        info!("Successfully retrieved {} secrets", secrets.len());
+        trace!("Successfully retrieved {} secrets", secrets.len());
         Ok(secrets)
     }
 
@@ -83,9 +85,11 @@ impl Vault for OnePassword {
         environment: &str,
         secrets: HashMap<String, String>,
     ) -> Result<(), Box<dyn Error>> {
-        info!(
+        trace!(
             "Setting secrets for {}-{} in vault {}",
-            component_name, environment, product_name
+            component_name,
+            environment,
+            product_name
         );
         let item_name = format!("{}-{}", component_name, environment);
 
@@ -125,7 +129,7 @@ impl Vault for OnePassword {
 
         let output = self.run_op_command(args)?;
 
-        info!(
+        trace!(
             "Successfully {} item {}",
             if item_exists { "updated" } else { "created" },
             item_name
@@ -134,7 +138,7 @@ impl Vault for OnePassword {
     }
 
     async fn create_vault(&mut self, product_name: &str) -> Result<(), Box<dyn Error>> {
-        info!("Checking if vault exists: {}", product_name);
+        trace!("Checking if vault exists: {}", product_name);
         let list_args = vec![
             "vault".to_string(),
             "list".to_string(),
@@ -148,11 +152,11 @@ impl Vault for OnePassword {
             .iter()
             .any(|vault| vault["name"].as_str() == Some(product_name))
         {
-            info!("Vault '{}' already exists", product_name);
+            trace!("Vault '{}' already exists", product_name);
             return Ok(());
         }
 
-        info!("Creating vault: {}", product_name);
+        trace!("Creating vault: {}", product_name);
         let create_args = vec![
             "vault".to_string(),
             "create".to_string(),
@@ -160,7 +164,7 @@ impl Vault for OnePassword {
         ];
         let create_output = self.run_op_command(create_args)?;
 
-        info!("Successfully created vault: {}", product_name);
+        trace!("Successfully created vault: {}", product_name);
         Ok(())
     }
 
@@ -170,9 +174,11 @@ impl Vault for OnePassword {
         component_name: &str,
         environment: &str,
     ) -> Result<(), Box<dyn Error>> {
-        info!(
+        trace!(
             "Removing secrets for {}-{} in vault {}",
-            component_name, environment, product_name
+            component_name,
+            environment,
+            product_name
         );
         let item_name = format!("{}-{}", component_name, environment);
 
@@ -185,12 +191,12 @@ impl Vault for OnePassword {
         ];
         let output = self.run_op_command(args)?;
 
-        info!("Successfully removed item {}", item_name);
+        trace!("Successfully removed item {}", item_name);
         Ok(())
     }
 
     async fn check_if_vault_exists(&self, product_name: &str) -> Result<bool, Box<dyn Error>> {
-        info!("Checking if vault exists: {}", product_name);
+        trace!("Checking if vault exists: {}", product_name);
         let list_args = vec![
             "vault".to_string(),
             "list".to_string(),
@@ -203,50 +209,7 @@ impl Vault for OnePassword {
         let exists = vaults
             .iter()
             .any(|vault| vault["name"].as_str() == Some(product_name));
-        info!("Vault '{}' exists: {}", product_name, exists);
+        trace!("Vault '{}' exists: {}", product_name, exists);
         Ok(exists)
     }
 }
-
-/*
-fn main() {
-   env::set_var("RUST_LOG", "trace");
-    env_logger::builder().parse_env("RUST_LOG").init();
-
-
-    // Create a new OnePassword instance
-    let mut one_password = OnePassword::new();
-
-    // Example usage of the OnePassword vault
-    let product_name = "exampleproduct";
-    let component_name = "examplecomponent";
-    let environment = "staging";
-
-    one_password.create_vault(&product_name).await.unwrap();
-
-    // Set some example secrets
-    let mut secrets = HashMap::new();
-    secrets.insert("api_key".to_string(), "new_secret_api_key".to_string());
-    secrets.insert("database_url".to_string(), "postgres://user:password@localhost/db".to_string());
-
-    // Set the secrets in the vault
-    match one_password.set(product_name, component_name, environment, secrets).await {
-        Ok(_) => println!("Secrets set successfully"),
-        Err(e) => eprintln!("Error setting secrets: {}", e),
-    }
-
-    // Retrieve the secrets from the vault
-    match one_password.get(product_name, component_name, environment).await {
-        Ok(retrieved_secrets) => {
-            println!("Retrieved secrets:");
-            for (key, value) in retrieved_secrets {
-                println!("{}: {}", key, value);
-            }
-        },
-        Err(e) => eprintln!("Error retrieving secrets: {}", e),
-    }
-
-    return Ok(());
-
-}
-*/

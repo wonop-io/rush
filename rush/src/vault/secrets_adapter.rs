@@ -1,10 +1,9 @@
-use std::collections::HashMap;
 use base64;
+use std::collections::HashMap;
 
 pub trait EncodeSecrets {
     fn encode_secrets(&self, secrets: HashMap<String, String>) -> HashMap<String, String>;
 }
-
 
 pub struct NoopEncoder;
 
@@ -18,7 +17,8 @@ pub struct Base64SecretsEncoder;
 
 impl EncodeSecrets for Base64SecretsEncoder {
     fn encode_secrets(&self, secrets: HashMap<String, String>) -> HashMap<String, String> {
-        secrets.into_iter()
+        secrets
+            .into_iter()
             .map(|(key, value)| (key, base64::encode(value)))
             .collect()
     }

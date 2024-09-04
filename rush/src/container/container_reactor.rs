@@ -6,15 +6,17 @@ use crate::builder::Config;
 use crate::builder::Variables;
 use crate::cluster::InfrastructureRepo;
 use crate::cluster::K8ClusterManifests;
+use crate::cluster::K8Encoder;
 use crate::container::service_spec::{ServiceSpec, ServicesSpec};
 use crate::gitignore::GitIgnore;
 use crate::toolchain::ToolchainContext;
 use crate::utils::run_command;
 use crate::utils::Directory;
+use crate::vault::EncodeSecrets;
 use crate::vault::Vault;
 use colored::Colorize;
 use glob::glob;
-use log::{debug, error, info, warn};
+use log::{debug, error, trace, warn};
 use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
 use std::io::Write;
 use std::sync::Arc;
@@ -25,7 +27,6 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
-use crate::vault::EncodeSecrets;
 
 // TODO: This ought to split into a spec and a reactor
 pub struct ContainerReactor {
@@ -70,11 +71,11 @@ impl ContainerReactor {
                 {
                     return Err(format!("Failed to delete Docker network: {}", e));
                 }
-                info!("Successfully deleted Docker network: {}", network_name);
+                trace!("Successfully deleted Docker network: {}", network_name);
             }
             Err(_) => {
                 // Network doesn't exist
-                info!(
+                trace!(
                     "Docker network '{}' does not exist. Skipping deletion.",
                     network_name
                 );
@@ -98,7 +99,7 @@ impl ContainerReactor {
         {
             Ok(_) => {
                 // Network already exists
-                info!(
+                trace!(
                     "Docker network '{}' already exists. Skipping creation.",
                     network_name
                 );
@@ -114,7 +115,7 @@ impl ContainerReactor {
                 .await
                 {
                     Ok(_) => {
-                        info!("Successfully created Docker network: {}", network_name);
+                        trace!("Successfully created Docker network: {}", network_name);
                         Ok(())
                     }
                     Err(e) => Err(format!("Failed to create Docker network: {}", e)),
@@ -150,6 +151,7 @@ impl ContainerReactor {
         toolchain: Arc<ToolchainContext>,
         vault: Arc<Mutex<dyn Vault + Send>>,
         secrets_encoder: Arc<dyn EncodeSecrets>,
+        k8s_encoder: Arc<dyn K8Encoder>,
     ) -> Result<Self, String> {
         let git_hash = match toolchain.get_git_folder_hash(config.product_path()) {
             Ok(hash) => hash,
@@ -189,7 +191,11 @@ impl ContainerReactor {
 
         let mut cluster_manifests = {
             let product_directory = std::path::Path::new("./target"); // TODO: Hardcoded
-            K8ClusterManifests::new(product_directory.join("k8s"), Some(toolchain.clone()))
+            K8ClusterManifests::new(
+                product_directory.join("k8s"),
+                Some(toolchain.clone()),
+                k8s_encoder,
+            )
         };
 
         let mut all_component_specs = Vec::new();
@@ -393,8 +399,6 @@ impl ContainerReactor {
             &output_dir
         };
 
- 
-
         match run_command(
             "apply".white().bold(),
             kubectl,
@@ -408,7 +412,6 @@ impl ContainerReactor {
                 return Err(e.to_string());
             }
         }
-
 
         Ok(())
     }
@@ -535,7 +538,13 @@ impl ContainerReactor {
                 match run_command(
                     "install".white().bold(),
                     kubectl,
-                    vec!["apply", "-n", namespace, "-f", &manifest.input_path],
+                    vec![
+                        "apply",
+                        "-n",
+                        namespace,
+                        "-f",
+                        &manifest.artefact.input_path,
+                    ],
                 )
                 .await
                 {
@@ -580,7 +589,13 @@ impl ContainerReactor {
                 match run_command(
                     "uninstall".white().bold(),
                     kubectl,
-                    vec!["delete", "-n", namespace, "-f", &manifest.input_path],
+                    vec![
+                        "delete",
+                        "-n",
+                        namespace,
+                        "-f",
+                        &manifest.artefact.input_path,
+                    ],
                 )
                 .await
                 {
@@ -697,10 +712,10 @@ impl ContainerReactor {
     }
 
     pub async fn launch(&mut self) -> Result<(), String> {
-        info!("Starting launch process");
+        trace!("Starting launch process");
 
         let _ = self.create_network().await;
-        info!("Created Docker network");
+        trace!("Created Docker network");
 
         let mut running = true;
         let (watch_tx, watch_rx) = std::sync::mpsc::channel();
@@ -708,7 +723,7 @@ impl ContainerReactor {
         // You can also access each implementation directly e.g. INotifyWatcher.
         let mut watcher = match RecommendedWatcher::new(watch_tx, NotifyConfig::default()) {
             Ok(w) => {
-                info!("Created file watcher");
+                trace!("Created file watcher");
                 w
             }
             Err(e) => {
@@ -721,7 +736,7 @@ impl ContainerReactor {
         // below will be monitored for changes.
         let path = self.product_directory.clone();
         match watcher.watch(path.as_ref(), RecursiveMode::Recursive) {
-            Ok(_) => info!("Started watching directory: {}", path),
+            Ok(_) => trace!("Started watching directory: {}", path),
             Err(e) => {
                 error!("Failed to watch directory: {}", e);
                 return Err(e.to_string());
@@ -766,7 +781,7 @@ impl ContainerReactor {
 
                         if !paths.is_empty() {
                             for p in paths.iter() {
-                                info!("File changed: {}", p.display());
+                                trace!("File changed: {}", p.display());
                             }
                             debug!("Detected file changes: {:#?}", paths);
                             return true;
@@ -782,10 +797,10 @@ impl ContainerReactor {
 
         while running {
             self.kill_and_clean().await;
-            info!("Cleaned up previous resources");
+            trace!("Cleaned up previous resources");
 
             match self.build().await {
-                Ok(_) => info!("Build completed successfully"),
+                Ok(_) => trace!("Build completed successfully"),
                 Err(e) => {
                     let e = e
                         .replace("error:", &format!("{}:", &"error".red().bold().to_string()))
@@ -805,14 +820,14 @@ impl ContainerReactor {
 
                     loop {
                         if test_if_files_changed() {
-                            info!("File change detected. Rebuilding all images.");
+                            trace!("File change detected. Rebuilding all images.");
                             let _ = self.terminate_sender.send(());
                             break;
                         }
 
                         tokio::select! {
                             _ = &mut ctrl_c => {
-                                info!("Termination signal received. Sending SIGTERM to all subprocesses.");
+                                trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
                                 let _ = self.terminate_sender.send(());
                                 running = false;
                                 break;
@@ -884,7 +899,7 @@ impl ContainerReactor {
             jobs.sort_by(|a, b| a.0.cmp(&b.0)); // Sort jobs by priority in descending order
 
             for (priority, image_id, image) in jobs {
-                info!("Starting {} with priority {}", image.image_name(), priority);
+                trace!("Starting {} with priority {}", image.image_name(), priority);
                 let (status_sender, status_receiver) = mpsc::channel();
                 self.images_by_id.insert(image_id, image.clone());
                 self.statuses_receivers.insert(image_id, status_receiver);
@@ -912,7 +927,7 @@ impl ContainerReactor {
             loop {
                 tokio::select! {
                     _ = &mut ctrl_c => {
-                        info!("Termination signal received. Sending SIGTERM to all subprocesses.");
+                        trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
                         println!("******************************************************************");
                         println!("******************************************************************");
                         println!("*****************       GRACEFUL SHUTDOWN        *****************");
@@ -930,7 +945,7 @@ impl ContainerReactor {
                     }
                     _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
                         if !stopping && test_if_files_changed() {
-                            info!("File change detected. Rebuilding all images.");
+                            trace!("File change detected. Rebuilding all images.");
                             let _ = self.terminate_sender.send(());
                             stop_time = Some(std::time::Instant::now());
                             stopping = true;
@@ -960,7 +975,7 @@ impl ContainerReactor {
             while running && !all_finished {
                 tokio::select! {
                     _ = &mut ctrl_c => {
-                        info!("Termination signal received. Sending SIGTERM to all subprocesses.");
+                        trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
                         let _ = self.terminate_sender.send(());
                         self.update_image_statuses();
                         println!("******************************************************************");
@@ -977,7 +992,7 @@ impl ContainerReactor {
                     }
                     _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
                         if !stopping && test_if_files_changed() {
-                            info!("File change detected. Rebuilding all images.");
+                            trace!("File change detected. Rebuilding all images.");
                             let _ = self.terminate_sender.send(());
                             stop_time = Some(std::time::Instant::now());
                             stopping = true;
@@ -1017,12 +1032,12 @@ impl ContainerReactor {
                 }
             }
 
-            info!("Joining all handles");
+            trace!("Joining all handles");
             // Wait for all images to complete concurrently
             loop {
                 tokio::select! {
                     _ = futures::future::join_all(self.handles.values_mut()) => {
-                        info!("All handles joined successfully");
+                        trace!("All handles joined successfully");
                         break;
                     },
                     _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => {
@@ -1036,9 +1051,9 @@ impl ContainerReactor {
         }
 
         let _ = self.delete_network().await;
-        info!("Deleted Docker network");
+        trace!("Deleted Docker network");
 
-        info!("Launch process completed");
+        trace!("Launch process completed");
         Ok(())
     }
 
@@ -1078,20 +1093,20 @@ impl ContainerReactor {
     }
 
     pub async fn kill_and_clean(&self) {
-        info!("Starting kill and cleanup process");
+        trace!("Starting kill and cleanup process");
         for image in &self.images {
             debug!("Cleaning up image: {}", image.identifier());
             image.kill_and_clean().await;
         }
-        info!("Kill and cleanup process completed");
+        trace!("Kill and cleanup process completed");
     }
 
     pub async fn clean(&self) {
-        info!("Starting cleanup process");
+        trace!("Starting cleanup process");
         for image in &self.images {
             debug!("Cleaning up image: {}", image.identifier());
             image.clean().await;
         }
-        info!("Cleanup process completed");
+        trace!("Cleanup process completed");
     }
 }

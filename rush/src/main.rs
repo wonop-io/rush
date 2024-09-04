@@ -23,15 +23,16 @@ use std::fs::File;
 use std::io::Read;
 use serde::Deserialize;
 use std::collections::HashMap;
-use log::{info, error, debug};
+use log::{info, error, debug, trace};
 use vault::{OnePassword, Vault, DotenvVault};
 use std::sync::Mutex;
 use crate::vault::SecretsDefinitions;
 use crate::public_env_defs::PublicEnvironmentDefinitions;
 use crate::vault::Base64SecretsEncoder;
+use crate::cluster::{SealedSecretsEncoder, NoopEncoder, K8Encoder};
 
 fn setup_environment() {
-    info!("Setting up environment");
+    trace!("Setting up environment");
     
     // Set the RUSHD_ROOT environment variable
     let binding = env::current_dir().unwrap();
@@ -61,7 +62,7 @@ fn setup_environment() {
 
     // Set toolchain environment variables for macOS ARM architecture
     if cfg!(target_os = "macos") && cfg!(target_arch = "arm") {
-        info!("Setting up toolchain for macOS ARM architecture");
+        trace!("Setting up toolchain for macOS ARM architecture");
         
         let toolchain_base = "/opt/homebrew/Cellar/x86_64-unknown-linux-gnu";
         let toolchain_path = std::fs::read_dir(toolchain_base)
@@ -87,7 +88,7 @@ fn setup_environment() {
         debug!("Toolchain environment variables set for macOS ARM");
     }
 
-    info!("Environment setup complete");
+    trace!("Environment setup complete");
 }
 
 
@@ -98,7 +99,7 @@ struct RushdConfig {
 }
 
 fn load_config() {
-    info!("Loading configuration");
+    trace!("Loading configuration");
     let config_path = "rushd.yaml";
     let mut file = File::open(config_path).expect("Unable to open the config file");
     let mut contents = String::new();
@@ -110,7 +111,7 @@ fn load_config() {
         debug!("Set environment variable: {}={}", key.clone(), value.clone());
         std::env::set_var(key, &value);
     }
-    info!("Configuration loaded successfully");
+    trace!("Configuration loaded successfully");
 }
 
 
@@ -211,14 +212,14 @@ async fn main() -> io::Result<()> {
     if let Some(log_level) = matches.get_one::<String>("log_level") {
         env::set_var("RUST_LOG", log_level);
         env_logger::builder().parse_env("RUST_LOG").init();
-        info!("Log level set to: {}", log_level);
+        trace!("Log level set to: {}", log_level);
     } else {
 
         // Initialize env_logger
         env_logger::init();
     }
     // Log the start of the application
-    info!("Starting Rush application");
+    trace!("Starting Rush application");
 
 
     let target_arch = if let Some(target_arch) = matches.get_one::<String>("target_arch") {
@@ -226,21 +227,21 @@ async fn main() -> io::Result<()> {
     } else {
         "x86_64".to_string()
     };
-    debug!("Target architecture: {}", target_arch);
+    info!("Target architecture: {}", target_arch);
 
     let target_os = if let Some(target_os) = matches.get_one::<String>("target_os") {
         target_os.clone()
     } else {
         "linux".to_string()
     };
-    debug!("Target OS: {}", target_os);
+    info!("Target OS: {}", target_os);
 
     let environment = if let Some(environment) = matches.get_one::<String>("environment") {
         environment.clone()
     } else {
-        "dev".to_string()
+        "local".to_string()
     };
-    debug!("Environment: {}", environment);
+    info!("Environment: {}", environment);
 
     
 
@@ -254,7 +255,7 @@ async fn main() -> io::Result<()> {
 
 
     let product_name = matches.get_one::<String>("product_name").unwrap();
-    info!("Product name: {}", product_name);
+    trace!("Product name: {}", product_name);
 
     let config = match Config::new(&root_dir, product_name, &environment, &docker_registry) {
         Ok(config) => config,
@@ -277,10 +278,22 @@ async fn main() -> io::Result<()> {
     // TODO: Check that all secrets are defined in the vault
 
     let secrets_encoder = Arc::new(Base64SecretsEncoder);
-
+    let k8s_encoder = match config.k8s_encoder() {
+        "kubeseal" => Arc::new(SealedSecretsEncoder) as Arc<dyn K8Encoder>,
+        "noop" => Arc::new(NoopEncoder) as Arc<dyn K8Encoder>,
+        _ => panic!("Invalid k8s encoder"),
+    };
+    
     // Creating environment
     let public_environment = PublicEnvironmentDefinitions::new(product_name.clone(), &format!("{}/stack.env.public.yaml", config.product_path()));
-    public_environment.generate_dotenv_files().expect("Unable to generate dotenv files");
+    match public_environment.generate_dotenv_files() {
+        Ok(_) => (),
+        Err(e) => {
+            error!("Unable to generate dotenv files: {}", e);
+            eprintln!("{:#?}", e);
+            std::process::exit(1);
+        }
+    }
 
 
     let toolchain = Arc::new(ToolchainContext::new(Platform::default(), Platform::new(&target_os, &target_arch)));
@@ -288,7 +301,7 @@ async fn main() -> io::Result<()> {
     debug!("Toolchain set up");
 
     
-    let mut reactor = match ContainerReactor::from_product_dir(config.clone(), toolchain.clone(), vault.clone(), secrets_encoder) {
+    let mut reactor = match ContainerReactor::from_product_dir(config.clone(), toolchain.clone(), vault.clone(), secrets_encoder, k8s_encoder) {
         Ok(reactor) => reactor,
         Err(e) => {
             error!("Failed to create ContainerReactor: {}", e);
@@ -300,7 +313,7 @@ async fn main() -> io::Result<()> {
     let minikube = Minikube::new(toolchain.clone());     
 
     if let Some(matches) = matches.subcommand_matches("describe") {
-        info!("Executing 'describe' subcommand");
+        trace!("Executing 'describe' subcommand");
         if matches.subcommand_matches("toolchain").is_some() {
             println!("{:#?}",toolchain);
             debug!("Described toolchain");
@@ -323,7 +336,7 @@ async fn main() -> io::Result<()> {
 
         if matches.subcommand_matches("build-script").is_some() {
             let component_name = matches.get_one::<String>("component_name").unwrap();
-            info!("Describing build script for component: {}", component_name);
+            trace!("Describing build script for component: {}", component_name);
             let image = reactor.get_image(component_name).expect("Component not found");
             let secrets = vault.lock().unwrap().get(&product_name, &component_name, &environment).await.unwrap_or_default();
             let ctx = image.generate_build_context(secrets);
@@ -335,7 +348,7 @@ async fn main() -> io::Result<()> {
 
         if matches.subcommand_matches("build-context").is_some() {
             let component_name = matches.get_one::<String>("component_name").unwrap();
-            info!("Describing build context for component: {}", component_name);
+            trace!("Describing build context for component: {}", component_name);
             let image = reactor.get_image(component_name).expect("Component not found");
             let secrets = vault.lock().unwrap().get(&product_name, &component_name, &environment).await.unwrap_or_default();
             let ctx = image.generate_build_context(secrets);
@@ -347,7 +360,7 @@ async fn main() -> io::Result<()> {
         if matches.subcommand_matches("artefacts").is_some() {
             let _pop_dir = Directory::chdir(reactor.product_directory());
             let component_name = matches.get_one::<String>("component_name").unwrap();
-            info!("Describing artefacts for component: {}", component_name);
+            trace!("Describing artefacts for component: {}", component_name);
             let image = reactor.get_image(component_name).expect("Component not found");
             let secrets = vault.lock().unwrap().get(&product_name, &component_name, &environment).await.unwrap_or_default();
             let ctx = image.generate_build_context(secrets);
@@ -362,7 +375,7 @@ async fn main() -> io::Result<()> {
         }
 
         if matches.subcommand_matches("k8s").is_some() {
-            info!("Describing Kubernetes manifests");
+            trace!("Describing Kubernetes manifests");
             let manifests = reactor.cluster_manifests();
             for component in manifests.components() {
                 println!("{} -> {}", component.input_directory().display(), component.output_directory().display());                
@@ -382,12 +395,12 @@ async fn main() -> io::Result<()> {
 
 
     if let Some(matches) = matches.subcommand_matches("minikube") {
-        info!("Executing 'minikube' subcommand");
+        trace!("Executing 'minikube' subcommand");
         if matches.subcommand_matches("start").is_some() {
-            info!("Starting Minikube");
+            trace!("Starting Minikube");
             match minikube.start().await {
                 Ok(_) => {
-                    info!("Minikube started successfully");
+                    trace!("Minikube started successfully");
                     return Ok(());
                 },
                 Err(e) => {
@@ -398,10 +411,10 @@ async fn main() -> io::Result<()> {
             }
         }
         if matches.subcommand_matches("stop").is_some() {
-            info!("Stopping Minikube");
+            trace!("Stopping Minikube");
             match minikube.stop().await {
                 Ok(_) => {
-                    info!("Minikube stopped successfully");
+                    trace!("Minikube stopped successfully");
                     return Ok(());
                 },
                 Err(e) => {
@@ -412,10 +425,10 @@ async fn main() -> io::Result<()> {
             }
         }        
         if matches.subcommand_matches("delete").is_some() {
-            info!("Deleting Minikube");
+            trace!("Deleting Minikube");
             match minikube.delete().await {
                 Ok(_) => {
-                    info!("Minikube deleted successfully");
+                    trace!("Minikube deleted successfully");
                     return Ok(());
                 },
                 Err(e) => {
@@ -428,10 +441,10 @@ async fn main() -> io::Result<()> {
     }
 
     if matches.subcommand_matches("dev").is_some() {        
-        info!("Launching development environment");
+        trace!("Launching development environment");
         match reactor.launch().await {
             Ok(_) => {
-                info!("Development environment launched successfully");
+                trace!("Development environment launched successfully");
                 return Ok(());
             },
             Err(e) => {
@@ -555,13 +568,13 @@ async fn main() -> io::Result<()> {
     }
 
     if let Some(matches) = matches.subcommand_matches("vault") {
-        info!("Executing 'vault' subcommand");
+        trace!("Executing 'vault' subcommand");
 
         if matches.subcommand_matches("create").is_some() {
-            info!("Creating vault");
+            trace!("Creating vault");
             match vault.lock().unwrap().create_vault(product_name).await {
                 Ok(_) => {
-                    info!("Vault created successfully");
+                    trace!("Vault created successfully");
                     return Ok(());
                 },
                 Err(e) => {
@@ -575,13 +588,13 @@ async fn main() -> io::Result<()> {
         if let Some(matches) = matches.subcommand_matches("add") {
             let component_name = matches.get_one::<String>("component_name").unwrap();
             let secrets = matches.get_one::<String>("secrets").unwrap();
-            info!("Adding: {}", secrets);
+            trace!("Adding: {}", secrets);
             let secrets: HashMap<String, String> = serde_json::from_str(secrets).expect("Invalid secrets format");
 
-            info!("Adding secrets to vault");
+            trace!("Adding secrets to vault");
             match vault.lock().unwrap().set(product_name, component_name, &environment, secrets).await {
                 Ok(_) => {
-                    info!("Secrets added successfully");
+                    trace!("Secrets added successfully");
                     return Ok(());
                 },
                 Err(e) => {
@@ -595,11 +608,11 @@ async fn main() -> io::Result<()> {
         if let Some(matches) = matches.subcommand_matches("remove") {
             let component_name = matches.get_one::<String>("component_name").unwrap();
 
-            info!("Removing secrets from vault");
+            trace!("Removing secrets from vault");
             
             match vault.lock().unwrap().remove(product_name, component_name, &environment).await {
                 Ok(_) => {
-                    info!("Secrets removed successfully");
+                    trace!("Secrets removed successfully");
                     return Ok(());
                 },
                 Err(e) => {
@@ -613,7 +626,7 @@ async fn main() -> io::Result<()> {
     }
 
     if let Some(matches) = matches.subcommand_matches("secrets") {
-        info!("Executing 'secrets' subcommand");
+        trace!("Executing 'secrets' subcommand");
 
         if matches.subcommand_matches("init").is_some() {
             match vault.lock().unwrap().create_vault(product_name).await {
@@ -624,10 +637,10 @@ async fn main() -> io::Result<()> {
                 std::process::exit(1);
                 }
             }
-            info!("Initializing secrets");
+            trace!("Initializing secrets");
             match secrets_context.populate(vault.clone(), &environment).await {
                 Ok(_) => {
-                    info!("Secrets initialized successfully");
+                    trace!("Secrets initialized successfully");
                     return Ok(());
                 },
                 Err(e) => {

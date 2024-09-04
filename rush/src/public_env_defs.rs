@@ -1,13 +1,14 @@
 use crate::dotenv_utils::load_dotenv;
 use crate::dotenv_utils::save_dotenv;
 use chrono::Local;
-use log::{error, warn};
+use log::{error, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use colored::Colorize;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicEnvironmentDefinitions {
@@ -25,6 +26,7 @@ pub struct ComponentEnvironment {
 pub enum GenerationMethod {
     Static(String),
     Ask(String),
+    AskWithDefault(String, String),
     Timestamp(String),
 }
 
@@ -110,12 +112,25 @@ impl PublicEnvironmentDefinitions {
                 match generation_method {
                     GenerationMethod::Static(value) => Some(value.clone()),
                     GenerationMethod::Ask(prompt) => {
-                        println!("{}", prompt);
+                        print!("{}", prompt.bold().white());
                         let mut input = String::new();
                         std::io::stdin()
                             .read_line(&mut input)
                             .expect("Failed to read input");
                         Some(input.trim().to_string())
+                    }
+                    GenerationMethod::AskWithDefault(prompt, default) => {
+                        print!("{}",format!("{} (default: {}): ", prompt, default).bold().white());
+                        let mut input = String::new();
+                        std::io::stdin()
+                            .read_line(&mut input)
+                            .expect("Failed to read input");
+                        let input = input.trim();
+                        if input.is_empty() {
+                            Some(default.clone())
+                        } else {
+                            Some(input.to_string())
+                        }
                     }
                     GenerationMethod::Timestamp(format) => {
                         Some(Local::now().format(format).to_string())
@@ -132,7 +147,13 @@ impl PublicEnvironmentDefinitions {
     pub fn generate_dotenv_files(&self) -> Result<(), std::io::Error> {
         // TODO: Get from config
         let stack_yaml_path = self.product_dir.join("stack.spec.yaml");
-        let stack_yaml_content = fs::read_to_string(&stack_yaml_path)?;
+        let stack_yaml_content = match fs::read_to_string(&stack_yaml_path) {
+            Ok(content) => content,
+            Err(e) => {
+                error!("Failed to read stack.spec.yaml: {}", e);
+                return Err(e);
+            }
+        };
         let stack_yaml: Value =
             serde_yaml::from_str(&stack_yaml_content).expect("Unable to parse stack.spec.yaml");
 
@@ -143,6 +164,10 @@ impl PublicEnvironmentDefinitions {
                     component_info.get("location").and_then(|v| v.as_str()),
                 ) {
                     let component_dir = self.product_dir.join(location);
+                    if !component_dir.exists() {
+                        trace!("Component {} directory not found, skipping", component_name);
+                        continue;
+                    }
                     let env_path = component_dir.join(".env");
 
                     if let Some(component) = self.components.get(component_name) {

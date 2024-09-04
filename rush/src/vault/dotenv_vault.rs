@@ -1,12 +1,12 @@
 use crate::dotenv_utils::{load_dotenv, save_dotenv};
 use crate::vault::vault_trait::Vault;
 use async_trait::async_trait;
+use log::warn;
 use serde_yaml::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
-use log::warn;
 
 pub struct DotenvVault {
     product_dir: PathBuf,
@@ -47,7 +47,9 @@ impl DotenvVault {
     }
 
     fn get_env_path(&self, component_name: &str) -> Option<PathBuf> {
-        self.components.get(component_name).map(|path| path.join(".env.secrets"))
+        self.components
+            .get(component_name)
+            .map(|path| path.join(".env.secrets"))
     }
 }
 
@@ -67,7 +69,11 @@ impl Vault for DotenvVault {
                 Ok(HashMap::new())
             }
         } else {
-            warn!("Component '{}' not found. Choices are: {:#?}", component_name, self.components.keys());
+            warn!(
+                "Component '{}' not found. Choices are: {:#?}",
+                component_name,
+                self.components.keys()
+            );
             Ok(HashMap::new())
         }
     }
@@ -83,7 +89,11 @@ impl Vault for DotenvVault {
             save_dotenv(&env_path, secrets)?;
             Ok(())
         } else {
-            warn!("Component '{}' not found. Choices are: {:#?}", component_name, self.components.keys());
+            warn!(
+                "Component '{}' not found. Choices are: {:#?}",
+                component_name,
+                self.components.keys()
+            );
             Ok(())
         }
     }
@@ -105,7 +115,11 @@ impl Vault for DotenvVault {
             }
             Ok(())
         } else {
-            warn!("Component '{}' not found. Choices are: {:#?}", component_name, self.components.keys());
+            warn!(
+                "Component '{}' not found. Choices are: {:#?}",
+                component_name,
+                self.components.keys()
+            );
             Ok(())
         }
     }
