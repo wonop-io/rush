@@ -1,6 +1,7 @@
 use crate::dotenv_utils::load_dotenv;
 use crate::dotenv_utils::save_dotenv;
 use chrono::Local;
+use colored::Colorize;
 use log::{error, trace, warn};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
@@ -8,7 +9,6 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use colored::Colorize;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicEnvironmentDefinitions {
@@ -120,7 +120,12 @@ impl PublicEnvironmentDefinitions {
                         Some(input.trim().to_string())
                     }
                     GenerationMethod::AskWithDefault(prompt, default) => {
-                        print!("{}",format!("{} (default: {}): ", prompt, default).bold().white());
+                        print!(
+                            "{}",
+                            format!("{} (default: {}): ", prompt, default)
+                                .bold()
+                                .white()
+                        );
                         let mut input = String::new();
                         std::io::stdin()
                             .read_line(&mut input)

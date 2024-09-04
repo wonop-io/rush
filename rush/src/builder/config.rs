@@ -110,9 +110,17 @@ impl Config {
             _ => panic!("Invalid environment"),
         };
 
-        let k8s_encoder = std::env::var("K8S_ENCODER")
-            .expect("K8S_ENCODER environment variable not found")
-            .to_string();
+        let k8s_encoder = match environment.as_str() {
+            "dev" => std::env::var("K8S_ENCODER_DEV")
+                .expect("K8S_ENCODER_DEV environment variable not found"),
+            "prod" => std::env::var("K8S_ENCODER_PROD")
+                .expect("K8S_ENCODER_PROD environment variable not found"),
+            "staging" => std::env::var("K8S_ENCODER_STAGING")
+                .expect("K8S_ENCODER_STAGING environment variable not found"),
+            "local" => std::env::var("K8S_ENCODER_LOCAL")
+                .expect("K8S_ENCODER_LOCAL environment variable not found"),
+            _ => panic!("Invalid environment"),
+        };
 
         let domain_template =
             match environment.as_str() {

@@ -1,11 +1,18 @@
 env:
   DOCKER_REGISTRY: not_set
+  LOCAL_CTX: not_set
   DEV_CTX: not_set
   STAGING_CTX: not_set
   PROD_CTX: not_set
 
+  LOCAL_DOMAIN: "{{ product_uri }}.localhost"
   DEV_DOMAIN: "{{ product_uri }}-dev.wonop.dev"
   STAGING_DOMAIN: "staging.{{ product_name }}"
   PROD_DOMAIN: "{{ product_name }}"
+
+  LOCAL_VAULT: ".env"
+  DEV_VAULT: "1Password"
+  STAGING_VAULT: "1Password"
+  PROD_VAULT: "1Password"
 
   INFRASTRUCTURE_REPOSITORY: not_set
