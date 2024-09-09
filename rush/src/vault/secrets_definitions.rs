@@ -35,6 +35,7 @@ pub enum GenerationMethod {
     Base64EncodedStatic(String), // Added Base64 encoded static string
     Ask(String),
     AskWithDefault(String, String), // Added AskWithDefault with prompt and default value
+    AskPassword(String), // Added AskPassword with prompt
     RandomString(usize),
     RandomAlphanumeric(usize),
     RandomHex(usize),
@@ -135,8 +136,11 @@ impl SecretsDefinitions {
                         // Print the prompt to the CLI and get the input from the user
 
                         let prompt = format!("{} ", format!("\n{}:", prompt).white().bold());
-                        let password = rpassword::prompt_password(&prompt).unwrap();
-                        GenerationResult::Value(password)
+                        let mut input = String::new();
+                        print!("{}", prompt);
+                        std::io::stdout().flush().unwrap();
+                        std::io::stdin().read_line(&mut input).unwrap();
+                        GenerationResult::Value(input.trim().to_string())
                     }
                     GenerationMethod::AskWithDefault(prompt, default) => {
                         // Implement the logic to handle the ask with default generation
@@ -148,13 +152,24 @@ impl SecretsDefinitions {
                                 .white()
                                 .bold()
                         );
-                        let input = rpassword::prompt_password(&prompt).unwrap();
-                        let value = if input.is_empty() {
+                        let mut input = String::new();
+                        print!("{}", prompt);
+                        std::io::stdout().flush().unwrap();
+                        std::io::stdin().read_line(&mut input).unwrap();
+                        let value = if input.trim().is_empty() {
                             default.clone()
                         } else {
-                            input
+                            input.trim().to_string()
                         };
                         GenerationResult::Value(value)
+                    }
+                    GenerationMethod::AskPassword(prompt) => {
+                        // Implement the logic to handle the ask password generation
+                        // Print the prompt to the CLI and get the input from the user
+
+                        let prompt = format!("{} ", format!("\n{}:", prompt).white().bold());
+                        let password = rpassword::prompt_password(&prompt).unwrap();
+                        GenerationResult::Value(password)
                     }
                     GenerationMethod::RandomString(length) => {
                         // Generate a random string of the specified length
@@ -304,12 +319,21 @@ impl SecretsDefinitions {
         let mut all_references = HashMap::new();
         let mut overwrite_all = None;
 
-        for (component_name, component_secrets) in &self.components {
+        let mut sorted_components: Vec<_> = self.components.keys().collect();
+        sorted_components.sort();
+
+        for component_name in sorted_components {
+            let component_secrets = &self.components[component_name];
             let mut secrets = HashMap::new();
             let mut references = Vec::new();
             trace!("Generating secret for component: {}", component_name);
+            println!("");
+            println!("{}", component_name.white().bold());
+            println!("{}", "=".repeat(component_name.len()));
+            let mut sorted_secrets: Vec<_> = component_secrets.secrets.keys().collect();
+            sorted_secrets.sort();
 
-            for secret_name in component_secrets.secrets.keys() {
+            for secret_name in sorted_secrets {
                 let secret_value = self.generate_secret(component_name, secret_name);
                 match secret_value {
                     GenerationResult::Value(value) => {

@@ -1,3 +1,4 @@
+use log::trace;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tera::Context;
@@ -7,6 +8,7 @@ use tera::Tera;
 pub struct Config {
     product_name: String,
     product_uri: String,
+    product_dirname: String,
     product_path: String,
     network_name: String,
     environment: String,
@@ -139,13 +141,62 @@ impl Config {
         let infrastructure_repository = std::env::var("INFRASTRUCTURE_REPOSITORY")
             .expect("INFRASTRUCTURE_REPOSITORY environment variable not found");
         // We assume in the rest of the code that the product path does not end with /
-        let product_path = format!("./products/{}", product_name); // TODO: hard coded path
+        let mut product_dirname = product_name
+            .split('.')
+            .rev()
+            .collect::<Vec<&str>>()
+            .join(".");
+        let products_dir = std::env::current_dir().unwrap().join("products");
+
+        // To support the Apple quirk that ".app" is an "App", we allow for using _ in the product name
+        if let Ok(entries) = std::fs::read_dir(&products_dir) {
+            let mut dirnames: Vec<(String, String)> = Vec::new();
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if entry.path().is_dir() {
+                        if let Some(dirname) = entry.file_name().to_str() {
+                            dirnames.push((dirname.to_string(), dirname.replace('_', ".")));
+                        }
+                    }
+                }
+            }
+            trace!("Searching for product path in {:#?}", dirnames);
+            trace!(
+                "Candidate product name: {} and {}",
+                product_name,
+                product_dirname
+            );
+            if let Some(normalized_name) = dirnames.iter().find(|&name| name.1 == product_dirname) {
+                product_dirname = normalized_name.0.clone();
+            } else if let Some(normalized_name) =
+                dirnames.iter().find(|&name| name.1 == product_name)
+            {
+                product_dirname = normalized_name.0.clone();
+            } else {
+                panic!(
+                    "Product path does not exist for product_dirname: {}",
+                    product_dirname
+                );
+            }
+        }
+
+        let product_path = products_dir.join(&product_dirname);
+        if !product_path.exists() {
+            panic!(
+                "Product path does not exist for product_dirname: {}",
+                product_dirname
+            );
+        }
+
+        let product_path = product_path.to_str().unwrap().to_string();
         let network_name = format!("net-{}", product_uri);
+        trace!("Product dirname: {}", product_dirname);
 
         let mut ret = Self {
             root_path: root_path.to_string(),
             product_name,
             product_uri,
+            product_dirname,
             product_path,
             network_name,
             environment,

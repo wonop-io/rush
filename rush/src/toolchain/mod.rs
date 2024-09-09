@@ -16,6 +16,7 @@ pub struct ToolchainContext {
     docker: String,
     trunk: String,
     kubectl: Option<String>,
+    kubectx: Option<String>,
     minikube: Option<String>,
 
     // Secondary
@@ -46,6 +47,7 @@ impl ToolchainContext {
             ])
             .expect("trunk not found."),
             kubectl: first_which(vec!["kubectl"]),
+            kubectx: first_which(vec!["kubectx"]),
             minikube: first_which(vec!["minikube"]),
 
             cc: first_which(vec!["clang", "gcc"])
@@ -116,6 +118,7 @@ impl ToolchainContext {
                 ])
                 .expect("trunk not found."),
                 kubectl: first_which(vec!["kubectl"]),
+                kubectx: first_which(vec!["kubectx"]),
                 minikube: first_which(vec!["minikube"]),
 
                 cc,
@@ -209,6 +212,14 @@ impl ToolchainContext {
 
     pub fn kubectl(&self) -> &str {
         self.kubectl.as_ref().expect("kubectl not found")
+    }
+
+    pub fn has_kubectx(&self) -> bool {
+        self.kubectx.is_some()
+    }
+
+    pub fn kubectx(&self) -> &str {
+        self.kubectx.as_ref().expect("kubectx not found")
     }
 
     pub fn git(&self) -> &str {

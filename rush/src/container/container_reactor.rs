@@ -359,12 +359,12 @@ impl ContainerReactor {
             None => return Err("Toolchain not found".to_string()),
         };
 
-        let kubectl = toolchain.kubectl();
+        let kubectx = toolchain.kubectx();
 
         match run_command(
             "Selecting Kubernetes context".white().bold(),
-            kubectl,
-            vec!["config", "set-context", context],
+            kubectx,
+            vec![context],
         )
         .await
         {
