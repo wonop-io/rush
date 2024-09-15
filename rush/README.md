@@ -10,6 +10,8 @@
 - **Fast builds:** Efficient cross-compiling speeds up Docker image building.
 - **Multi-container support:** Easily run multiple containers locally, complete with ingress routing.
 - **Multi-product management:** Simplifies the handling of multiple products within a monorepo structure.
+- **Multi-environment support:** Supports different environments (`local`, `dev`, `staging` and `prod`) with separate configurations and secrets.
+- **Secret management:** Manages secrets for local development and deployment. Supports 1Password and Kubeseal out of the box.
 
 ## Demo
 ![Hello World Demo](demos/hello_world.gif)
