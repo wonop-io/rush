@@ -44,7 +44,7 @@ jobs:
         working-directory: rush
         run: cargo install --path . rush-cli
 
-      - name: Docker build hello-world
+      - name: Docker build helloworld.wonop.io
         working-directory: products/io.wonop.helloworld
-        run: rush hello-world.wonop.io build
+        run: rush helloworld.wonop.io build
 
