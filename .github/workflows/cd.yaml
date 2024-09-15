@@ -18,5 +18,5 @@ jobs:
 
       - uses: katyo/publish-crates@v2
         with:
-          working-directory: rush
+          path: "./rush"
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
