@@ -1,0 +1,54 @@
+[package]
+name = "rush-cli"
+<<<<<<< HEAD
+version = "0.0.3"
+=======
+version = "0.0.2"
+>>>>>>> main
+edition = "2021"
+authors = ["Troels F. Rønnow <wonop@wonop.com>"]
+description = "Rush Deployment: A tool to bring the development experience as close to the production experience as possible."
+license = "MIT"
+repository = "https://github.com/wonop-io/rush"
+homepage = "https://github.com/wonop-io/rush"
+readme = "README.md"
+keywords = ["yew", "axum", "docker", "kubernetes", "cross-compilation"]
+categories = ["command-line-utilities", "development-tools", "web-programming"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1.36.0", features = ["full"] }
+colored = "2.1.0"
+futures = "0.3.30"
+# tokio-pty-process = "0.4.0"
+clap = "4.5.3"
+notify = "6.1.1"
+dotenv = "0.15.0"
+tera = "1.19.1"
+lazy_static = "1.4.0"
+serde_json = "1.0.114"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_yaml = "0.9.33"
+glob = "0.3.1"
+slug = "0.1.5"
+env_logger = "0.11.5"
+log = "0.4.22"
+async-trait = "0.1.81"
+rand = "0.8.5"
+base64 = "0.22.1"
+hex = "0.4.3"
+uuid = { version = "1.10.0", features = ["v4"] }
+chrono = "0.4.38"
+openssl = "0.10.66"
+ed25519-dalek = "2.1.1"
+rpassword = "7.3.1"
+reqwest = { version = "0.12.7", features = ["json"] }
+semver = "1.0.23"
+
+[dev-dependencies]
+tempfile = "3.12.0"
+
+[[bin]]
+name = "rush"
+path = "src/main.rs"
