@@ -14,7 +14,7 @@ impl K8Encoder for SealedSecretsEncoder {
         let content =
             fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
         trace!("Testing {} if it contains 'kind: Secret'", path);
-        
+
         // Make the search for data more robust
         let contains_kind_secret = content.lines().any(|line| line.trim() == "kind: Secret");
         let contains_data = content.lines().any(|line| line.trim() == "data:");
