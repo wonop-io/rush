@@ -1,0 +1,50 @@
+name: Rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions: read-all
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            products/io.wonop.helloworld/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Installing trunk
+        working-directory: products/io.wonop.helloworld
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install --locked trunk
+          mv ~/.cargo/bin/trunk ~/.cargo/bin/wasm-trunk
+
+      - name: Testing rush
+        working-directory: rush
+        run: cargo test
+
+      - name: Installing Rush
+        working-directory: rush
+        run: cargo install --path . rush-cli
+
+      - name: Docker build hello-world
+        working-directory: products/io.wonop.helloworld
+        run: rush hello-world.wonop.io build
+
