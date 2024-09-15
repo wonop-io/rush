@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/wonop-io/rush"
 homepage = "https://github.com/wonop-io/rush"
 readme = "README.md"
-keywords = ["deployment", "yew", "axum", "docker", "kubernetes", "cross-compilation"]
+keywords = ["yew", "axum", "docker", "kubernetes", "cross-compilation"]
 categories = ["development-tools", "deployment", "web-development", "backend", "frontend"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
