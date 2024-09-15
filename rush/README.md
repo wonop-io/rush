@@ -57,7 +57,7 @@ Before installing `rush`, ensure that you have the following prerequisites insta
 
 To install `rush`, run the following command:
 ```bash
-cargo install --git https://github.com/wonop-io/rush.git rush
+cargo install rush-cli
 ```
 
 Make sure that the cargo binary directory is in your `PATH`:
