@@ -11,6 +11,9 @@
 - **Multi-container support:** Easily run multiple containers locally, complete with ingress routing.
 - **Multi-product management:** Simplifies the handling of multiple products within a monorepo structure.
 
+## Demo
+![Hello World Demo](demos/hello_world.gif)
+
 ---
 
 ## Installation
