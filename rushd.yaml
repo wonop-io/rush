@@ -7,12 +7,17 @@ env:
 
   LOCAL_DOMAIN: "{{ product_uri }}.localhost"
   DEV_DOMAIN: "{{ product_uri }}-dev.wonop.dev"
-  STAGING_DOMAIN: "staging.{{ product_name }}"
+  STAGING_DOMAIN: "{{ product_uri }}-staging.wonop.dev"
   PROD_DOMAIN: "{{ product_name }}"
 
-  LOCAL_VAULT: ".env"
-  DEV_VAULT: "1Password"
-  STAGING_VAULT: "1Password"
-  PROD_VAULT: "1Password"
+  LOCAL_VAULT: .env
+  DEV_VAULT: 1Password
+  STAGING_VAULT: 1Password
+  PROD_VAULT: 1Password
+
+  K8S_ENCODER_LOCAL: noop
+  K8S_ENCODER_DEV: kubeseal
+  K8S_ENCODER_STAGING: kubeseal
+  K8S_ENCODER_PROD: kubeseal
 
   INFRASTRUCTURE_REPOSITORY: not_set

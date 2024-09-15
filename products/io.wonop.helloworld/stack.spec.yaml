@@ -1,0 +1,41 @@
+frontend:
+  build_type: "TrunkWasm"
+  location: "frontend/webui"
+  dockerfile: "frontend/Dockerfile"
+  color: "purple"
+  mount_point: "/"
+  k8s: frontend/infrastructure
+
+backend:
+  build_type: "RustBinary"
+  location: "backend/server"
+  dockerfile: "./Dockerfile.backend"
+  color: "blue"
+  mount_point: "/api"
+  k8s: backend/infrastructure
+  priority: 50
+
+database:
+  build_type: "Image"
+  image: "postgres:latest"
+  color: "yellow"
+  port: 5432
+  target_port: 5432
+  volumes:
+    "./postgres.db": "/var/lib/postgresql/data"
+  env:
+    POSTGRES_DB: backend
+    POSTGRES_PASSWORD: admin
+    POSTGRES_USER: admin
+    
+ingress:
+  build_type: "Ingress"
+  port: 9000
+  location: "./"
+  dockerfile: "./Dockerfile.ingress"
+  color: "green"
+  components:
+    - "backend"
+    - "frontend"
+  artefacts:
+    nginx.ingress.conf: "nginx.conf"

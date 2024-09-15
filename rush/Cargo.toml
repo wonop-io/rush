@@ -1,7 +1,15 @@
 [package]
 name = "rush-cli"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
+authors = ["Troels F. Rønnow <wonop@wonop.com>"]
+description = "Rush Deployment: A tool to bring the development experience as close to the production experience as possible."
+license = "MIT"
+repository = "https://github.com/wonop-io/rush"
+homepage = "https://github.com/wonop-io/rush"
+readme = "README.md"
+keywords = ["yew", "axum", "docker", "kubernetes", "cross-compilation"]
+categories = ["command-line-utilities", "development-tools", "web-programming"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
