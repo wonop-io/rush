@@ -116,6 +116,13 @@ For deploying to a Kubernetes cluster, `rush` provides seamless integration. Fol
    - Example database URL: `postgres://[user]:[password]@[host]:[port]/[database_name]`
    - Example Redis URL: `rediss://[user]:[password]@[host]:[port]`
 
+3. **Deploying to Kubernetes:**
+   Assuming you have a Kubernetes cluster and `kubectl` configured, along with contexts and Docker registry configured in `rushd.yaml`, you can deploy the application with:
+
+   ```sh
+   rush --env staging helloworld.wonop.io deploy
+   ```
+   
 ---
 
 ## Cross-Compilation on Apple Silicon
