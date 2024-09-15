@@ -14,7 +14,7 @@
 - **Secret management:** Manages secrets for local development and deployment. Supports 1Password and Kubeseal out of the box.
 
 ## Demo
-![Hello World Demo](rush/demos/hello_world.gif)
+![Hello World Demo](demos/hello_world.gif)
 
 ---
 

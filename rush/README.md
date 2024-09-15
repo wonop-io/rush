@@ -14,7 +14,7 @@
 - **Secret management:** Manages secrets for local development and deployment. Supports 1Password and Kubeseal out of the box.
 
 ## Demo
-![Hello World Demo](demos/hello_world.gif)
+![Hello World Demo](https://github.com/wonop-io/rush/blob/7c27eac6f6815995f81b0ca59687977587cb6687/rush/demos/hello_world.gif)
 
 ---
 
