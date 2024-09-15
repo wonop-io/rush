@@ -32,8 +32,12 @@ pub fn home_page() -> Html {
     }
 
     html! {
-        <div class="text-white flex flex-col items-center justify-center h-screen">
-          <span class="text-2xl">{"Data fetched: "}{state.payload.clone()}</span>
+        <div class="text-zinc-700 flex flex-col items-center justify-center h-screen bg-gradient-to-r from-purple-400 via-pink-500 to-red-500">
+            <div class="bg-white p-12 rounded-lg shadow-lg text-center">
+                <h1 class="text-4xl font-bold mb-4">{"Welcome to the Demo Page"}</h1>
+                <p class="text-xl mb-4">{"Data fetched from the API:"}</p>
+                <span class="text-2xl text-gray-800">{state.payload.clone()}</span>
+            </div>
         </div>
     }
 }
