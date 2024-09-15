@@ -35,7 +35,7 @@ pub enum GenerationMethod {
     Base64EncodedStatic(String), // Added Base64 encoded static string
     Ask(String),
     AskWithDefault(String, String), // Added AskWithDefault with prompt and default value
-    AskPassword(String), // Added AskPassword with prompt
+    AskPassword(String),            // Added AskPassword with prompt
     RandomString(usize),
     RandomAlphanumeric(usize),
     RandomHex(usize),
