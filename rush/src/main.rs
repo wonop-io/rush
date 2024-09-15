@@ -152,7 +152,7 @@ async fn check_version() {
         println!("* A new version of Rush is available: {}", release.tag_name);
         println!("* Please update it by running:");
         println!("* ");        
-        println!("* cargo install --git https://github.com/wonop-io/rush.git rush-cli --force");        
+        println!("* cargo install rush-cli --force");        
         println!("* ");        
         println!("============================================================");
         println!();
