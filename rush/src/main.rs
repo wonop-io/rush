@@ -526,6 +526,92 @@ async fn main() -> io::Result<()> {
         }
     }
 
+
+    if let Some(matches) = matches.subcommand_matches("vault") {
+        trace!("Executing 'vault' subcommand");
+
+        if matches.subcommand_matches("create").is_some() {
+            trace!("Creating vault");
+            match vault.lock().unwrap().create_vault(product_name).await {
+                Ok(_) => {
+                    trace!("Vault created successfully");
+                    return Ok(());
+                },
+                Err(e) => {
+                    error!("Failed to create vault: {}", e);
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        if let Some(matches) = matches.subcommand_matches("add") {
+            let component_name = matches.get_one::<String>("component_name").unwrap();
+            let secrets = matches.get_one::<String>("secrets").unwrap();
+            trace!("Adding: {}", secrets);
+            let secrets: HashMap<String, String> = serde_json::from_str(secrets).expect("Invalid secrets format");
+
+            trace!("Adding secrets to vault");
+            match vault.lock().unwrap().set(product_name, component_name, &environment, secrets).await {
+                Ok(_) => {
+                    trace!("Secrets added successfully");
+                    return Ok(());
+                },
+                Err(e) => {
+                    error!("Failed to add secrets: {}", e);
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        if let Some(matches) = matches.subcommand_matches("remove") {
+            let component_name = matches.get_one::<String>("component_name").unwrap();
+
+            trace!("Removing secrets from vault");
+            
+            match vault.lock().unwrap().remove(product_name, component_name, &environment).await {
+                Ok(_) => {
+                    trace!("Secrets removed successfully");
+                    return Ok(());
+                },
+                Err(e) => {
+                    error!("Failed to remove secrets: {}", e);
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
+            
+        }
+    }
+
+    if let Some(matches) = matches.subcommand_matches("secrets") {
+        trace!("Executing 'secrets' subcommand");
+
+        if matches.subcommand_matches("init").is_some() {
+            match vault.lock().unwrap().create_vault(product_name).await {
+                Ok(_) => (),
+            Err(e) => {
+                error!("Failed to create vault: {}", e);
+                eprintln!("{}", e);
+                std::process::exit(1);
+                }
+            }
+            trace!("Initializing secrets");
+            match secrets_context.populate(vault.clone(), &environment).await {
+                Ok(_) => {
+                    trace!("Secrets initialized successfully");
+                    return Ok(());
+                },
+                Err(e) => {
+                    error!("Failed to initialize secrets: {}", e);
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     // Setting the context
     if !toolchain.has_kubectl() {
         eprintln!("kubectl not found");
@@ -613,90 +699,6 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    if let Some(matches) = matches.subcommand_matches("vault") {
-        trace!("Executing 'vault' subcommand");
-
-        if matches.subcommand_matches("create").is_some() {
-            trace!("Creating vault");
-            match vault.lock().unwrap().create_vault(product_name).await {
-                Ok(_) => {
-                    trace!("Vault created successfully");
-                    return Ok(());
-                },
-                Err(e) => {
-                    error!("Failed to create vault: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-
-        if let Some(matches) = matches.subcommand_matches("add") {
-            let component_name = matches.get_one::<String>("component_name").unwrap();
-            let secrets = matches.get_one::<String>("secrets").unwrap();
-            trace!("Adding: {}", secrets);
-            let secrets: HashMap<String, String> = serde_json::from_str(secrets).expect("Invalid secrets format");
-
-            trace!("Adding secrets to vault");
-            match vault.lock().unwrap().set(product_name, component_name, &environment, secrets).await {
-                Ok(_) => {
-                    trace!("Secrets added successfully");
-                    return Ok(());
-                },
-                Err(e) => {
-                    error!("Failed to add secrets: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-
-        if let Some(matches) = matches.subcommand_matches("remove") {
-            let component_name = matches.get_one::<String>("component_name").unwrap();
-
-            trace!("Removing secrets from vault");
-            
-            match vault.lock().unwrap().remove(product_name, component_name, &environment).await {
-                Ok(_) => {
-                    trace!("Secrets removed successfully");
-                    return Ok(());
-                },
-                Err(e) => {
-                    error!("Failed to remove secrets: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-            
-        }
-    }
-
-    if let Some(matches) = matches.subcommand_matches("secrets") {
-        trace!("Executing 'secrets' subcommand");
-
-        if matches.subcommand_matches("init").is_some() {
-            match vault.lock().unwrap().create_vault(product_name).await {
-                Ok(_) => (),
-            Err(e) => {
-                error!("Failed to create vault: {}", e);
-                eprintln!("{}", e);
-                std::process::exit(1);
-                }
-            }
-            trace!("Initializing secrets");
-            match secrets_context.populate(vault.clone(), &environment).await {
-                Ok(_) => {
-                    trace!("Secrets initialized successfully");
-                    return Ok(());
-                },
-                Err(e) => {
-                    error!("Failed to initialize secrets: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-    }
 
     Ok(())
 }
