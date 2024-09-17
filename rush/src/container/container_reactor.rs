@@ -17,7 +17,6 @@ use crate::vault::Vault;
 use colored::Colorize;
 use glob::glob;
 use log::{debug, error, trace, warn};
-use notify::FsEventWatcher;
 use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
 use std::io::Write;
 use std::sync::Arc;
@@ -782,7 +781,7 @@ impl ContainerReactor {
         Ok(())
     }
 
-    fn setup_file_watcher(&self) -> Result<(FsEventWatcher, impl Fn() -> bool), String> {
+    fn setup_file_watcher(&self) -> Result<(RecommendedWatcher, impl Fn() -> bool), String> {
         let (watch_tx, watch_rx) = std::sync::mpsc::channel();
         let mut watcher = match RecommendedWatcher::new(watch_tx, NotifyConfig::default()) {
             Ok(w) => {
