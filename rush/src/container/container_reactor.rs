@@ -810,7 +810,6 @@ impl ContainerReactor {
             if let Ok(event) = watch_rx.try_recv() {
                 match event {
                     Ok(event) => {
-                        println!("Event: {:?}", event);
                         let other_events = watch_rx.try_iter();
                         let all_events = std::iter::once(Ok(event)).chain(other_events);
                         let paths = all_events
