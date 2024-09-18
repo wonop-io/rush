@@ -199,15 +199,36 @@ pub async fn handle_stream<R: AsyncRead + Unpin>(reader: R, sender: Sender<Strin
     let mut reader = io::BufReader::new(reader);
     let mut line = String::new();
 
-    while reader.read_line(&mut line).await.unwrap_or(0) > 0 {
-        if !line.trim().is_empty() {
-            let parts = line.split('\r');
-            let line = parts.last().unwrap_or(&line);
-            sender.send(line.to_string()).unwrap_or_else(|e| {
-                error!("Failed to send line to channel: {}", e);
-            });
+    loop {
+        match reader.read_line(&mut line).await {
+            Ok(0) => {
+                debug!("Reached end of stream");
+                break;
+            }
+            Ok(n) if n > 0 => {
+                debug!("Read {} bytes", n);
+                if !line.trim().is_empty() {
+                    let parts = line.split('\r');
+                    let line = parts.last().unwrap_or(&line);
+                    sender.send(line.to_string()).unwrap_or_else(|e| {
+                        error!("Failed to send line to channel: {}", e);
+                    });
+                }
+                line.clear();
+            }
+            Ok(_) => {
+                debug!("Read 0 bytes");
+                // No bytes read, but not end of stream
+                tokio::task::yield_now().await;
+                continue;
+            }
+            Err(e) => {
+                error!("Error reading line: {}", e);
+                break;
+            }
         }
-        line.clear();
+
+        tokio::task::yield_now().await;
     }
 }
 

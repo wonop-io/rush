@@ -165,6 +165,7 @@ async fn check_version() {
 async fn main() -> io::Result<()> {
     check_version().await;
     
+    // Add for debugging console_subscriber::init();
     setup_environment();
 
     // TODO: Get the rushd root by go levels up until you find ".git" directory

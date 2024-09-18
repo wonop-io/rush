@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
 use tokio::sync::broadcast::Receiver as BroadcastReceiver;
@@ -342,7 +343,7 @@ impl DockerImage {
             _ => (None, None),
         };
 
-        trace!("Launching docker image: {}", self.identifier());
+        debug!("Launching docker image: {}", self.identifier());
         tokio::spawn(async move {
             let spec = task.spec.lock().unwrap().clone();
             let env_guard = DockerImage::create_cross_compile_guard(&spec.build_type, &toolchain);
@@ -407,7 +408,7 @@ impl DockerImage {
                 args.push(command.clone());
             }
 
-            trace!(
+            debug!(
                 "Running docker for {}: {}",
                 spec.component_name,
                 args.join(" ")
@@ -420,6 +421,11 @@ impl DockerImage {
 
             let _ = status_sender.send(Status::InProgress);
             match child_process_result {
+                Err(_) => {
+                    error!("Failed to launch {}.", task.tagged_image_name());
+                    eprintln!("Failed to launch {}.", task.tagged_image_name());
+                    // let _ = status_sender.send(Status::Failed);
+                }                
                 Ok(ref mut child) => {
                     let (stdout, stderr) =
                         (child.stdout.take().unwrap(), child.stderr.take().unwrap());
@@ -440,17 +446,31 @@ impl DockerImage {
                     // TODO: Make startupcompleted depend on observed output
                     let _ = status_sender.send(Status::StartupCompleted);
                     tokio::spawn(async move {
-                        while let Ok(line) = rx.recv() {
-                            let mut lines = lines_clone.lock().unwrap();
-                            lines.push(line.trim_end().to_string());
-                            let clean_line = line.trim_end().replace(['\r', '\n'], ""); // .replace("\x1B", "")
-                            println!("{} |   {}", formatted_label_clone, clean_line);
+                        loop {
+                            match rx.try_recv() {
+                                Ok(line) => {
+                                    let mut lines = lines_clone.lock().unwrap();
+                                    lines.push(line.trim_end().to_string());
+                                    let clean_line = line.trim_end().replace(['\r', '\n'], "");
+                                    println!("{} |   {}", formatted_label_clone, clean_line);
+                                    std::io::stdout().flush().unwrap();
+                                }
+                                Err(mpsc::TryRecvError::Empty) => {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                                }
+                                Err(mpsc::TryRecvError::Disconnected) => {
+                                    break;
+                                }
+                            }
                         }
                     });
-
+                    println!("Waiting for process '{}' to finish", spec.component_name);
                     tokio::select! {
                         _ = futures::future::join_all(vec![stdout_task, stderr_task]) => {
-
+                            debug!("Process finished");
+                        }
+                        _ = child.wait() => {
+                            debug!("Process finished");
                         }
                         _ =  terminate_receiver.recv() => {
                             let _ = status_sender.send(Status::Terminate);
@@ -488,9 +508,6 @@ impl DockerImage {
                                 .white()
                         );
                     }
-                }
-                Err(_) => {
-                    eprintln!("Failed to launch {}.", task.tagged_image_name());
                 }
             }
 
