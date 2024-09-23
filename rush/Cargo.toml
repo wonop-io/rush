@@ -1,6 +1,6 @@
 [package]
 name = "rush-cli"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 authors = ["Troels F. Rønnow <wonop@wonop.com>"]
 description = "Rush Deployment: A tool to bring the development experience as close to the production experience as possible."
