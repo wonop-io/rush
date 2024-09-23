@@ -124,7 +124,7 @@ impl ContainerReactor {
         }
     }
 
-    pub fn services(&self) -> &HashMap<String, ServiceSpec> {
+    pub fn services(&self) -> &ServicesSpec {
         &self.services
     }
 
@@ -276,7 +276,7 @@ impl ContainerReactor {
             }
         }
 
-        let mut services = HashMap::new();
+        let mut services: HashMap<String, Vec<ServiceSpec>> = HashMap::new();
         for image in &images {
             if let Some(port) = image.port() {
                 if let Some(target_port) = image.target_port() {
@@ -285,8 +285,12 @@ impl ContainerReactor {
                         port,
                         target_port,
                         mount_point: image.spec().mount_point.clone(),
+                        domain: image.spec().domain.clone(),
                     };
-                    services.insert(image.component_name(), svc_spec);
+                    services
+                        .entry(image.spec().domain.clone())
+                        .or_insert_with(Vec::new)
+                        .push(svc_spec);
                 }
             }
         }

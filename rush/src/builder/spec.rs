@@ -42,6 +42,7 @@ pub struct ComponentBuildSpec {
     // Environment and secrets from the component
     pub dotenv: HashMap<String, String>,
     pub dotenv_secrets: HashMap<String, String>,
+    pub domain: String,
 }
 
 impl ComponentBuildSpec {
@@ -243,7 +244,11 @@ impl ComponentBuildSpec {
             }
             None => HashMap::new(),
         };
-
+        let subdomain = yaml_section
+            .get("subdomain")
+            .map(|v| Self::process_template_string(v.as_str().unwrap(), &variables));
+        let domain = config
+            .domain(subdomain.clone());
         ComponentBuildSpec {
             build_type,
             build: yaml_section
@@ -275,9 +280,7 @@ impl ComponentBuildSpec {
             mount_point: yaml_section
                 .get("mount_point")
                 .map(|v| Self::process_template_string(v.as_str().unwrap(), &variables)),
-            subdomain: yaml_section
-                .get("subdomain")
-                .map(|v| Self::process_template_string(v.as_str().unwrap(), &variables)),
+            subdomain,
             artefacts: yaml_section.get("artefacts").map(|v| {
                 v.as_mapping()
                     .unwrap()
@@ -372,6 +375,7 @@ impl ComponentBuildSpec {
             tagged_image_name: None,
             dotenv,
             dotenv_secrets,
+            domain
         }
     }
 
@@ -426,9 +430,16 @@ impl ComponentBuildSpec {
             BuildType::Ingress { components, .. } => {
                 let services = services
                     .iter()
-                    .filter(|(k, _)| components.contains(k))
-                    .map(|(k, v)| (k.clone(), v.clone()));
-                let services: HashMap<String, ServiceSpec> = services.into_iter().collect();
+                    .map(|(domain, service_specs)| {
+                        let filtered_service_specs: Vec<ServiceSpec> = service_specs
+                            .iter()
+                            .filter(|service_spec| components.contains(&service_spec.name))
+                            .cloned()
+                            .collect();
+                        (domain.clone(), filtered_service_specs)
+                    })
+                    .filter(|(_, service_specs)| !service_specs.is_empty())
+                    .collect();
                 (None, Some(services))
             }
             BuildType::PureDockerImage { .. } => (None, None),
@@ -440,6 +451,8 @@ impl ComponentBuildSpec {
         let product_name = self.product_name.clone();
         let product_uri = slug::slugify(&product_name);
 
+
+
         BuildContext {
             toolchain: (*toolchain).clone(),
             build_type: self.build_type.clone(),
@@ -449,7 +462,7 @@ impl ComponentBuildSpec {
             rust_target: toolchain.target().to_rust_target(),
             services: services.unwrap_or_default(),
             environment: self.config.environment().to_string(),
-            domain: self.config.domain().to_string(),
+            domain: self.domain.clone(),
             product_name,
             product_uri,
             component: self.component_name.clone(),
