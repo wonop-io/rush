@@ -1,3 +1,5 @@
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
 use tokio::sync::broadcast::Receiver as BroadcastReceiver;
 
@@ -11,7 +13,7 @@ use crate::vault::Vault;
 use crate::Directory;
 use crate::{toolchain::ToolchainContext, utils::DockerCrossCompileGuard};
 use colored::Colorize;
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -32,6 +34,7 @@ pub struct DockerImage {
     tag: Option<String>,
     depends_on: Vec<String>,
     context_dir: Option<String>,
+    should_rebuild: bool,
 
     // Derived from Dockerfile
     exposes: Vec<String>,
@@ -51,9 +54,19 @@ impl DockerImage {
     pub fn depends_on(&self) -> &Vec<String> {
         &self.depends_on
     }
+
     pub fn image_name(&self) -> &str {
         &self.image_name
     }
+
+    pub fn should_rebuild(&self) -> bool {
+        self.should_rebuild
+    }
+
+    pub fn set_should_rebuild(&mut self, should_rebuild: bool) {
+        self.should_rebuild = should_rebuild;
+    }
+
     pub fn set_network_name(&mut self, network_name: String) {
         debug!("Setting network name to: {}", network_name);
         self.network_name = Some(network_name);
@@ -191,6 +204,7 @@ impl DockerImage {
             repo: None, // Assuming repo is not part of ComponentBuildSpec and defaults to None
             depends_on,
             context_dir,
+            should_rebuild: true,
             tag,
             exposes,
             config,
@@ -329,7 +343,7 @@ impl DockerImage {
             _ => (None, None),
         };
 
-        trace!("Launching docker image: {}", self.identifier());
+        debug!("Launching docker image: {}", self.identifier());
         tokio::spawn(async move {
             let spec = task.spec.lock().unwrap().clone();
             let env_guard = DockerImage::create_cross_compile_guard(&spec.build_type, &toolchain);
@@ -394,7 +408,7 @@ impl DockerImage {
                 args.push(command.clone());
             }
 
-            trace!(
+            debug!(
                 "Running docker for {}: {}",
                 spec.component_name,
                 args.join(" ")
@@ -407,6 +421,11 @@ impl DockerImage {
 
             let _ = status_sender.send(Status::InProgress);
             match child_process_result {
+                Err(_) => {
+                    error!("Failed to launch {}.", task.tagged_image_name());
+                    eprintln!("Failed to launch {}.", task.tagged_image_name());
+                    // let _ = status_sender.send(Status::Failed);
+                }                
                 Ok(ref mut child) => {
                     let (stdout, stderr) =
                         (child.stdout.take().unwrap(), child.stderr.take().unwrap());
@@ -427,17 +446,31 @@ impl DockerImage {
                     // TODO: Make startupcompleted depend on observed output
                     let _ = status_sender.send(Status::StartupCompleted);
                     tokio::spawn(async move {
-                        while let Ok(line) = rx.recv() {
-                            let mut lines = lines_clone.lock().unwrap();
-                            lines.push(line.trim_end().to_string());
-                            let clean_line = line.trim_end().replace(['\r', '\n'], ""); // .replace("\x1B", "")
-                            println!("{} |   {}", formatted_label_clone, clean_line);
+                        loop {
+                            match rx.try_recv() {
+                                Ok(line) => {
+                                    let mut lines = lines_clone.lock().unwrap();
+                                    lines.push(line.trim_end().to_string());
+                                    let clean_line = line.trim_end().replace(['\r', '\n'], "");
+                                    println!("{} |   {}", formatted_label_clone, clean_line);
+                                    std::io::stdout().flush().unwrap();
+                                }
+                                Err(mpsc::TryRecvError::Empty) => {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                                }
+                                Err(mpsc::TryRecvError::Disconnected) => {
+                                    break;
+                                }
+                            }
                         }
                     });
-
+                    println!("Waiting for process '{}' to finish", spec.component_name);
                     tokio::select! {
                         _ = futures::future::join_all(vec![stdout_task, stderr_task]) => {
-
+                            debug!("Process finished");
+                        }
+                        _ = child.wait() => {
+                            debug!("Process finished");
                         }
                         _ =  terminate_receiver.recv() => {
                             let _ = status_sender.send(Status::Terminate);
@@ -475,9 +508,6 @@ impl DockerImage {
                                 .white()
                         );
                     }
-                }
-                Err(_) => {
-                    eprintln!("Failed to launch {}.", task.tagged_image_name());
                 }
             }
 
@@ -662,6 +692,39 @@ impl DockerImage {
         self.push().await
     }
 
+    pub fn is_any_file_in_context(&self, file_paths: &Vec<PathBuf>) -> bool {
+        let spec = self.spec.lock().unwrap();
+        let dockerfile_path = match &spec.build_type {
+            BuildType::TrunkWasm { dockerfile_path, .. } |
+            BuildType::RustBinary { dockerfile_path, .. } |
+            BuildType::Book { dockerfile_path, .. } |
+            BuildType::Script { dockerfile_path, .. } |
+            BuildType::Ingress { dockerfile_path, .. } => {
+                std::fs::canonicalize(dockerfile_path).expect(format!("Failed to get absolute dockerfile path for {:?}", dockerfile_path).as_str())
+            },
+            _ => return false, // If there's no Dockerfile, the files can't be in context
+        };
+
+        let dockerfile_dir = dockerfile_path
+            .parent()
+            .expect("Failed to get dockerfile directory");
+
+        let context_dir = match &self.context_dir {
+            Some(context_dir) => std::fs::canonicalize(dockerfile_dir.join(context_dir))
+                .expect("Failed to get absolute context directory path"),
+            None => dockerfile_dir.to_path_buf(),
+        };
+
+        file_paths.iter().any(|file_path| {
+            if let Ok(absolute_file_path) = std::fs::canonicalize(file_path) {
+                absolute_file_path.starts_with(&context_dir) || absolute_file_path.starts_with(dockerfile_dir)
+            } else {
+                false
+            }
+        })
+    }
+
+
     pub async fn build(&self) -> Result<(), String> {
         let toolchain = match &self.toolchain {
             Some(toolchain) => toolchain.clone(),
@@ -737,9 +800,15 @@ impl DockerImage {
 
         // Cross compiling if needed
         if let Some(build_command) = &self.build_script(&ctx) {
+            let start_time = std::time::Instant::now();
             match run_command_in_window(10, "build", "sh", vec!["-c", build_command]).await {
-                Ok(_) => (),
+                Ok(_) => {
+                    let duration = start_time.elapsed();
+                    info!("Build command completed in {:?}", duration);
+                },
                 Err(e) => {
+                    let duration = start_time.elapsed();
+                    debug!("Build command failed after {:?}", duration);
                     return Err(e);
                 }
             }

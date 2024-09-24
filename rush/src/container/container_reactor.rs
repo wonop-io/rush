@@ -27,6 +27,7 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
+use std::path::PathBuf;
 
 // TODO: This ought to split into a spec and a reactor
 pub struct ContainerReactor {
@@ -46,6 +47,15 @@ pub struct ContainerReactor {
     cluster_manifests: K8ClusterManifests,
     infrastructure_repo: InfrastructureRepo,
     vault: Arc<Mutex<dyn Vault + Send>>,
+
+    changed_files: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+enum BreakType {
+    Running,
+    Stopped,
+    Exited,
+    FileChanged
 }
 
 impl ContainerReactor {
@@ -324,6 +334,7 @@ impl ContainerReactor {
             cluster_manifests,
             infrastructure_repo,
             vault,
+            changed_files: Arc::new(Mutex::new(Vec::new())),
         })
         //        Ok(Self::new(&product_name, &product_path, images, toolchain))
     }
@@ -686,14 +697,21 @@ impl ContainerReactor {
             let _guard = Directory::chdir(&self.product_directory);
 
             for image in &mut self.images {
+                if !image.should_rebuild() {
+                    println!("{}  ..... [  {}  ]", image.identifier(), "SKIPPED".yellow().bold());
+                    continue;
+                }
+
                 print!("Building {}  ..... ", image.identifier());
                 std::io::stdout().flush().expect("Failed to flush stdout");
                 match image.build().await {
-                    Ok(_) => println!(
+                    Ok(_) => {
+                        image.set_should_rebuild(false);
+                        println!(
                         "Building {}  ..... [  {}  ]",
                         image.identifier(),
                         "OK".white().bold()
-                    ),
+                    )},
                     Err(e) => {
                         println!(
                             "Building {}  ..... [ {} ]",
@@ -718,13 +736,57 @@ impl ContainerReactor {
     pub async fn launch(&mut self) -> Result<(), String> {
         trace!("Starting launch process");
 
+        self.setup_environment().await?;
+
+        let (_watcher, test_if_files_changed) = self.setup_file_watcher()?;
+
+        let mut break_type = BreakType::Running;
+        while matches!(break_type, BreakType::Running | BreakType::FileChanged) {
+            let changed_files = {
+                let mut changed_files = self.changed_files.lock().unwrap();
+                let ret = changed_files.clone();
+                changed_files.clear();
+                ret
+            };
+
+            // Invalidating cache
+            println!("Changed files: {:#?}", changed_files);
+            {
+                let _guard = Directory::chdir(&self.product_directory);
+
+                for image in &mut self.images {
+                    if image.is_any_file_in_context(&changed_files) {
+                        image.set_should_rebuild(true);
+                    }
+                }
+            }
+            self.kill_and_clean().await;
+            trace!("Cleaned up previous resources");
+
+            if let Err(e) = self.build_and_handle_errors(&mut break_type, &test_if_files_changed).await {
+                continue;
+            }
+
+            let (max_label_length, longest_paths) = self.prepare_for_launch();
+            self.launch_images(max_label_length, longest_paths).await;
+
+            break_type = self.monitor_and_handle_events(&test_if_files_changed).await;
+        }
+
+        self.cleanup().await;
+
+        trace!("Launch process completed");
+        Ok(())
+    }
+
+    async fn setup_environment(&mut self) -> Result<(), String> {
         let _ = self.create_network().await;
         trace!("Created Docker network");
+        Ok(())
+    }
 
-        let mut running = true;
+    fn setup_file_watcher(&self) -> Result<(RecommendedWatcher, impl Fn() -> bool), String> {
         let (watch_tx, watch_rx) = std::sync::mpsc::channel();
-        // Automatically select the best implementation for your platform.
-        // You can also access each implementation directly e.g. INotifyWatcher.
         let mut watcher = match RecommendedWatcher::new(watch_tx, NotifyConfig::default()) {
             Ok(w) => {
                 trace!("Created file watcher");
@@ -736,8 +798,6 @@ impl ContainerReactor {
             }
         };
 
-        // Add a path to be watched. All files and directories at that path and
-        // below will be monitored for changes.
         let path = self.product_directory.clone();
         match watcher.watch(path.as_ref(), RecursiveMode::Recursive) {
             Ok(_) => trace!("Started watching directory: {}", path),
@@ -749,12 +809,12 @@ impl ContainerReactor {
 
         let product_directory = std::path::Path::new(&self.product_directory);
         let gitignore = GitIgnore::new(product_directory);
-        let test_if_files_changed = move || {
+        let changed_files = self.changed_files.clone();
+        Ok((watcher, move || {
             if let Ok(event) = watch_rx.try_recv() {
                 match event {
                     Ok(event) => {
                         let other_events = watch_rx.try_iter();
-
                         let all_events = std::iter::once(Ok(event)).chain(other_events);
                         let paths = all_events
                             .filter_map(|event| {
@@ -770,10 +830,6 @@ impl ContainerReactor {
                             })
                             .flatten()
                             .filter(|path| !gitignore.ignores(path))
-                            .collect::<Vec<_>>();
-
-                        let paths = paths
-                            .into_iter()
                             .filter(|path| path.is_file())
                             .collect::<Vec<_>>();
 
@@ -784,8 +840,10 @@ impl ContainerReactor {
                             .collect::<Vec<_>>();
 
                         if !paths.is_empty() {
+                            let mut changed_files = changed_files.lock().unwrap();
                             for p in paths.iter() {
                                 trace!("File changed: {}", p.display());
+                                changed_files.push(p.to_path_buf());
                             }
                             debug!("Detected file changes: {:#?}", paths);
                             return true;
@@ -797,268 +855,310 @@ impl ContainerReactor {
                 }
             }
             false
-        };
+        }))
+    }
 
-        while running {
-            self.kill_and_clean().await;
-            trace!("Cleaned up previous resources");
+    async fn build_and_handle_errors(&mut self, break_type: &mut BreakType, test_if_files_changed: &impl Fn() -> bool) -> Result<(), String> {
+        match self.build().await {
+            Ok(_) => {
+                trace!("Build completed successfully");
+                Ok(())
+            }
+            Err(e) => {
+                self.handle_build_error(e, break_type, test_if_files_changed).await
+            }
+        }
+    }
 
-            match self.build().await {
-                Ok(_) => trace!("Build completed successfully"),
-                Err(e) => {
-                    let e = e
-                        .replace("error:", &format!("{}:", &"error".red().bold().to_string()))
-                        .replace("error[", &format!("{}[", &"error".red().bold().to_string()))
-                        .replace(
-                            "warning:",
-                            &format!("{}:", &"warning".yellow().bold().to_string()),
-                        );
-                    error!("Build failed: {}", e);
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    async fn handle_build_error(&self, e: String, break_type: &mut BreakType, test_if_files_changed: &impl Fn() -> bool) -> Result<(), String> {
+        let e = e
+            .replace("error:", &format!("{}:", &"error".red().bold().to_string()))
+            .replace("error[", &format!("{}[", &"error".red().bold().to_string()))
+            .replace(
+                "warning:",
+                &format!("{}:", &"warning".yellow().bold().to_string()),
+            );
+        error!("Build failed: {}", e);
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-                    // Waiting for error to get fixed
-                    let ctrl_c = tokio::signal::ctrl_c();
-                    tokio::pin!(ctrl_c);
+        let ctrl_c = tokio::signal::ctrl_c();
+        tokio::pin!(ctrl_c);
 
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-                    loop {
-                        if test_if_files_changed() {
-                            trace!("File change detected. Rebuilding all images.");
-                            let _ = self.terminate_sender.send(());
-                            break;
-                        }
+        loop {
+            if test_if_files_changed() {
+                trace!("File change detected. Rebuilding all images.");
+                let _ = self.terminate_sender.send(());
+                *break_type = BreakType::FileChanged;
+                break;
+            }
 
-                        tokio::select! {
-                            _ = &mut ctrl_c => {
-                                trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
-                                let _ = self.terminate_sender.send(());
-                                running = false;
-                                break;
-                            }
-                            _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
-                                // Status update loop
-                            }
-                        }
-                    }
-
-                    continue;
+            tokio::select! {
+                _ = &mut ctrl_c => {
+                    trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
+                    let _ = self.terminate_sender.send(());
+                    *break_type = BreakType::Stopped;
+                    break;
+                }
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
+                    // Status update loop
                 }
             }
-
-            let max_label_length = self
-                .images
-                .iter()
-                .map(|image| image.component_name().len())
-                .max()
-                .unwrap_or_default();
-            self.images_by_id = HashMap::new();
-            self.statuses_receivers = HashMap::new();
-            self.statuses = HashMap::new();
-            self.handles = HashMap::new();
-
-            let dependency_graph = self
-                .images
-                .iter()
-                .map(|image| (image.image_name().to_string(), image.depends_on().clone()))
-                .collect::<HashMap<String, Vec<String>>>();
-
-            // Computing the deploy priority
-            // TODO: Suboptimal algorithm - can be improved
-            let mut longest_paths = HashMap::new();
-            for (name, _) in &dependency_graph {
-                let mut stack = vec![(name, 1)]; // (current node, current path length)
-                let mut visited = HashSet::new();
-                let mut max_length = 1;
-
-                while let Some((current, path_len)) = stack.pop() {
-                    visited.insert(current);
-                    max_length = max_length.max(path_len);
-
-                    if let Some(deps) = dependency_graph.get(current) {
-                        for dep in deps {
-                            if !visited.contains(dep) {
-                                stack.push((dep, path_len + 1));
-                            }
-                        }
-                    }
-                }
-
-                longest_paths.insert(name.clone(), max_length);
-            }
-
-            let mut jobs = self
-                .images
-                .iter_mut()
-                .enumerate()
-                .map(move |(id, image)| {
-                    let priority = longest_paths
-                        .get(image.image_name())
-                        .cloned()
-                        .unwrap_or_default();
-
-                    (priority, id, image)
-                })
-                .collect::<Vec<_>>();
-            jobs.sort_by(|a, b| a.0.cmp(&b.0)); // Sort jobs by priority in descending order
-
-            for (priority, image_id, image) in jobs {
-                trace!("Starting {} with priority {}", image.image_name(), priority);
-                let (status_sender, status_receiver) = mpsc::channel();
-                self.images_by_id.insert(image_id, image.clone());
-                self.statuses_receivers.insert(image_id, status_receiver);
-                self.statuses
-                    .insert(image.component_name(), Status::Awaiting);
-                let handle = image.launch(
-                    max_label_length,
-                    self.terminate_receiver.resubscribe(),
-                    status_sender,
-                );
-                self.handles.insert(image_id, handle);
-
-                // TODO: Hack instead of waiting for the image to declare ready
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            }
-
-            let mut all_finished = false;
-            let mut stopping = false;
-            let break_calls = 0;
-            let mut stop_time: Option<std::time::Instant> = None;
-
-            let ctrl_c = tokio::signal::ctrl_c();
-            tokio::pin!(ctrl_c);
-
-            loop {
-                tokio::select! {
-                    _ = &mut ctrl_c => {
-                        trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
-                        println!("******************************************************************");
-                        println!("******************************************************************");
-                        println!("*****************       GRACEFUL SHUTDOWN        *****************");
-                        println!("******************************************************************");
-                        println!("******************************************************************");
-
-
-                        let _ = self.terminate_sender.send(());
-                        self.update_image_statuses();
-
-                        stop_time = Some(std::time::Instant::now());
-                        running = false;
-                        stopping = true;
-                        break;
-                    }
-                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
-                        if !stopping && test_if_files_changed() {
-                            trace!("File change detected. Rebuilding all images.");
-                            let _ = self.terminate_sender.send(());
-                            stop_time = Some(std::time::Instant::now());
-                            stopping = true;
-                        }
-                        self.update_image_statuses();
-
-                        all_finished = self.statuses.values().all(|status| matches!(status, Status::Finished(_)));
-                        if all_finished || stopping {
-                            break;
-                        }
-
-                        let any_finished = self.statuses.values().any(|status| matches!(status, Status::Finished(_)));
-                        if any_finished {
-                            running = false;
-                            stopping = true;
-                            warn!("Proceeding with forced shutdown due to image completion...");
-                            self.kill_and_clean().await;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(1000));
-            let ctrl_c = tokio::signal::ctrl_c();
-            tokio::pin!(ctrl_c);
-            while running && !all_finished {
-                tokio::select! {
-                    _ = &mut ctrl_c => {
-                        trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
-                        let _ = self.terminate_sender.send(());
-                        self.update_image_statuses();
-                        println!("******************************************************************");
-                        println!("******************************************************************");
-                        println!("*****************       FORCEFUL SHUTDOWN        *****************");
-                        println!("******************************************************************");
-                        println!("******************************************************************");
-
-                        warn!("Proceeding with forced shutdown...");
-                        self.kill_and_clean().await;
-
-                        tokio::time::sleep(tokio::time::Duration::from_millis(2000));
-                        break;
-                    }
-                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
-                        if !stopping && test_if_files_changed() {
-                            trace!("File change detected. Rebuilding all images.");
-                            let _ = self.terminate_sender.send(());
-                            stop_time = Some(std::time::Instant::now());
-                            stopping = true;
-                        }
-                        self.update_image_statuses();
-
-                        all_finished = self.statuses.values().all(|status| matches!(status, Status::Finished(_)));
-
-                        if all_finished {
-                            break;
-                        }
-
-
-                        if stopping {
-                            if let Some(stop_time) = stop_time {
-                                if stop_time.elapsed() >= std::time::Duration::from_secs(5) {
-                                    error!("Shutdown timeout reached. You might have a process that does not respond to SIGTERM.");
-                                    println!("Current process statuses:");
-                                    for (component_name, status) in &self.statuses {
-                                        let status_str = match status {
-                                            Status::Awaiting => "Awaiting".yellow(),
-                                            Status::InProgress => "In Progress".blue(),
-                                            Status::StartupCompleted => "Startup Completed".green(),
-                                            Status::Reinitializing => "Reinitializing".cyan(),
-                                            Status::Finished(code) => format!("Finished ({})", code).white(),
-                                            Status::Terminate => "Terminating".red(),
-                                        };
-                                        println!("  {}: {}", component_name, status_str);
-                                    }
-                                    println!("Proceeding with forced shutdown...");
-                                    self.kill_and_clean().await;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            trace!("Joining all handles");
-            // Wait for all images to complete concurrently
-            loop {
-                tokio::select! {
-                    _ = futures::future::join_all(self.handles.values_mut()) => {
-                        trace!("All handles joined successfully");
-                        break;
-                    },
-                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => {
-                        warn!("Waiting for processes to quit ...");
-                        let _ = self.terminate_sender.send(());
-                        self.kill_all_images().await;
-                    },
-                }
-            }
-            self.handles.clear();
         }
 
+        Err("Build failed".to_string())
+    }
+
+    fn prepare_for_launch(&mut self) -> (usize, HashMap<String, usize>) {
+        let max_label_length = self
+            .images
+            .iter()
+            .map(|image| image.component_name().len())
+            .max()
+            .unwrap_or_default();
+        self.images_by_id = HashMap::new();
+        self.statuses_receivers = HashMap::new();
+        self.statuses = HashMap::new();
+        self.handles = HashMap::new();
+
+        let dependency_graph = self
+            .images
+            .iter()
+            .map(|image| (image.image_name().to_string(), image.depends_on().clone()))
+            .collect::<HashMap<String, Vec<String>>>();
+
+        let longest_paths = self.compute_longest_paths(&dependency_graph);
+        (max_label_length, longest_paths)
+    }
+
+    fn compute_longest_paths(&self, dependency_graph: &HashMap<String, Vec<String>>) -> HashMap<String, usize> {
+        let mut longest_paths = HashMap::new();
+        for (name, _) in dependency_graph {
+            let mut stack = vec![(name, 1)];
+            let mut visited = HashSet::new();
+            let mut max_length = 1;
+
+            while let Some((current, path_len)) = stack.pop() {
+                visited.insert(current);
+                max_length = max_length.max(path_len);
+
+                if let Some(deps) = dependency_graph.get(current) {
+                    for dep in deps {
+                        if !visited.contains(dep) {
+                            stack.push((dep, path_len + 1));
+                        }
+                    }
+                }
+            }
+
+            longest_paths.insert(name.clone(), max_length);
+        }
+        longest_paths
+    }
+
+    async fn launch_images(&mut self, max_label_length: usize, longest_paths: HashMap<String, usize>) {
+        let mut jobs = self
+            .images
+            .iter_mut()
+            .enumerate()
+            .map(move |(id, image)| {
+                let priority = longest_paths
+                    .get(image.image_name())
+                    .cloned()
+                    .unwrap_or_default();
+
+                (priority, id, image)
+            })
+            .collect::<Vec<_>>();
+        jobs.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (priority, image_id, image) in jobs {
+            println!("\n{}", format!("Starting {} with priority {}", image.image_name(), priority).bold().white());
+            let (status_sender, status_receiver) = mpsc::channel();
+            self.images_by_id.insert(image_id, image.clone());
+            self.statuses_receivers.insert(image_id, status_receiver);
+            self.statuses
+                .insert(image.component_name(), Status::Awaiting);
+            let handle = image.launch(
+                max_label_length,
+                self.terminate_receiver.resubscribe(),
+                status_sender,
+            );
+            self.handles.insert(image_id, handle);
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        }
+    }
+
+    async fn monitor_and_handle_events(&mut self, test_if_files_changed: &impl Fn() -> bool) -> BreakType {
+        let mut all_finished = false;
+        let mut stopping = false;
+        let mut stop_time: Option<std::time::Instant> = None;
+
+        let ctrl_c = tokio::signal::ctrl_c();
+        tokio::pin!(ctrl_c);
+
+        loop {
+            tokio::select! {
+                _ = &mut ctrl_c => {
+                    self.handle_termination_signal(&mut stopping, &mut stop_time).await;
+                    break;
+                }
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
+                    if self.handle_file_changes(test_if_files_changed, &mut stopping, &mut stop_time).await {
+                        return BreakType::FileChanged;
+                    }
+                    self.update_image_statuses();
+
+                    all_finished = self.statuses.values().all(|status| matches!(status, Status::Finished(_)));
+                    if all_finished || stopping {
+                        break;
+                    }
+
+                    if self.handle_image_completion().await {
+                        return BreakType::Exited;
+                    }
+                }
+            }
+        }
+
+        println!("Is stopping: {}: ", stopping);
+        if self.handle_shutdown(all_finished, stopping, stop_time, test_if_files_changed).await {
+            BreakType::Running
+        } else {
+            BreakType::Stopped
+        }
+    }
+
+    async fn handle_termination_signal(&mut self, stopping: &mut bool, stop_time: &mut Option<std::time::Instant>) {
+        trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
+        println!("******************************************************************");
+        println!("******************************************************************");
+        println!("*****************       GRACEFUL SHUTDOWN        *****************");
+        println!("******************************************************************");
+        println!("******************************************************************");
+
+        let _ = self.terminate_sender.send(());
+        self.update_image_statuses();
+
+        *stop_time = Some(std::time::Instant::now());
+        *stopping = true;
+    }
+
+    async fn handle_file_changes(&mut self, test_if_files_changed: &impl Fn() -> bool, stopping: &mut bool, stop_time: &mut Option<std::time::Instant>) -> bool {
+        if !*stopping && test_if_files_changed() {
+            trace!("File change detected. Rebuilding all images.");
+            let _ = self.terminate_sender.send(());
+            *stop_time = Some(std::time::Instant::now());
+            *stopping = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    async fn handle_image_completion(&mut self) -> bool {
+        let any_finished = self.statuses.values().any(|status| matches!(status, Status::Finished(_)));
+        if any_finished {
+            warn!("Proceeding with forced shutdown due to image completion...");
+            self.kill_and_clean().await;
+            true
+        } else {
+            false
+        }
+    }
+
+    async fn handle_shutdown(&mut self, all_finished: bool, stopping: bool, stop_time: Option<std::time::Instant>, test_if_files_changed: &impl Fn() -> bool) -> bool {
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        let ctrl_c = tokio::signal::ctrl_c();
+        tokio::pin!(ctrl_c);
+        while !all_finished {
+            tokio::select! {
+                _ = &mut ctrl_c => {
+                    self.handle_forceful_shutdown().await;
+                    return false;
+                }
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
+                    if self.handle_file_changes(test_if_files_changed, &mut true, &mut Some(std::time::Instant::now())).await {
+                        return true;
+                    }
+                    self.update_image_statuses();
+
+                    if self.statuses.values().all(|status| matches!(status, Status::Finished(_))) {
+                        break;
+                    }
+
+                    if stopping {
+                        if let Some(stop_time) = stop_time {
+                            if stop_time.elapsed() >= std::time::Duration::from_secs(5) {
+                                self.handle_shutdown_timeout().await;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.wait_for_handles().await;
+        !stopping
+    }
+
+    async fn handle_forceful_shutdown(&mut self) {
+        trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
+        let _ = self.terminate_sender.send(());
+        self.update_image_statuses();
+        println!("******************************************************************");
+        println!("******************************************************************");
+        println!("*****************       FORCEFUL SHUTDOWN        *****************");
+        println!("******************************************************************");
+        println!("******************************************************************");
+
+        warn!("Proceeding with forced shutdown...");
+        self.kill_and_clean().await;
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+    }
+
+    async fn handle_shutdown_timeout(&mut self) {
+        error!("Shutdown timeout reached. You might have a process that does not respond to SIGTERM.");
+        println!("Current process statuses:");
+        for (component_name, status) in &self.statuses {
+            let status_str = match status {
+                Status::Awaiting => "Awaiting".yellow(),
+                Status::InProgress => "In Progress".blue(),
+                Status::StartupCompleted => "Startup Completed".green(),
+                Status::Reinitializing => "Reinitializing".cyan(),
+                Status::Finished(code) => format!("Finished ({})", code).white(),
+                Status::Terminate => "Terminating".red(),
+            };
+            println!("  {}: {}", component_name, status_str);
+        }
+        println!("Proceeding with forced shutdown...");
+        self.kill_and_clean().await;
+    }
+
+    async fn wait_for_handles(&mut self) {
+        trace!("Joining all handles");
+        loop {
+            tokio::select! {
+                _ = futures::future::join_all(self.handles.values_mut()) => {
+                    trace!("All handles joined successfully");
+                    break;
+                },
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => {
+                    warn!("Waiting for processes to quit ...");
+                    let _ = self.terminate_sender.send(());
+                    self.kill_all_images().await;
+                },
+            }
+        }
+        self.handles.clear();
+    }
+
+    async fn cleanup(&mut self) {
         let _ = self.delete_network().await;
         trace!("Deleted Docker network");
-
-        trace!("Launch process completed");
-        Ok(())
     }
 
     async fn kill_all_images(&mut self) {

@@ -1,2 +1,2 @@
 cd {{ location }} || exit
-wasm-trunk build --release
+CARGO_TARGET_DIR=./target wasm-trunk build --release 
