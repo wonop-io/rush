@@ -5,6 +5,13 @@ use tera::Context;
 use tera::Tera;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DomainContext {
+    pub product_name: String,
+    pub product_uri: String,
+    pub subdomain: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     product_name: String,
     product_uri: String,
@@ -13,7 +20,6 @@ pub struct Config {
     network_name: String,
     environment: String,
     domain_template: String,
-    domain: String,
     kube_context: String,
     infrastructure_repository: String,
     docker_registry: String,
@@ -58,8 +64,17 @@ impl Config {
     pub fn docker_registry(&self) -> &str {
         &self.docker_registry
     }
-    pub fn domain(&self) -> &str {
-        &self.domain
+    pub fn domain(&self, subdomain: Option<String>) -> String {
+        let ctx = DomainContext {
+            product_name: self.product_name.clone(),
+            product_uri: self.product_uri.clone(),
+            subdomain,
+        };
+        let context = Context::from_serialize(&ctx).expect("Could not create config context");
+        match Tera::one_off(&self.domain_template, &context, false) {
+            Ok(d) => d,
+            Err(e) => panic!("Could not render domain template: {}", e),
+        }
     }
     pub fn root_path(&self) -> &str {
         &self.root_path
@@ -192,7 +207,7 @@ impl Config {
         let network_name = format!("net-{}", product_uri);
         trace!("Product dirname: {}", product_dirname);
 
-        let mut ret = Self {
+        let ret = Self {
             root_path: root_path.to_string(),
             product_name,
             product_uri,
@@ -201,7 +216,6 @@ impl Config {
             network_name,
             environment,
             domain_template: domain_template.to_string(),
-            domain: "".to_string(),
             kube_context,
             infrastructure_repository,
             docker_registry,
@@ -209,11 +223,7 @@ impl Config {
             k8s_encoder,
         };
 
-        let context = Context::from_serialize(&ret).expect("Could not create config context");
-        ret.domain = match Tera::one_off(&domain_template, &context, false) {
-            Ok(d) => d,
-            Err(e) => panic!("Could not render domain template: {}", e),
-        };
+
 
         Ok(Arc::new(ret))
     }

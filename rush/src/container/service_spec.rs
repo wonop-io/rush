@@ -7,6 +7,7 @@ pub struct ServiceSpec {
     pub port: u16,
     pub target_port: u16,
     pub mount_point: Option<String>,
+    pub domain: String,
 }
 
-pub type ServicesSpec = HashMap<String, ServiceSpec>;
+pub type ServicesSpec = HashMap<String, Vec<ServiceSpec>>;
