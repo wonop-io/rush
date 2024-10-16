@@ -425,7 +425,7 @@ impl DockerImage {
                     error!("Failed to launch {}.", task.tagged_image_name());
                     eprintln!("Failed to launch {}.", task.tagged_image_name());
                     // let _ = status_sender.send(Status::Failed);
-                }                
+                }
                 Ok(ref mut child) => {
                     let (stdout, stderr) =
                         (child.stdout.take().unwrap(), child.stderr.take().unwrap());
@@ -456,7 +456,8 @@ impl DockerImage {
                                     std::io::stdout().flush().unwrap();
                                 }
                                 Err(mpsc::TryRecvError::Empty) => {
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(10))
+                                        .await;
                                 }
                                 Err(mpsc::TryRecvError::Disconnected) => {
                                     break;
@@ -695,13 +696,27 @@ impl DockerImage {
     pub fn is_any_file_in_context(&self, file_paths: &Vec<PathBuf>) -> bool {
         let spec = self.spec.lock().unwrap();
         let dockerfile_path = match &spec.build_type {
-            BuildType::TrunkWasm { dockerfile_path, .. } |
-            BuildType::RustBinary { dockerfile_path, .. } |
-            BuildType::Book { dockerfile_path, .. } |
-            BuildType::Script { dockerfile_path, .. } |
-            BuildType::Ingress { dockerfile_path, .. } => {
-                std::fs::canonicalize(dockerfile_path).expect(format!("Failed to get absolute dockerfile path for {:?}", dockerfile_path).as_str())
-            },
+            BuildType::TrunkWasm {
+                dockerfile_path, ..
+            }
+            | BuildType::RustBinary {
+                dockerfile_path, ..
+            }
+            | BuildType::Book {
+                dockerfile_path, ..
+            }
+            | BuildType::Script {
+                dockerfile_path, ..
+            }
+            | BuildType::Ingress {
+                dockerfile_path, ..
+            } => std::fs::canonicalize(dockerfile_path).expect(
+                format!(
+                    "Failed to get absolute dockerfile path for {:?}",
+                    dockerfile_path
+                )
+                .as_str(),
+            ),
             _ => return false, // If there's no Dockerfile, the files can't be in context
         };
 
@@ -717,13 +732,13 @@ impl DockerImage {
 
         file_paths.iter().any(|file_path| {
             if let Ok(absolute_file_path) = std::fs::canonicalize(file_path) {
-                absolute_file_path.starts_with(&context_dir) || absolute_file_path.starts_with(dockerfile_dir)
+                absolute_file_path.starts_with(&context_dir)
+                    || absolute_file_path.starts_with(dockerfile_dir)
             } else {
                 false
             }
         })
     }
-
 
     pub async fn build(&self) -> Result<(), String> {
         let toolchain = match &self.toolchain {
@@ -801,11 +816,12 @@ impl DockerImage {
         // Cross compiling if needed
         if let Some(build_command) = &self.build_script(&ctx) {
             let start_time = std::time::Instant::now();
+            println!("{}", build_command);
             match run_command_in_window(10, "build", "sh", vec!["-c", build_command]).await {
                 Ok(_) => {
                     let duration = start_time.elapsed();
                     info!("Build command completed in {:?}", duration);
-                },
+                }
                 Err(e) => {
                     let duration = start_time.elapsed();
                     debug!("Build command failed after {:?}", duration);

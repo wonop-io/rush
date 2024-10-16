@@ -37,6 +37,7 @@ pub struct ComponentBuildSpec {
     pub config: Arc<Config>,
     pub variables: Arc<Variables>,
     pub services: Option<Arc<ServicesSpec>>,
+    pub domains: Option<Arc<HashMap<String, String>>>,
     pub tagged_image_name: Option<String>,
 
     // Environment and secrets from the component
@@ -48,6 +49,10 @@ pub struct ComponentBuildSpec {
 impl ComponentBuildSpec {
     pub fn set_services(&mut self, services: Arc<ServicesSpec>) {
         self.services = Some(services);
+    }
+
+    pub fn set_domains(&mut self, domains: Arc<HashMap<String, String>>) {
+        self.domains = Some(domains);
     }
 
     pub fn set_tagged_image_name(&mut self, tagged_image_name: String) {
@@ -247,8 +252,7 @@ impl ComponentBuildSpec {
         let subdomain = yaml_section
             .get("subdomain")
             .map(|v| Self::process_template_string(v.as_str().unwrap(), &variables));
-        let domain = config
-            .domain(subdomain.clone());
+        let domain = config.domain(subdomain.clone());
         ComponentBuildSpec {
             build_type,
             build: yaml_section
@@ -375,7 +379,8 @@ impl ComponentBuildSpec {
             tagged_image_name: None,
             dotenv,
             dotenv_secrets,
-            domain
+            domain,
+            domains: None,
         }
     }
 
@@ -422,6 +427,11 @@ impl ComponentBuildSpec {
             .services
             .clone()
             .expect("No services found for docker image");
+        let domains = (*self
+            .domains
+            .clone()
+            .expect("No services found for docker image"))
+        .clone();
         let (location, services) = match &self.build_type {
             BuildType::TrunkWasm { location, .. } => (Some(location.clone()), None),
             BuildType::RustBinary { location, .. } => (Some(location.clone()), None),
@@ -451,8 +461,6 @@ impl ComponentBuildSpec {
         let product_name = self.product_name.clone();
         let product_uri = slug::slugify(&product_name);
 
-
-
         BuildContext {
             toolchain: (*toolchain).clone(),
             build_type: self.build_type.clone(),
@@ -469,6 +477,8 @@ impl ComponentBuildSpec {
             docker_registry: self.config.docker_registry().to_string(),
             image_name: self.tagged_image_name.clone().unwrap_or_default(),
             secrets,
+            domains,
+            env: self.dotenv.clone(),
         }
     }
 }

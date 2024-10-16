@@ -1,39 +1,42 @@
-mod container;
-mod utils;
-mod toolchain;
-mod cluster;
-mod builder;
-mod gitignore;
-mod vault;
-mod dotenv_utils;
-mod public_env_defs;
+#[macro_use]
+extern crate tera;
 
-use crate::toolchain::Platform;
-use clap::{arg, Command,Arg};
-use tokio::io;
-use std::{path::Path, sync::Arc};
+mod builder;
+mod cluster;
+mod container;
+mod dotenv_utils;
+mod gitignore;
+mod public_env_defs;
+mod toolchain;
+mod utils;
+mod vault;
+
+use crate::builder::Config;
+use crate::cluster::{K8Encoder, NoopEncoder, SealedSecretsEncoder};
 use crate::container::ContainerReactor;
-use crate::utils::Directory;
+use crate::public_env_defs::PublicEnvironmentDefinitions;
+use crate::toolchain::Platform;
 use crate::toolchain::ToolchainContext;
+use crate::utils::Directory;
+use crate::vault::Base64SecretsEncoder;
+use crate::vault::SecretsDefinitions;
+use clap::{arg, Arg, Command};
 use cluster::Minikube;
 use colored::Colorize;
-use crate::builder::Config;
+use log::{debug, error, info, trace};
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;
-use serde::Deserialize;
-use std::collections::HashMap;
-use log::{info, error, debug, trace};
-use vault::{OnePassword, Vault, DotenvVault};
 use std::sync::Mutex;
-use crate::vault::SecretsDefinitions;
-use crate::public_env_defs::PublicEnvironmentDefinitions;
-use crate::vault::Base64SecretsEncoder;
-use crate::cluster::{SealedSecretsEncoder, NoopEncoder, K8Encoder};
+use std::{path::Path, sync::Arc};
+use tokio::io;
+use vault::{DotenvVault, OnePassword, Vault};
 
 fn setup_environment() {
     trace!("Setting up environment");
-    
+
     // Set the RUSHD_ROOT environment variable
     let binding = env::current_dir().unwrap();
     let rushd_root = binding
@@ -63,7 +66,7 @@ fn setup_environment() {
     // Set toolchain environment variables for macOS ARM architecture
     if cfg!(target_os = "macos") && cfg!(target_arch = "arm") {
         trace!("Setting up toolchain for macOS ARM architecture");
-        
+
         let toolchain_base = "/opt/homebrew/Cellar/x86_64-unknown-linux-gnu";
         let toolchain_path = std::fs::read_dir(toolchain_base)
             .expect("Failed to read toolchain directory")
@@ -76,22 +79,47 @@ fn setup_environment() {
         let toolchain_path = format!("{}/", toolchain_path);
         debug!("Using toolchain path: {}", toolchain_path);
 
-        env::set_var("CC", format!("{}x86_64-unknown-linux-gnu-gcc", toolchain_path));
-        env::set_var("CXX", format!("{}x86_64-unknown-linux-gnu-g++", toolchain_path));
-        env::set_var("AR", format!("{}x86_64-unknown-linux-gnu-ar", toolchain_path));
-        env::set_var("RANLIB", format!("{}x86_64-unknown-linux-gnu-ranlib", toolchain_path));
-        env::set_var("NM", format!("{}x86_64-unknown-linux-gnu-nm", toolchain_path));
-        env::set_var("STRIP", format!("{}x86_64-unknown-linux-gnu-strip", toolchain_path));
-        env::set_var("OBJDUMP", format!("{}x86_64-unknown-linux-gnu-objdump", toolchain_path));
-        env::set_var("OBJCOPY", format!("{}x86_64-unknown-linux-gnu-objcopy", toolchain_path));
-        env::set_var("LD", format!("{}x86_64-unknown-linux-gnu-ld", toolchain_path));
+        env::set_var(
+            "CC",
+            format!("{}x86_64-unknown-linux-gnu-gcc", toolchain_path),
+        );
+        env::set_var(
+            "CXX",
+            format!("{}x86_64-unknown-linux-gnu-g++", toolchain_path),
+        );
+        env::set_var(
+            "AR",
+            format!("{}x86_64-unknown-linux-gnu-ar", toolchain_path),
+        );
+        env::set_var(
+            "RANLIB",
+            format!("{}x86_64-unknown-linux-gnu-ranlib", toolchain_path),
+        );
+        env::set_var(
+            "NM",
+            format!("{}x86_64-unknown-linux-gnu-nm", toolchain_path),
+        );
+        env::set_var(
+            "STRIP",
+            format!("{}x86_64-unknown-linux-gnu-strip", toolchain_path),
+        );
+        env::set_var(
+            "OBJDUMP",
+            format!("{}x86_64-unknown-linux-gnu-objdump", toolchain_path),
+        );
+        env::set_var(
+            "OBJCOPY",
+            format!("{}x86_64-unknown-linux-gnu-objcopy", toolchain_path),
+        );
+        env::set_var(
+            "LD",
+            format!("{}x86_64-unknown-linux-gnu-ld", toolchain_path),
+        );
         debug!("Toolchain environment variables set for macOS ARM");
     }
 
     trace!("Environment setup complete");
 }
-
-
 
 #[derive(Debug, Deserialize)]
 struct RushdConfig {
@@ -103,18 +131,22 @@ fn load_config() {
     let config_path = "rushd.yaml";
     let mut file = File::open(config_path).expect("Unable to open the config file");
     let mut contents = String::new();
-    file.read_to_string(&mut contents).expect("Unable to read the config file");
+    file.read_to_string(&mut contents)
+        .expect("Unable to read the config file");
 
-    let config: RushdConfig = serde_yaml::from_str(&contents).expect("Error parsing the config file");
+    let config: RushdConfig =
+        serde_yaml::from_str(&contents).expect("Error parsing the config file");
 
     for (key, value) in config.env {
-        debug!("Set environment variable: {}={}", key.clone(), value.clone());
+        debug!(
+            "Set environment variable: {}={}",
+            key.clone(),
+            value.clone()
+        );
         std::env::set_var(key, &value);
     }
     trace!("Configuration loaded successfully");
 }
-
-
 
 #[derive(Deserialize)]
 struct Release {
@@ -135,7 +167,7 @@ async fn check_version() {
         .send()
         .await
         .unwrap();
-    
+
     let release: Release = match resp.json().await {
         Ok(release) => release,
         Err(e) => {
@@ -143,28 +175,32 @@ async fn check_version() {
         }
     };
 
-    let latest_version = release.tag_name.replace("v.", "").replace("v", "").replace(" ", "");
+    let latest_version = release
+        .tag_name
+        .replace("v.", "")
+        .replace("v", "")
+        .replace(" ", "");
     let current_version = semver::Version::parse(version).expect("Failed to parse current version");
-    let latest_version = semver::Version::parse(&latest_version).expect("Failed to parse latest version");
-    
+    let latest_version =
+        semver::Version::parse(&latest_version).expect("Failed to parse latest version");
+
     if latest_version > current_version {
         println!("============================================================");
         println!("* A new version of Rush is available: {}", release.tag_name);
         println!("* Please update it by running:");
-        println!("* ");        
-        println!("* cargo install rush-cli --force");        
-        println!("* ");        
+        println!("* ");
+        println!("* cargo install rush-cli --force");
+        println!("* ");
         println!("============================================================");
         println!();
         std::process::exit(1);
     }
 }
 
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
     check_version().await;
-    
+
     // Add for debugging console_subscriber::init();
     setup_environment();
 
@@ -174,8 +210,8 @@ async fn main() -> io::Result<()> {
     debug!("Changed directory to RUSHD_ROOT: {}", root_dir);
     load_config();
 
-    dotenv::dotenv().ok();    
-    
+    dotenv::dotenv().ok();
+
     let version = env!("CARGO_PKG_VERSION");
     // https://api.github.com/repos/wonop-io/rush/releases
     let matches = Command::new("rush")
@@ -195,14 +231,14 @@ async fn main() -> io::Result<()> {
             )
             .subcommand(Command::new("images")
                 .about("Describes the current images")
-            )            
+            )
             .subcommand(Command::new("services")
                 .about("Describes the current services")
             )
             .subcommand(Command::new("build-script")
                 .about("Describes the current build script")
                 .arg(Arg::new("component_name").required(true))
-            )            
+            )
             .subcommand(Command::new("build-context")
                 .about("Describes the current build context")
                 .arg(Arg::new("component_name").required(true))
@@ -210,10 +246,10 @@ async fn main() -> io::Result<()> {
             .subcommand(Command::new("artefacts")
                 .about("Describes the current artefacts")
                 .arg(Arg::new("component_name").required(true))
-            )            
+            )
             .subcommand(Command::new("k8s")
                 .about("Describes the current k8s")
-            )                        
+            )
         )
         .subcommand(Command::new("dev"))
         .subcommand(Command::new("build"))
@@ -261,13 +297,11 @@ async fn main() -> io::Result<()> {
         env_logger::builder().parse_env("RUST_LOG").init();
         trace!("Log level set to: {}", log_level);
     } else {
-
         // Initialize env_logger
         env_logger::init();
     }
     // Log the start of the application
     trace!("Starting Rush application");
-
 
     let target_arch = if let Some(target_arch) = matches.get_one::<String>("target_arch") {
         target_arch.clone()
@@ -290,16 +324,14 @@ async fn main() -> io::Result<()> {
     };
     info!("Environment: {}", environment);
 
-    
-
-
-    let docker_registry = if let Some(docker_registry) = matches.get_one::<String>("docker_registry") {
+    let docker_registry = if let Some(docker_registry) =
+        matches.get_one::<String>("docker_registry")
+    {
         docker_registry.clone()
     } else {
         std::env::var("DOCKER_REGISTRY").expect("DOCKER_REGISTRY environment variable not found")
     };
     debug!("Docker registry: {}", docker_registry);
-
 
     let product_name = matches.get_one::<String>("product_name").unwrap();
     trace!("Product name: {}", product_name);
@@ -314,10 +346,14 @@ async fn main() -> io::Result<()> {
     };
 
     // Loading secrets definitions and creating the vault
-    let secrets_context = SecretsDefinitions::new(product_name.clone(), &format!("{}/stack.env.secrets.yaml", config.product_path()));
+    let secrets_context = SecretsDefinitions::new(
+        product_name.clone(),
+        &format!("{}/stack.env.secrets.yaml", config.product_path()),
+    );
     let product_path = std::path::PathBuf::from(config.product_path());
-    let vault =  match config.vault_name() {
-        ".env" => Arc::new(Mutex::new(DotenvVault::new(product_path.clone()))) as Arc<Mutex<dyn Vault + Send>>,
+    let vault = match config.vault_name() {
+        ".env" => Arc::new(Mutex::new(DotenvVault::new(product_path.clone())))
+            as Arc<Mutex<dyn Vault + Send>>,
         "1Password" => Arc::new(Mutex::new(OnePassword::new())) as Arc<Mutex<dyn Vault + Send>>,
         _ => panic!("Invalid vault"),
     };
@@ -330,9 +366,12 @@ async fn main() -> io::Result<()> {
         "noop" => Arc::new(NoopEncoder) as Arc<dyn K8Encoder>,
         _ => panic!("Invalid k8s encoder"),
     };
-    
+
     // Creating environment
-    let public_environment = PublicEnvironmentDefinitions::new(product_name.clone(), &format!("{}/stack.env.public.yaml", config.product_path()));
+    let public_environment = PublicEnvironmentDefinitions::new(
+        product_name.clone(),
+        &format!("{}/stack.env.public.yaml", config.product_path()),
+    );
     match public_environment.generate_dotenv_files() {
         Ok(_) => (),
         Err(e) => {
@@ -342,27 +381,34 @@ async fn main() -> io::Result<()> {
         }
     }
 
-
-    let toolchain = Arc::new(ToolchainContext::new(Platform::default(), Platform::new(&target_os, &target_arch)));
+    let toolchain = Arc::new(ToolchainContext::new(
+        Platform::default(),
+        Platform::new(&target_os, &target_arch),
+    ));
     toolchain.setup_env();
     debug!("Toolchain set up");
 
-    
-    let mut reactor = match ContainerReactor::from_product_dir(config.clone(), toolchain.clone(), vault.clone(), secrets_encoder, k8s_encoder) {
+    let mut reactor = match ContainerReactor::from_product_dir(
+        config.clone(),
+        toolchain.clone(),
+        vault.clone(),
+        secrets_encoder,
+        k8s_encoder,
+    ) {
         Ok(reactor) => reactor,
         Err(e) => {
             error!("Failed to create ContainerReactor: {}", e);
             eprintln!("{}", e);
             std::process::exit(1);
         }
-    };   
+    };
 
-    let minikube = Minikube::new(toolchain.clone());     
+    let minikube = Minikube::new(toolchain.clone());
 
     if let Some(matches) = matches.subcommand_matches("describe") {
         trace!("Executing 'describe' subcommand");
         if matches.subcommand_matches("toolchain").is_some() {
-            println!("{:#?}",toolchain);
+            println!("{:#?}", toolchain);
             debug!("Described toolchain");
             std::process::exit(0);
         }
@@ -379,13 +425,18 @@ async fn main() -> io::Result<()> {
             std::process::exit(0);
         }
 
-
-
         if matches.subcommand_matches("build-script").is_some() {
             let component_name = matches.get_one::<String>("component_name").unwrap();
             trace!("Describing build script for component: {}", component_name);
-            let image = reactor.get_image(component_name).expect("Component not found");
-            let secrets = vault.lock().unwrap().get(&product_name, &component_name, &environment).await.unwrap_or_default();
+            let image = reactor
+                .get_image(component_name)
+                .expect("Component not found");
+            let secrets = vault
+                .lock()
+                .unwrap()
+                .get(&product_name, &component_name, &environment)
+                .await
+                .unwrap_or_default();
             let ctx = image.generate_build_context(secrets);
 
             println!("{}", image.build_script(&ctx).unwrap());
@@ -396,8 +447,15 @@ async fn main() -> io::Result<()> {
         if matches.subcommand_matches("build-context").is_some() {
             let component_name = matches.get_one::<String>("component_name").unwrap();
             trace!("Describing build context for component: {}", component_name);
-            let image = reactor.get_image(component_name).expect("Component not found");
-            let secrets = vault.lock().unwrap().get(&product_name, &component_name, &environment).await.unwrap_or_default();
+            let image = reactor
+                .get_image(component_name)
+                .expect("Component not found");
+            let secrets = vault
+                .lock()
+                .unwrap()
+                .get(&product_name, &component_name, &environment)
+                .await
+                .unwrap_or_default();
             let ctx = image.generate_build_context(secrets);
             println!("{:#?}", ctx);
             debug!("Described build context for component: {}", component_name);
@@ -408,13 +466,20 @@ async fn main() -> io::Result<()> {
             let _pop_dir = Directory::chdir(reactor.product_directory());
             let component_name = matches.get_one::<String>("component_name").unwrap();
             trace!("Describing artefacts for component: {}", component_name);
-            let image = reactor.get_image(component_name).expect("Component not found");
-            let secrets = vault.lock().unwrap().get(&product_name, &component_name, &environment).await.unwrap_or_default();
+            let image = reactor
+                .get_image(component_name)
+                .expect("Component not found");
+            let secrets = vault
+                .lock()
+                .unwrap()
+                .get(&product_name, &component_name, &environment)
+                .await
+                .unwrap_or_default();
             let ctx = image.generate_build_context(secrets);
-            for (k,v) in image.spec().build_artefacts() {
+            for (k, v) in image.spec().build_artefacts() {
                 let message = format!("{} {}", "Artefact".green(), k.white());
-                println!("{}\n",&message.bold());
-                
+                println!("{}\n", &message.bold());
+
                 println!("{}\n", v.render(&ctx));
             }
             debug!("Described artefacts for component: {}", component_name);
@@ -425,9 +490,18 @@ async fn main() -> io::Result<()> {
             trace!("Describing Kubernetes manifests");
             let manifests = reactor.cluster_manifests();
             for component in manifests.components() {
-                println!("{} -> {}", component.input_directory().display(), component.output_directory().display());                
+                println!(
+                    "{} -> {}",
+                    component.input_directory().display(),
+                    component.output_directory().display()
+                );
                 let spec = component.spec();
-                let secrets = vault.lock().unwrap().get(&product_name, &spec.component_name, &environment).await.unwrap_or_default();
+                let secrets = vault
+                    .lock()
+                    .unwrap()
+                    .get(&product_name, &spec.component_name, &environment)
+                    .await
+                    .unwrap_or_default();
                 let ctx = spec.generate_build_context(Some(toolchain.clone()), secrets);
                 for manifest in component.manifests() {
                     println!("{}", manifest.render(&ctx));
@@ -437,9 +511,7 @@ async fn main() -> io::Result<()> {
             debug!("Described Kubernetes manifests");
             std::process::exit(0);
         }
-
     }
-
 
     if let Some(matches) = matches.subcommand_matches("minikube") {
         trace!("Executing 'minikube' subcommand");
@@ -449,7 +521,7 @@ async fn main() -> io::Result<()> {
                 Ok(_) => {
                     trace!("Minikube started successfully");
                     return Ok(());
-                },
+                }
                 Err(e) => {
                     error!("Failed to start Minikube: {}", e);
                     eprintln!("{}", e);
@@ -463,37 +535,37 @@ async fn main() -> io::Result<()> {
                 Ok(_) => {
                     trace!("Minikube stopped successfully");
                     return Ok(());
-                },
+                }
                 Err(e) => {
                     error!("Failed to stop Minikube: {}", e);
                     eprintln!("{}", e);
                     std::process::exit(1);
                 }
             }
-        }        
+        }
         if matches.subcommand_matches("delete").is_some() {
             trace!("Deleting Minikube");
             match minikube.delete().await {
                 Ok(_) => {
                     trace!("Minikube deleted successfully");
                     return Ok(());
-                },
+                }
                 Err(e) => {
                     error!("Failed to delete Minikube: {}", e);
                     eprintln!("{}", e);
                     std::process::exit(1);
                 }
             }
-        }               
+        }
     }
 
-    if matches.subcommand_matches("dev").is_some() {        
+    if matches.subcommand_matches("dev").is_some() {
         trace!("Launching development environment");
         match reactor.launch().await {
             Ok(_) => {
                 trace!("Development environment launched successfully");
                 return Ok(());
-            },
+            }
             Err(e) => {
                 error!("Failed to launch development environment: {}", e);
                 eprintln!("{}", e);
@@ -502,12 +574,11 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    
     if matches.subcommand_matches("build").is_some() {
         match reactor.build().await {
             Ok(_) => {
                 return Ok(());
-            },
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1);
@@ -519,14 +590,13 @@ async fn main() -> io::Result<()> {
         match reactor.build_and_push().await {
             Ok(_) => {
                 return Ok(());
-            },
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
         }
     }
-
 
     if let Some(matches) = matches.subcommand_matches("vault") {
         trace!("Executing 'vault' subcommand");
@@ -537,7 +607,7 @@ async fn main() -> io::Result<()> {
                 Ok(_) => {
                     trace!("Vault created successfully");
                     return Ok(());
-                },
+                }
                 Err(e) => {
                     error!("Failed to create vault: {}", e);
                     eprintln!("{}", e);
@@ -550,14 +620,20 @@ async fn main() -> io::Result<()> {
             let component_name = matches.get_one::<String>("component_name").unwrap();
             let secrets = matches.get_one::<String>("secrets").unwrap();
             trace!("Adding: {}", secrets);
-            let secrets: HashMap<String, String> = serde_json::from_str(secrets).expect("Invalid secrets format");
+            let secrets: HashMap<String, String> =
+                serde_json::from_str(secrets).expect("Invalid secrets format");
 
             trace!("Adding secrets to vault");
-            match vault.lock().unwrap().set(product_name, component_name, &environment, secrets).await {
+            match vault
+                .lock()
+                .unwrap()
+                .set(product_name, component_name, &environment, secrets)
+                .await
+            {
                 Ok(_) => {
                     trace!("Secrets added successfully");
                     return Ok(());
-                },
+                }
                 Err(e) => {
                     error!("Failed to add secrets: {}", e);
                     eprintln!("{}", e);
@@ -570,19 +646,23 @@ async fn main() -> io::Result<()> {
             let component_name = matches.get_one::<String>("component_name").unwrap();
 
             trace!("Removing secrets from vault");
-            
-            match vault.lock().unwrap().remove(product_name, component_name, &environment).await {
+
+            match vault
+                .lock()
+                .unwrap()
+                .remove(product_name, component_name, &environment)
+                .await
+            {
                 Ok(_) => {
                     trace!("Secrets removed successfully");
                     return Ok(());
-                },
+                }
                 Err(e) => {
                     error!("Failed to remove secrets: {}", e);
                     eprintln!("{}", e);
                     std::process::exit(1);
                 }
             }
-            
         }
     }
 
@@ -592,10 +672,10 @@ async fn main() -> io::Result<()> {
         if matches.subcommand_matches("init").is_some() {
             match vault.lock().unwrap().create_vault(product_name).await {
                 Ok(_) => (),
-            Err(e) => {
-                error!("Failed to create vault: {}", e);
-                eprintln!("{}", e);
-                std::process::exit(1);
+                Err(e) => {
+                    error!("Failed to create vault: {}", e);
+                    eprintln!("{}", e);
+                    std::process::exit(1);
                 }
             }
             trace!("Initializing secrets");
@@ -603,7 +683,7 @@ async fn main() -> io::Result<()> {
                 Ok(_) => {
                     trace!("Secrets initialized successfully");
                     return Ok(());
-                },
+                }
                 Err(e) => {
                     error!("Failed to initialize secrets: {}", e);
                     eprintln!("{}", e);
@@ -619,19 +699,22 @@ async fn main() -> io::Result<()> {
         std::process::exit(1);
     }
 
-    match reactor.select_kubernetes_context(config.kube_context()).await {
+    match reactor
+        .select_kubernetes_context(config.kube_context())
+        .await
+    {
         Ok(_) => (),
         Err(e) => {
             eprintln!("{}", e);
             std::process::exit(1);
         }
-  }
+    }
 
     if matches.subcommand_matches("rollout").is_some() {
         match reactor.rollout().await {
             Ok(_) => {
                 return Ok(());
-            },
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1);
@@ -643,32 +726,31 @@ async fn main() -> io::Result<()> {
         match reactor.install_manifests().await {
             Ok(_) => {
                 return Ok(());
-            },
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
         }
     }
-    
+
     if matches.subcommand_matches("uninstall").is_some() {
         match reactor.uninstall_manifests().await {
             Ok(_) => {
                 return Ok(());
-            },
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
         }
     }
-    
 
     if matches.subcommand_matches("deploy").is_some() {
         match reactor.deploy().await {
             Ok(_) => {
                 return Ok(());
-            },
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1);
@@ -680,7 +762,7 @@ async fn main() -> io::Result<()> {
         match reactor.apply().await {
             Ok(_) => {
                 return Ok(());
-            },
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1);
@@ -692,7 +774,7 @@ async fn main() -> io::Result<()> {
         match reactor.unapply().await {
             Ok(_) => {
                 return Ok(());
-            },
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1);
@@ -700,7 +782,5 @@ async fn main() -> io::Result<()> {
         }
     }
 
-
     Ok(())
 }
-

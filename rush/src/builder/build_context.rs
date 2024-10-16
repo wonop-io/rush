@@ -24,5 +24,7 @@ pub struct BuildContext {
     pub docker_registry: String,
     pub image_name: String,
 
+    pub domains: HashMap<String, String>,
+    pub env: HashMap<String, String>,
     pub secrets: HashMap<String, String>,
 }
