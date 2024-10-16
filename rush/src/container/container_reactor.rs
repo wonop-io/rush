@@ -19,6 +19,7 @@ use glob::glob;
 use log::{debug, error, trace, warn};
 use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::{
@@ -27,7 +28,6 @@ use std::{
 };
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
-use std::path::PathBuf;
 
 // TODO: This ought to split into a spec and a reactor
 pub struct ContainerReactor {
@@ -55,7 +55,7 @@ enum BreakType {
     Running,
     Stopped,
     Exited,
-    FileChanged
+    FileChanged,
 }
 
 impl ContainerReactor {
@@ -285,7 +285,7 @@ impl ContainerReactor {
                 all_component_specs.push(component_spec);
             }
         }
-
+        log::trace!("Generating service list");
         let mut services: HashMap<String, Vec<ServiceSpec>> = HashMap::new();
         for image in &images {
             if let Some(port) = image.port() {
@@ -304,6 +304,14 @@ impl ContainerReactor {
                 }
             }
         }
+        log::trace!("Generating domain list");
+        let mut component_to_domain = HashMap::new();
+        for component_spec in &mut all_component_specs {
+            let x = component_spec.lock().unwrap();
+            component_to_domain.insert(x.component_name.clone(), x.domain.clone());
+        }
+        let component_to_domain = Arc::new(component_to_domain);
+
         let services = Arc::new(services);
 
         for component_spec in &mut all_component_specs {
@@ -311,6 +319,10 @@ impl ContainerReactor {
                 .lock()
                 .unwrap()
                 .set_services(services.clone());
+            component_spec
+                .lock()
+                .unwrap()
+                .set_domains(component_to_domain.clone());
         }
 
         let (terminate_sender, terminate_receiver) = broadcast::channel(16);
@@ -698,7 +710,11 @@ impl ContainerReactor {
 
             for image in &mut self.images {
                 if !image.should_rebuild() {
-                    println!("{}  ..... [  {}  ]", image.identifier(), "SKIPPED".yellow().bold());
+                    println!(
+                        "{}  ..... [  {}  ]",
+                        image.identifier(),
+                        "SKIPPED".yellow().bold()
+                    );
                     continue;
                 }
 
@@ -708,10 +724,11 @@ impl ContainerReactor {
                     Ok(_) => {
                         image.set_should_rebuild(false);
                         println!(
-                        "Building {}  ..... [  {}  ]",
-                        image.identifier(),
-                        "OK".white().bold()
-                    )},
+                            "Building {}  ..... [  {}  ]",
+                            image.identifier(),
+                            "OK".white().bold()
+                        )
+                    }
                     Err(e) => {
                         println!(
                             "Building {}  ..... [ {} ]",
@@ -763,7 +780,10 @@ impl ContainerReactor {
             self.kill_and_clean().await;
             trace!("Cleaned up previous resources");
 
-            if let Err(e) = self.build_and_handle_errors(&mut break_type, &test_if_files_changed).await {
+            if let Err(e) = self
+                .build_and_handle_errors(&mut break_type, &test_if_files_changed)
+                .await
+            {
                 continue;
             }
 
@@ -858,19 +878,29 @@ impl ContainerReactor {
         }))
     }
 
-    async fn build_and_handle_errors(&mut self, break_type: &mut BreakType, test_if_files_changed: &impl Fn() -> bool) -> Result<(), String> {
+    async fn build_and_handle_errors(
+        &mut self,
+        break_type: &mut BreakType,
+        test_if_files_changed: &impl Fn() -> bool,
+    ) -> Result<(), String> {
         match self.build().await {
             Ok(_) => {
                 trace!("Build completed successfully");
                 Ok(())
             }
             Err(e) => {
-                self.handle_build_error(e, break_type, test_if_files_changed).await
+                self.handle_build_error(e, break_type, test_if_files_changed)
+                    .await
             }
         }
     }
 
-    async fn handle_build_error(&self, e: String, break_type: &mut BreakType, test_if_files_changed: &impl Fn() -> bool) -> Result<(), String> {
+    async fn handle_build_error(
+        &self,
+        e: String,
+        break_type: &mut BreakType,
+        test_if_files_changed: &impl Fn() -> bool,
+    ) -> Result<(), String> {
         let e = e
             .replace("error:", &format!("{}:", &"error".red().bold().to_string()))
             .replace("error[", &format!("{}[", &"error".red().bold().to_string()))
@@ -932,7 +962,10 @@ impl ContainerReactor {
         (max_label_length, longest_paths)
     }
 
-    fn compute_longest_paths(&self, dependency_graph: &HashMap<String, Vec<String>>) -> HashMap<String, usize> {
+    fn compute_longest_paths(
+        &self,
+        dependency_graph: &HashMap<String, Vec<String>>,
+    ) -> HashMap<String, usize> {
         let mut longest_paths = HashMap::new();
         for (name, _) in dependency_graph {
             let mut stack = vec![(name, 1)];
@@ -957,7 +990,11 @@ impl ContainerReactor {
         longest_paths
     }
 
-    async fn launch_images(&mut self, max_label_length: usize, longest_paths: HashMap<String, usize>) {
+    async fn launch_images(
+        &mut self,
+        max_label_length: usize,
+        longest_paths: HashMap<String, usize>,
+    ) {
         let mut jobs = self
             .images
             .iter_mut()
@@ -974,7 +1011,12 @@ impl ContainerReactor {
         jobs.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (priority, image_id, image) in jobs {
-            println!("\n{}", format!("Starting {} with priority {}", image.image_name(), priority).bold().white());
+            println!(
+                "\n{}",
+                format!("Starting {} with priority {}", image.image_name(), priority)
+                    .bold()
+                    .white()
+            );
             let (status_sender, status_receiver) = mpsc::channel();
             self.images_by_id.insert(image_id, image.clone());
             self.statuses_receivers.insert(image_id, status_receiver);
@@ -990,7 +1032,10 @@ impl ContainerReactor {
         }
     }
 
-    async fn monitor_and_handle_events(&mut self, test_if_files_changed: &impl Fn() -> bool) -> BreakType {
+    async fn monitor_and_handle_events(
+        &mut self,
+        test_if_files_changed: &impl Fn() -> bool,
+    ) -> BreakType {
         let mut all_finished = false;
         let mut stopping = false;
         let mut stop_time: Option<std::time::Instant> = None;
@@ -1023,14 +1068,21 @@ impl ContainerReactor {
         }
 
         println!("Is stopping: {}: ", stopping);
-        if self.handle_shutdown(all_finished, stopping, stop_time, test_if_files_changed).await {
+        if self
+            .handle_shutdown(all_finished, stopping, stop_time, test_if_files_changed)
+            .await
+        {
             BreakType::Running
         } else {
             BreakType::Stopped
         }
     }
 
-    async fn handle_termination_signal(&mut self, stopping: &mut bool, stop_time: &mut Option<std::time::Instant>) {
+    async fn handle_termination_signal(
+        &mut self,
+        stopping: &mut bool,
+        stop_time: &mut Option<std::time::Instant>,
+    ) {
         trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
         println!("******************************************************************");
         println!("******************************************************************");
@@ -1045,7 +1097,12 @@ impl ContainerReactor {
         *stopping = true;
     }
 
-    async fn handle_file_changes(&mut self, test_if_files_changed: &impl Fn() -> bool, stopping: &mut bool, stop_time: &mut Option<std::time::Instant>) -> bool {
+    async fn handle_file_changes(
+        &mut self,
+        test_if_files_changed: &impl Fn() -> bool,
+        stopping: &mut bool,
+        stop_time: &mut Option<std::time::Instant>,
+    ) -> bool {
         if !*stopping && test_if_files_changed() {
             trace!("File change detected. Rebuilding all images.");
             let _ = self.terminate_sender.send(());
@@ -1058,7 +1115,10 @@ impl ContainerReactor {
     }
 
     async fn handle_image_completion(&mut self) -> bool {
-        let any_finished = self.statuses.values().any(|status| matches!(status, Status::Finished(_)));
+        let any_finished = self
+            .statuses
+            .values()
+            .any(|status| matches!(status, Status::Finished(_)));
         if any_finished {
             warn!("Proceeding with forced shutdown due to image completion...");
             self.kill_and_clean().await;
@@ -1068,7 +1128,13 @@ impl ContainerReactor {
         }
     }
 
-    async fn handle_shutdown(&mut self, all_finished: bool, stopping: bool, stop_time: Option<std::time::Instant>, test_if_files_changed: &impl Fn() -> bool) -> bool {
+    async fn handle_shutdown(
+        &mut self,
+        all_finished: bool,
+        stopping: bool,
+        stop_time: Option<std::time::Instant>,
+        test_if_files_changed: &impl Fn() -> bool,
+    ) -> bool {
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
@@ -1121,7 +1187,9 @@ impl ContainerReactor {
     }
 
     async fn handle_shutdown_timeout(&mut self) {
-        error!("Shutdown timeout reached. You might have a process that does not respond to SIGTERM.");
+        error!(
+            "Shutdown timeout reached. You might have a process that does not respond to SIGTERM."
+        );
         println!("Current process statuses:");
         for (component_name, status) in &self.statuses {
             let status_str = match status {
