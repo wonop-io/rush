@@ -1,9 +1,9 @@
 cd {{ location }} || exit
 {% for d,v in domains -%}
-export DOMAIN_{{ d | uppercase }}="{{ v }}"
+export DOMAIN_{{ d | envname }}="{{ v }}"
 {% endfor %}
 {% for d,v in env -%}
-export {{ d | uppercase }}="{{ v }}"
+export {{ d | envname }}="{{ v }}"
 {% endfor %}
 
 export SQLX_OFFLINE=true
