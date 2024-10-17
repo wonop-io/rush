@@ -21,7 +21,7 @@ lazy_static! {
 
         tera.register_filter("uppercase", uppercase_filter);
         tera.register_filter("lowercase", lowercase_filter);
-
+        tera.register_filter("envname", to_env_name_filter);
         tera
     };
 }
@@ -34,4 +34,10 @@ pub fn uppercase_filter(value: &Value, _: &HashMap<String, Value>) -> Result<Val
 pub fn lowercase_filter(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
     let s = try_get_value!("lowercase_filter", "value", String, value);
     Ok(to_value(s.to_lowercase()).unwrap())
+}
+
+pub fn to_env_name_filter(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("uppercase_filter", "value", String, value);
+    let transformed = s.to_uppercase().replace("-", "_");
+    Ok(to_value(transformed).unwrap())
 }

@@ -816,7 +816,6 @@ impl DockerImage {
         // Cross compiling if needed
         if let Some(build_command) = &self.build_script(&ctx) {
             let start_time = std::time::Instant::now();
-            println!("{}", build_command);
             match run_command_in_window(10, "build", "sh", vec!["-c", build_command]).await {
                 Ok(_) => {
                     let duration = start_time.elapsed();
