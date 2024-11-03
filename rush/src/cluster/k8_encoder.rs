@@ -1,4 +1,4 @@
-use log::trace;
+use log::{info, trace};
 use std::fs;
 use std::process::Command;
 
@@ -28,6 +28,7 @@ impl K8Encoder for SealedSecretsEncoder {
         trace!("Encoding file {}", path);
 
         // Run kubeseal command
+        // TODO: Add certitiicate path as an argument
         let output = Command::new("kubeseal")
             .arg("--format")
             .arg("yaml")
@@ -39,6 +40,7 @@ impl K8Encoder for SealedSecretsEncoder {
             .map_err(|e| format!("Failed to execute kubeseal: {}", e))?;
 
         if !output.status.success() {
+            info!("File attempted to be encoded: {}", path);
             return Err(format!(
                 "kubeseal failed with status: {}\nstderr: {}",
                 output.status,

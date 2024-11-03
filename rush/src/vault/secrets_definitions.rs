@@ -18,6 +18,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::Mutex;
 use uuid::Uuid;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretsDefinitions {
     product_name: String,
@@ -121,6 +122,81 @@ impl SecretsDefinitions {
         } else {
             panic!("Component {} not found", component_name);
         }
+    }
+
+    pub async fn validate_vault(
+        &self,
+        vault: Arc<Mutex<dyn Vault + Send>>,
+        env: &str,
+    ) -> Result<bool, Box<dyn Error>> {
+        let mut all_valid = true;
+
+        for (component_name, component) in &self.components {
+            let vault_secrets = vault
+                .lock()
+                .unwrap()
+                .get(&self.product_name, component_name, env)
+                .await?;
+
+            for secret_name in component.secrets.keys() {
+                match &component.secrets[secret_name] {
+                    GenerationMethod::RSAKeyPair(_, _)
+                    | GenerationMethod::ECDSAKeyPair(_, _)
+                    | GenerationMethod::Ed25519KeyPair(_) => {
+                        let private_key = format!("{}_PRIVATE_KEY", secret_name);
+                        let public_key = format!("{}_PUBLIC_KEY", secret_name);
+
+                        if !vault_secrets.contains_key(&private_key)
+                            || !vault_secrets.contains_key(&public_key)
+                        {
+                            println!(
+                                "Missing key pair for {} in component {}",
+                                secret_name, component_name
+                            );
+                            all_valid = false;
+                        }
+                    }
+                    GenerationMethod::Ref(path) => {
+                        let parts: Vec<&str> = path.split('.').collect();
+                        if parts.len() != 2 {
+                            println!(
+                                "Invalid reference format for {} in component {}",
+                                secret_name, component_name
+                            );
+                            all_valid = false;
+                            continue;
+                        }
+
+                        let ref_component = parts[0];
+                        let ref_secret = parts[1];
+
+                        let ref_secrets = vault
+                            .lock()
+                            .unwrap()
+                            .get(&self.product_name, ref_component, env)
+                            .await?;
+                        if !ref_secrets.contains_key(ref_secret) {
+                            println!(
+                                "Referenced secret {} not found in component {}",
+                                ref_secret, ref_component
+                            );
+                            all_valid = false;
+                        }
+                    }
+                    _ => {
+                        if !vault_secrets.contains_key(secret_name) {
+                            println!(
+                                "Missing secret {} in component {}",
+                                secret_name, component_name
+                            );
+                            all_valid = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(all_valid)
     }
 
     pub fn generate_secret(&self, component_name: &str, secret_name: &str) -> GenerationResult {

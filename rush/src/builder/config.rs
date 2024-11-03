@@ -26,6 +26,7 @@ pub struct Config {
     root_path: String,
     vault_name: String,
     k8s_encoder: String,
+    one_password_account: Option<String>,
 }
 
 impl Config {
@@ -63,6 +64,9 @@ impl Config {
     }
     pub fn docker_registry(&self) -> &str {
         &self.docker_registry
+    }
+    pub fn one_password_account(&self) -> Option<&String> {
+        self.one_password_account.as_ref()
     }
     pub fn domain(&self, subdomain: Option<String>) -> String {
         let ctx = DomainContext {
@@ -207,6 +211,8 @@ impl Config {
         let network_name = format!("net-{}", product_uri);
         trace!("Product dirname: {}", product_dirname);
 
+        let one_password_account = std::env::var("ONE_PASSWORD_ACCOUNT").ok();
+
         let ret = Self {
             root_path: root_path.to_string(),
             product_name,
@@ -221,9 +227,8 @@ impl Config {
             docker_registry,
             vault_name,
             k8s_encoder,
+            one_password_account,
         };
-
-
 
         Ok(Arc::new(ret))
     }

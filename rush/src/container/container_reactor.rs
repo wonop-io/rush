@@ -8,7 +8,7 @@ use crate::cluster::InfrastructureRepo;
 use crate::cluster::K8ClusterManifests;
 use crate::cluster::K8Encoder;
 use crate::container::service_spec::{ServiceSpec, ServicesSpec};
-use crate::gitignore::GitIgnore;
+use crate::path_matcher::PathMatcher;
 use crate::toolchain::ToolchainContext;
 use crate::utils::run_command;
 use crate::utils::Directory;
@@ -828,7 +828,7 @@ impl ContainerReactor {
         }
 
         let product_directory = std::path::Path::new(&self.product_directory);
-        let gitignore = GitIgnore::new(product_directory);
+        let gitignore = PathMatcher::from_gitignore(product_directory);
         let changed_files = self.changed_files.clone();
         Ok((watcher, move || {
             if let Ok(event) = watch_rx.try_recv() {
@@ -849,7 +849,7 @@ impl ContainerReactor {
                                 }
                             })
                             .flatten()
-                            .filter(|path| !gitignore.ignores(path))
+                            .filter(|path| !gitignore.matches(path))
                             .filter(|path| path.is_file())
                             .collect::<Vec<_>>();
 
