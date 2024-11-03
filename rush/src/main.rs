@@ -368,16 +368,6 @@ async fn main() -> io::Result<()> {
         _ => panic!("Invalid vault"),
     };
 
-    // TODO: Check that all secrets are defined in the vault
-    if let Err(e) = secrets_context
-        .validate_vault(vault.clone(), &environment)
-        .await
-    {
-        error!("Missing secrets in vault: {}", e);
-        eprintln!("{}", e);
-        std::process::exit(1);
-    }
-
     let secrets_encoder = Arc::new(Base64SecretsEncoder);
     let k8s_encoder = match config.k8s_encoder() {
         "kubeseal" => {
@@ -538,91 +528,6 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    if let Some(matches) = matches.subcommand_matches("minikube") {
-        trace!("Executing 'minikube' subcommand");
-        if matches.subcommand_matches("start").is_some() {
-            trace!("Starting Minikube");
-            match minikube.start().await {
-                Ok(_) => {
-                    trace!("Minikube started successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!("Failed to start Minikube: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-        if matches.subcommand_matches("stop").is_some() {
-            trace!("Stopping Minikube");
-            match minikube.stop().await {
-                Ok(_) => {
-                    trace!("Minikube stopped successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!("Failed to stop Minikube: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-        if matches.subcommand_matches("delete").is_some() {
-            trace!("Deleting Minikube");
-            match minikube.delete().await {
-                Ok(_) => {
-                    trace!("Minikube deleted successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!("Failed to delete Minikube: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-    }
-
-    if matches.subcommand_matches("dev").is_some() {
-        trace!("Launching development environment");
-        match reactor.launch().await {
-            Ok(_) => {
-                trace!("Development environment launched successfully");
-                return Ok(());
-            }
-            Err(e) => {
-                error!("Failed to launch development environment: {}", e);
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    if matches.subcommand_matches("build").is_some() {
-        match reactor.build().await {
-            Ok(_) => {
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    if matches.subcommand_matches("push").is_some() {
-        match reactor.build_and_push().await {
-            Ok(_) => {
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
     if let Some(matches) = matches.subcommand_matches("vault") {
         trace!("Executing 'vault' subcommand");
 
@@ -714,6 +619,56 @@ async fn main() -> io::Result<()> {
                     eprintln!("{}", e);
                     std::process::exit(1);
                 }
+            }
+        }
+    }
+
+    // Validate secrets
+    if let Err(e) = secrets_context
+        .validate_vault(vault.clone(), &environment)
+        .await
+    {
+        error!("Missing secrets in vault: {}", e);
+        eprintln!("{}", e);
+        std::process::exit(1);
+    }
+
+    // Run and deploy Operations
+    if matches.subcommand_matches("dev").is_some() {
+        trace!("Launching development environment");
+        match reactor.launch().await {
+            Ok(_) => {
+                trace!("Development environment launched successfully");
+                return Ok(());
+            }
+            Err(e) => {
+                error!("Failed to launch development environment: {}", e);
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if matches.subcommand_matches("build").is_some() {
+        match reactor.build().await {
+            Ok(_) => {
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if matches.subcommand_matches("push").is_some() {
+        match reactor.build_and_push().await {
+            Ok(_) => {
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
             }
         }
     }

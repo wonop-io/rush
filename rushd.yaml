@@ -15,6 +15,8 @@ env:
   STAGING_VAULT: 1Password
   PROD_VAULT: 1Password
 
+  ONE_PASSWORD_ACCOUNT: hello.1password.com
+
   K8S_ENCODER_LOCAL: noop
   K8S_ENCODER_DEV: kubeseal
   K8S_ENCODER_STAGING: kubeseal
