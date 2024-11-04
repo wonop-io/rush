@@ -695,6 +695,15 @@ impl DockerImage {
 
     pub fn is_any_file_in_context(&self, file_paths: &Vec<PathBuf>) -> bool {
         let spec = self.spec.lock().unwrap();
+
+        if let Some(watch) = &spec.watch {
+            for file in file_paths {
+                if watch.matches(file) {
+                    return true;
+                }
+            }
+        }
+
         let dockerfile_path = match &spec.build_type {
             BuildType::TrunkWasm {
                 dockerfile_path, ..

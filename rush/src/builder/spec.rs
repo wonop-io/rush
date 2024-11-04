@@ -5,6 +5,7 @@ use crate::builder::Config;
 use crate::builder::{BuildScript, BuildType};
 use crate::container::{ServiceSpec, ServicesSpec};
 use crate::dotenv_utils::load_dotenv;
+use crate::path_matcher::PathMatcher;
 use crate::vault::Vault;
 use crate::ToolchainContext;
 use std::collections::HashMap;
@@ -20,18 +21,18 @@ pub struct ComponentBuildSpec {
     pub depends_on: Vec<String>,
 
     pub build: Option<String>,
-    pub watch_path: Option<String>,
     pub mount_point: Option<String>,
     pub subdomain: Option<String>,
     pub artefacts: Option<std::collections::HashMap<String, String>>,
     pub artefact_output_dir: String,
     pub docker_extra_run_args: Vec<String>,
-    pub env: Option<HashMap<String, String>>,
+    pub env: Option<HashMap<String, String>>, // TODO: Deprecated
     pub volumes: Option<HashMap<String, String>>,
     pub port: Option<u16>,
     pub target_port: Option<u16>,
     pub k8s: Option<String>, // TODO: Refactor to k8s_dir
     pub priority: u64,
+    pub watch: Option<Arc<PathMatcher>>,
 
     // Set after loading
     pub config: Arc<Config>,
@@ -253,15 +254,23 @@ impl ComponentBuildSpec {
             .get("subdomain")
             .map(|v| Self::process_template_string(v.as_str().unwrap(), &variables));
         let domain = config.domain(subdomain.clone());
+
+        let watch = yaml_section.get("watch").map(|v| {
+            let paths: Vec<String> = v
+                .as_sequence()
+                .unwrap()
+                .iter()
+                .map(|item| Self::process_template_string(item.as_str().unwrap(), &variables))
+                .collect();
+            Arc::new(PathMatcher::new(std::path::Path::new(&cwd), paths))
+        });
+
         ComponentBuildSpec {
             build_type,
             build: yaml_section
                 .get("build")
                 .map(|v| Self::process_template_string(v.as_str().unwrap(), &variables)),
 
-            watch_path: yaml_section
-                .get("watch")
-                .map(|v| Self::process_template_string(v.as_str().unwrap(), &variables)),
             color: yaml_section.get("color").map_or("blue".to_string(), |v| {
                 Self::process_template_string(v.as_str().unwrap(), &variables)
             }),
@@ -373,6 +382,7 @@ impl ComponentBuildSpec {
             priority: yaml_section
                 .get("priority")
                 .map_or(100, |v| v.as_u64().unwrap()),
+            watch,
             config,
             variables,
             services: None,

@@ -6,12 +6,16 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::process::Command;
 
-pub struct OnePassword;
+pub struct OnePassword {
+    account: String,
+}
 
 impl OnePassword {
-    pub fn new() -> Self {
+    pub fn new(account: &str) -> Self {
         trace!("Creating new OnePassword instance");
-        OnePassword
+        OnePassword {
+            account: account.to_string(),
+        }
     }
 
     fn run_op_command(&self, args: Vec<String>) -> Result<String, Box<dyn Error>> {
@@ -53,6 +57,8 @@ impl Vault for OnePassword {
                 "item",
                 "get",
                 &item_name,
+                "--account",
+                &self.account,
                 "--vault",
                 product_name,
                 "--format",
@@ -95,10 +101,19 @@ impl Vault for OnePassword {
 
         // Check if the item already exists
         let list_output = self.run_op_command(
-            ["item", "list", "--vault", product_name, "--format", "json"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>(),
+            [
+                "item",
+                "list",
+                "--account",
+                &self.account,
+                "--vault",
+                product_name,
+                "--format",
+                "json",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>(),
         )?;
         let items: Vec<Value> = serde_json::from_str(&list_output)?;
 
@@ -119,6 +134,8 @@ impl Vault for OnePassword {
             args.push("--category".to_string());
             args.push("Secure Note".to_string());
         }
+        args.push("--account".to_string());
+        args.push(self.account.clone());
         args.push("--vault".to_string());
         args.push(product_name.to_string());
 
@@ -142,6 +159,8 @@ impl Vault for OnePassword {
         let list_args = vec![
             "vault".to_string(),
             "list".to_string(),
+            "--account".to_string(),
+            self.account.clone(),
             "--format".to_string(),
             "json".to_string(),
         ];
@@ -161,6 +180,8 @@ impl Vault for OnePassword {
             "vault".to_string(),
             "create".to_string(),
             product_name.to_string(),
+            "--account".to_string(),
+            self.account.clone(),
         ];
         let create_output = self.run_op_command(create_args)?;
 
@@ -186,6 +207,8 @@ impl Vault for OnePassword {
             "item".to_string(),
             "delete".to_string(),
             item_name.clone(),
+            "--account".to_string(),
+            self.account.clone(),
             "--vault".to_string(),
             product_name.to_string(),
         ];
@@ -202,6 +225,8 @@ impl Vault for OnePassword {
             "list".to_string(),
             "--format".to_string(),
             "json".to_string(),
+            "--account".to_string(),
+            self.account.clone(),
         ];
         let list_output = self.run_op_command(list_args)?;
         let vaults: Vec<Value> = serde_json::from_str(&list_output)?;

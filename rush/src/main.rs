@@ -5,7 +5,7 @@ mod builder;
 mod cluster;
 mod container;
 mod dotenv_utils;
-mod gitignore;
+mod path_matcher;
 mod public_env_defs;
 mod toolchain;
 mod utils;
@@ -23,6 +23,7 @@ use crate::vault::SecretsDefinitions;
 use clap::{arg, Arg, Command};
 use cluster::Minikube;
 use colored::Colorize;
+use log::warn;
 use log::{debug, error, info, trace};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -331,10 +332,10 @@ async fn main() -> io::Result<()> {
     } else {
         std::env::var("DOCKER_REGISTRY").expect("DOCKER_REGISTRY environment variable not found")
     };
-    debug!("Docker registry: {}", docker_registry);
+    info!("Docker registry: {}", docker_registry);
 
     let product_name = matches.get_one::<String>("product_name").unwrap();
-    trace!("Product name: {}", product_name);
+    info!("Product name: {}", product_name);
 
     let config = match Config::new(&root_dir, product_name, &environment, &docker_registry) {
         Ok(config) => config,
@@ -352,18 +353,31 @@ async fn main() -> io::Result<()> {
     );
     let product_path = std::path::PathBuf::from(config.product_path());
     let vault = match config.vault_name() {
-        ".env" => Arc::new(Mutex::new(DotenvVault::new(product_path.clone())))
-            as Arc<Mutex<dyn Vault + Send>>,
-        "1Password" => Arc::new(Mutex::new(OnePassword::new())) as Arc<Mutex<dyn Vault + Send>>,
+        ".env" => {
+            info!("Vault: .env");
+            Arc::new(Mutex::new(DotenvVault::new(product_path.clone())))
+                as Arc<Mutex<dyn Vault + Send>>
+        }
+        "1Password" => {
+            let account_name = config
+                .one_password_account()
+                .expect("1Password account not found. Please set this in rushd.yaml");
+            info!("Vault: {}", account_name);
+            Arc::new(Mutex::new(OnePassword::new(account_name))) as Arc<Mutex<dyn Vault + Send>>
+        }
         _ => panic!("Invalid vault"),
     };
 
-    // TODO: Check that all secrets are defined in the vault
-
     let secrets_encoder = Arc::new(Base64SecretsEncoder);
     let k8s_encoder = match config.k8s_encoder() {
-        "kubeseal" => Arc::new(SealedSecretsEncoder) as Arc<dyn K8Encoder>,
-        "noop" => Arc::new(NoopEncoder) as Arc<dyn K8Encoder>,
+        "kubeseal" => {
+            info!("Encrypting K8s secrets with kubeseal");
+            Arc::new(SealedSecretsEncoder) as Arc<dyn K8Encoder>
+        }
+        "noop" => {
+            warn!("No secret encryption of secrets for K8s");
+            Arc::new(NoopEncoder) as Arc<dyn K8Encoder>
+        }
         _ => panic!("Invalid k8s encoder"),
     };
 
@@ -388,6 +402,7 @@ async fn main() -> io::Result<()> {
     toolchain.setup_env();
     debug!("Toolchain set up");
 
+    println!("\n\n");
     let mut reactor = match ContainerReactor::from_product_dir(
         config.clone(),
         toolchain.clone(),
@@ -513,91 +528,6 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    if let Some(matches) = matches.subcommand_matches("minikube") {
-        trace!("Executing 'minikube' subcommand");
-        if matches.subcommand_matches("start").is_some() {
-            trace!("Starting Minikube");
-            match minikube.start().await {
-                Ok(_) => {
-                    trace!("Minikube started successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!("Failed to start Minikube: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-        if matches.subcommand_matches("stop").is_some() {
-            trace!("Stopping Minikube");
-            match minikube.stop().await {
-                Ok(_) => {
-                    trace!("Minikube stopped successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!("Failed to stop Minikube: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-        if matches.subcommand_matches("delete").is_some() {
-            trace!("Deleting Minikube");
-            match minikube.delete().await {
-                Ok(_) => {
-                    trace!("Minikube deleted successfully");
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!("Failed to delete Minikube: {}", e);
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-    }
-
-    if matches.subcommand_matches("dev").is_some() {
-        trace!("Launching development environment");
-        match reactor.launch().await {
-            Ok(_) => {
-                trace!("Development environment launched successfully");
-                return Ok(());
-            }
-            Err(e) => {
-                error!("Failed to launch development environment: {}", e);
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    if matches.subcommand_matches("build").is_some() {
-        match reactor.build().await {
-            Ok(_) => {
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    if matches.subcommand_matches("push").is_some() {
-        match reactor.build_and_push().await {
-            Ok(_) => {
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-
     if let Some(matches) = matches.subcommand_matches("vault") {
         trace!("Executing 'vault' subcommand");
 
@@ -689,6 +619,56 @@ async fn main() -> io::Result<()> {
                     eprintln!("{}", e);
                     std::process::exit(1);
                 }
+            }
+        }
+    }
+
+    // Validate secrets
+    if let Err(e) = secrets_context
+        .validate_vault(vault.clone(), &environment)
+        .await
+    {
+        error!("Missing secrets in vault: {}", e);
+        eprintln!("{}", e);
+        std::process::exit(1);
+    }
+
+    // Run and deploy Operations
+    if matches.subcommand_matches("dev").is_some() {
+        trace!("Launching development environment");
+        match reactor.launch().await {
+            Ok(_) => {
+                trace!("Development environment launched successfully");
+                return Ok(());
+            }
+            Err(e) => {
+                error!("Failed to launch development environment: {}", e);
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if matches.subcommand_matches("build").is_some() {
+        match reactor.build().await {
+            Ok(_) => {
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if matches.subcommand_matches("push").is_some() {
+        match reactor.build_and_push().await {
+            Ok(_) => {
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
             }
         }
     }
