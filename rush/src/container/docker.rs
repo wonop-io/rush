@@ -48,11 +48,21 @@ pub struct DockerImage {
     toolchain: Option<Arc<ToolchainContext>>,
     vault: Option<Arc<Mutex<dyn Vault + Send>>>,
     network_name: Option<String>,
+
+    dev_ignore_image: bool,
 }
 
 impl DockerImage {
     pub fn depends_on(&self) -> &Vec<String> {
         &self.depends_on
+    }
+
+    pub fn should_ignore_in_devmode(&self) -> bool {
+        self.dev_ignore_image
+    }
+
+    pub fn set_ignore_in_devmode(&mut self, ignore: bool) {
+        self.dev_ignore_image = ignore;
     }
 
     pub fn image_name(&self) -> &str {
@@ -214,6 +224,7 @@ impl DockerImage {
             toolchain: None,
             vault: None,
             network_name: None,
+            dev_ignore_image: false,
         })
     }
 

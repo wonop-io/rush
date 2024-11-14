@@ -14,7 +14,7 @@ RUN groupadd $APP_USER \
     && useradd -g $APP_USER $APP_USER \
     && mkdir -p ${APP}
 
-COPY ./target/x86_64-unknown-linux-gnu/release/server /server
+COPY ./server/target/x86_64-unknown-linux-gnu/release/server /server
 
 RUN chown -R $APP_USER:$APP_USER ${APP}
 
