@@ -9,7 +9,7 @@ frontend:
 backend:
   build_type: "RustBinary"
   location: "backend/server"
-  dockerfile: "./Dockerfile.backend"
+  dockerfile: "backend/Dockerfile"
   color: "blue"
   mount_point: "/api"
   k8s: backend/infrastructure
@@ -27,15 +27,16 @@ database:
     POSTGRES_DB: backend
     POSTGRES_PASSWORD: admin
     POSTGRES_USER: admin
-    
+
 ingress:
   build_type: "Ingress"
   port: 9000
-  location: "./"
-  dockerfile: "./Dockerfile.ingress"
+  location: "./ingress"
+  context_dir: ../target
+  dockerfile: "./ingress/Dockerfile"
   color: "green"
   components:
     - "backend"
     - "frontend"
   artefacts:
-    nginx.ingress.conf: "nginx.conf"
+    "./ingress/nginx.conf": nginx.conf

@@ -162,6 +162,7 @@ impl ContainerReactor {
         vault: Arc<Mutex<dyn Vault + Send>>,
         secrets_encoder: Arc<dyn EncodeSecrets>,
         k8s_encoder: Arc<dyn K8Encoder>,
+        redirected_components: HashMap<String, (String, u16)>,
     ) -> Result<Self, String> {
         let git_hash = match toolchain.get_git_folder_hash(config.product_path()) {
             Ok(hash) => hash,
@@ -276,6 +277,11 @@ impl ContainerReactor {
                 image.set_toolchain(toolchain.clone());
                 image.set_vault(vault.clone());
                 image.set_network_name(network_name.to_string());
+
+                let host = image.component_name();
+                if redirected_components.contains_key(&host) {
+                    image.set_ignore_in_devmode(true);
+                }
                 component_spec
                     .lock()
                     .unwrap()
@@ -290,8 +296,15 @@ impl ContainerReactor {
         for image in &images {
             if let Some(port) = image.port() {
                 if let Some(target_port) = image.target_port() {
+                    let mut target_port = target_port;
+                    let mut host = image.component_name();
+                    if let Some(redirect) = redirected_components.get(&host) {
+                        host = redirect.0.clone();
+                        target_port = redirect.1;
+                    }
                     let svc_spec = ServiceSpec {
                         name: image.component_name(),
+                        host,
                         port,
                         target_port,
                         mount_point: image.spec().mount_point.clone(),
@@ -709,6 +722,14 @@ impl ContainerReactor {
             let _guard = Directory::chdir(&self.product_directory);
 
             for image in &mut self.images {
+                if image.should_ignore_in_devmode() {
+                    println!(
+                        "{}  ..... [  {}  ]",
+                        image.identifier(),
+                        "IGNORED".red().bold()
+                    );
+                    continue;
+                }
                 if !image.should_rebuild() {
                     println!(
                         "{}  ..... [  {}  ]",
@@ -759,24 +780,7 @@ impl ContainerReactor {
 
         let mut break_type = BreakType::Running;
         while matches!(break_type, BreakType::Running | BreakType::FileChanged) {
-            let changed_files = {
-                let mut changed_files = self.changed_files.lock().unwrap();
-                let ret = changed_files.clone();
-                changed_files.clear();
-                ret
-            };
-
             // Invalidating cache
-            println!("Changed files: {:#?}", changed_files);
-            {
-                let _guard = Directory::chdir(&self.product_directory);
-
-                for image in &mut self.images {
-                    if image.is_any_file_in_context(&changed_files) {
-                        image.set_should_rebuild(true);
-                    }
-                }
-            }
             self.kill_and_clean().await;
             trace!("Cleaned up previous resources");
 
@@ -896,7 +900,7 @@ impl ContainerReactor {
     }
 
     async fn handle_build_error(
-        &self,
+        &mut self,
         e: String,
         break_type: &mut BreakType,
         test_if_files_changed: &impl Fn() -> bool,
@@ -918,10 +922,12 @@ impl ContainerReactor {
 
         loop {
             if test_if_files_changed() {
-                trace!("File change detected. Rebuilding all images.");
-                let _ = self.terminate_sender.send(());
-                *break_type = BreakType::FileChanged;
-                break;
+                if self.test_if_siginificant_change().await {
+                    trace!("File change detected. Rebuilding all images.");
+                    let _ = self.terminate_sender.send(());
+                    *break_type = BreakType::FileChanged;
+                    break;
+                }
             }
 
             tokio::select! {
@@ -1011,6 +1017,9 @@ impl ContainerReactor {
         jobs.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (priority, image_id, image) in jobs {
+            if image.should_ignore_in_devmode() {
+                continue;
+            }
             println!(
                 "\n{}",
                 format!("Starting {} with priority {}", image.image_name(), priority)
@@ -1097,6 +1106,32 @@ impl ContainerReactor {
         *stopping = true;
     }
 
+    async fn test_if_siginificant_change(&mut self) -> bool {
+        let mut significant_change = false;
+        let changed_files = {
+            let mut changed_files = self.changed_files.lock().unwrap();
+            let ret = changed_files.clone();
+            changed_files.clear();
+            ret
+        };
+        {
+            let _guard = Directory::chdir(&self.product_directory);
+
+            for image in &mut self.images {
+                if image.should_ignore_in_devmode() {
+                    continue;
+                }
+                if image.is_any_file_in_context(&changed_files) {
+                    significant_change = true;
+                    println!("Image '{}' was affected by change", image.component_name());
+                    image.set_should_rebuild(true);
+                }
+            }
+        }
+
+        significant_change
+    }
+
     async fn handle_file_changes(
         &mut self,
         test_if_files_changed: &impl Fn() -> bool,
@@ -1105,10 +1140,15 @@ impl ContainerReactor {
     ) -> bool {
         if !*stopping && test_if_files_changed() {
             trace!("File change detected. Rebuilding all images.");
-            let _ = self.terminate_sender.send(());
-            *stop_time = Some(std::time::Instant::now());
-            *stopping = true;
-            true
+            let significant_change = self.test_if_siginificant_change().await;
+            if significant_change {
+                let _ = self.terminate_sender.send(());
+                *stop_time = Some(std::time::Instant::now());
+                *stopping = true;
+                true
+            } else {
+                false
+            }
         } else {
             false
         }

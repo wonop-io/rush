@@ -252,7 +252,9 @@ async fn main() -> io::Result<()> {
                 .about("Describes the current k8s")
             )
         )
-        .subcommand(Command::new("dev"))
+        .subcommand(Command::new("dev")
+            .arg(arg!(redirect : --redirect <COMPONENTS> ... "Disables component and redirects the ingress. Format: component@host:port").num_args(1..))
+        )
         .subcommand(Command::new("build"))
         .subcommand(Command::new("push"))
         .subcommand(Command::new("minikube")
@@ -289,6 +291,35 @@ async fn main() -> io::Result<()> {
             )
         )
         .get_matches();
+
+    let redirected_components: HashMap<String, (String, u16)> = matches
+        .subcommand_matches("dev")
+        .and_then(|dev_matches| dev_matches.get_many::<String>("redirect"))
+        .map(|values| {
+            values
+                .cloned()
+                .filter_map(|value| {
+                    let parts: Vec<&str> = value.split('@').collect();
+                    if parts.len() == 2 {
+                        let component = parts[0].to_string();
+                        let host_port: Vec<&str> = parts[1].split(':').collect();
+                        if host_port.len() == 2 {
+                            let mut host = host_port[0].to_string();
+                            if host == "localhost" || host == "127.0.0.1" {
+                                host = "host.docker.internal".to_string();
+                            }
+                            if let Ok(port) = host_port[1].parse::<u16>() {
+                                return Some((component, (host, port)));
+                            }
+                        }
+                    }
+                    None
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    println!("Redirecting components: {:#?}", redirected_components);
 
     debug!("Command line arguments parsed");
 
@@ -409,6 +440,7 @@ async fn main() -> io::Result<()> {
         vault.clone(),
         secrets_encoder,
         k8s_encoder,
+        redirected_components,
     ) {
         Ok(reactor) => reactor,
         Err(e) => {
