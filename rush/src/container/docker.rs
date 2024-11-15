@@ -50,11 +50,16 @@ pub struct DockerImage {
     network_name: Option<String>,
 
     dev_ignore_image: bool,
+    silence_output: bool,
 }
 
 impl DockerImage {
     pub fn depends_on(&self) -> &Vec<String> {
         &self.depends_on
+    }
+
+    pub fn set_silence_output(&mut self, silence_output: bool) {
+        self.silence_output = silence_output;
     }
 
     pub fn should_ignore_in_devmode(&self) -> bool {
@@ -225,6 +230,7 @@ impl DockerImage {
             vault: None,
             network_name: None,
             dev_ignore_image: false,
+            silence_output: false,
         })
     }
 
@@ -355,6 +361,7 @@ impl DockerImage {
         };
 
         debug!("Launching docker image: {}", self.identifier());
+        let silent = self.silence_output;
         tokio::spawn(async move {
             let spec = task.spec.lock().unwrap().clone();
             let env_guard = DockerImage::create_cross_compile_guard(&spec.build_type, &toolchain);
@@ -463,8 +470,10 @@ impl DockerImage {
                                     let mut lines = lines_clone.lock().unwrap();
                                     lines.push(line.trim_end().to_string());
                                     let clean_line = line.trim_end().replace(['\r', '\n'], "");
-                                    println!("{} |   {}", formatted_label_clone, clean_line);
-                                    std::io::stdout().flush().unwrap();
+                                    if !silent {
+                                        println!("{} |   {}", formatted_label_clone, clean_line);
+                                        std::io::stdout().flush().unwrap();
+                                    }
                                 }
                                 Err(mpsc::TryRecvError::Empty) => {
                                     tokio::time::sleep(tokio::time::Duration::from_millis(10))

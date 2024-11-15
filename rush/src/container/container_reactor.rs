@@ -163,6 +163,7 @@ impl ContainerReactor {
         secrets_encoder: Arc<dyn EncodeSecrets>,
         k8s_encoder: Arc<dyn K8Encoder>,
         redirected_components: HashMap<String, (String, u16)>,
+        silence_components: Vec<String>,
     ) -> Result<Self, String> {
         let git_hash = match toolchain.get_git_folder_hash(config.product_path()) {
             Ok(hash) => hash,
@@ -170,6 +171,8 @@ impl ContainerReactor {
                 return Err(e);
             }
         };
+
+        let silence_components = silence_components.iter().collect::<HashSet<_>>();
 
         let binding = config.clone();
         let product_path = binding.product_path();
@@ -277,6 +280,10 @@ impl ContainerReactor {
                 image.set_toolchain(toolchain.clone());
                 image.set_vault(vault.clone());
                 image.set_network_name(network_name.to_string());
+
+                if silence_components.contains(&image.component_name()) {
+                    image.set_silence_output(true);
+                }
 
                 let host = image.component_name();
                 if redirected_components.contains_key(&host) {

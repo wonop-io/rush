@@ -254,6 +254,7 @@ async fn main() -> io::Result<()> {
         )
         .subcommand(Command::new("dev")
             .arg(arg!(redirect : --redirect <COMPONENTS> ... "Disables component and redirects the ingress. Format: component@host:port").num_args(1..))
+            .arg(arg!(silence : --silence <COMPONENTS> ... "Silence output for specific components").num_args(1..))
         )
         .subcommand(Command::new("build"))
         .subcommand(Command::new("push"))
@@ -317,6 +318,12 @@ async fn main() -> io::Result<()> {
                 })
                 .collect()
         })
+        .unwrap_or_default();
+
+    let silence_components: Vec<String> = matches
+        .subcommand_matches("dev")
+        .and_then(|dev_matches| dev_matches.get_many::<String>("silence"))
+        .map(|values| values.cloned().map(|s| s.to_string()).collect())
         .unwrap_or_default();
 
     println!("Redirecting components: {:#?}", redirected_components);
@@ -441,6 +448,7 @@ async fn main() -> io::Result<()> {
         secrets_encoder,
         k8s_encoder,
         redirected_components,
+        silence_components,
     ) {
         Ok(reactor) => reactor,
         Err(e) => {
