@@ -46,6 +46,18 @@ impl BuildScript {
                     }
                 }
             }
+            BuildType::Zola { .. } => match TEMPLATES.render("build/zola.sh", &context) {
+                Ok(s) => s,
+                Err(e) => {
+                    println!("Error: {}", e);
+                    let mut cause = e.source();
+                    while let Some(e) = cause {
+                        println!("Reason: {}", e);
+                        cause = e.source();
+                    }
+                    panic!("Failed rendering");
+                }
+            },
             BuildType::Book { .. } => match TEMPLATES.render("build/mdbook.sh", &context) {
                 Ok(s) => s,
                 Err(e) => {
