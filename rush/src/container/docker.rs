@@ -123,6 +123,11 @@ impl DockerImage {
                 context_dir,
                 ..
             } => (Some(dockerfile_path.clone()), context_dir.clone()),
+            BuildType::Zola {
+                dockerfile_path,
+                context_dir,
+                ..
+            } => (Some(dockerfile_path.clone()), context_dir.clone()),
             BuildType::Script {
                 dockerfile_path,
                 context_dir,
@@ -734,6 +739,9 @@ impl DockerImage {
             | BuildType::Book {
                 dockerfile_path, ..
             }
+            | BuildType::Zola {
+                dockerfile_path, ..
+            }
             | BuildType::Script {
                 dockerfile_path, ..
             }
@@ -781,6 +789,9 @@ impl DockerImage {
                 dockerfile_path, ..
             } => dockerfile_path.clone(),
             BuildType::RustBinary {
+                dockerfile_path, ..
+            } => dockerfile_path.clone(),
+            BuildType::Zola {
                 dockerfile_path, ..
             } => dockerfile_path.clone(),
             BuildType::Book {

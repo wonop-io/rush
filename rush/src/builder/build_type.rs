@@ -16,6 +16,11 @@ pub enum BuildType {
         dockerfile_path: String,
         context_dir: Option<String>,
     },
+    Zola {
+        location: String,
+        dockerfile_path: String,
+        context_dir: Option<String>,
+    },
     Book {
         location: String,
         dockerfile_path: String,

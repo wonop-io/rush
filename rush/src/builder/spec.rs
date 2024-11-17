@@ -110,6 +110,25 @@ impl ComponentBuildSpec {
                     .unwrap()
                     .to_string(),
             },
+            "Zola" => BuildType::Zola {
+                context_dir: Some(
+                    yaml_section
+                        .get("context_dir")
+                        .map_or(".".to_string(), |v| v.as_str().unwrap().to_string()),
+                ),
+                location: yaml_section
+                    .get("location")
+                    .expect("location is required for Book")
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+                dockerfile_path: yaml_section
+                    .get("dockerfile")
+                    .expect("dockerfile_path is required")
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+            },
             "Book" => BuildType::Book {
                 context_dir: Some(
                     yaml_section
@@ -206,6 +225,7 @@ impl ComponentBuildSpec {
         let location = match &build_type {
             BuildType::TrunkWasm { location, .. } => Some(location.clone()),
             BuildType::RustBinary { location, .. } => Some(location.clone()),
+            BuildType::Zola { location, .. } => Some(location.clone()),
             BuildType::Book { location, .. } => Some(location.clone()),
             BuildType::Script { location, .. } => Some(location.clone()),
             _ => None,
@@ -445,6 +465,7 @@ impl ComponentBuildSpec {
         let (location, services) = match &self.build_type {
             BuildType::TrunkWasm { location, .. } => (Some(location.clone()), None),
             BuildType::RustBinary { location, .. } => (Some(location.clone()), None),
+            BuildType::Zola { location, .. } => (Some(location.clone()), None),
             BuildType::Book { location, .. } => (Some(location.clone()), None),
             BuildType::Script { location, .. } => (Some(location.clone()), None),
             BuildType::Ingress { components, .. } => {
