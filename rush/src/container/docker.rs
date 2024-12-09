@@ -382,7 +382,7 @@ impl DockerImage {
             let mut args = vec![
                 "run".to_string(),
                 "--name".to_string(),
-                spec.component_name.clone(),
+                spec.docker_local_name(),
                 "--network".to_string(),
                 network_name,
             ];
@@ -551,10 +551,10 @@ impl DockerImage {
             Some(toolchain) => toolchain.clone(),
             None => panic!("Cannot launch docker image without a toolchain"),
         };
-        let component_name = self.spec.lock().unwrap().component_name.clone();
+        let local_container_name = self.spec.lock().unwrap().docker_local_name().clone();
 
         // Check if the container is running
-        let component_arg = format!("name={}", component_name);
+        let component_arg = format!("name={}", local_container_name);
         let check_args = vec!["ps", "-q", "-f", &component_arg];
         match run_command("check".white().bold(), toolchain.docker(), check_args).await {
             Ok(output) => {
@@ -567,17 +567,17 @@ impl DockerImage {
                         vec!["kill", &output],
                     )
                     .await;
-                    trace!("Killed Docker container for {}", component_name);
+                    trace!("Killed Docker container for {}", local_container_name);
                 } else {
                     trace!(
                         "No running container found for {}. Skipping kill.",
-                        component_name
+                        local_container_name
                     );
                 }
             }
             Err(e) => warn!(
                 "Failed to check if container {} is running: {}",
-                component_name, e
+                local_container_name, e
             ),
         }
     }
@@ -591,41 +591,41 @@ impl DockerImage {
                 panic!("Cannot clean docker image without a toolchain");
             }
         };
-        let component_name = self.spec.lock().unwrap().component_name.clone();
-        trace!(
+        let local_image_name = self.spec.lock().unwrap().docker_local_name();
+        info!(
             "Cleaning Docker container for component: {}",
-            component_name
+            local_image_name
         );
 
         // Check if the container exists before attempting to remove it
-        let component_arg = format!("name={}", component_name);
+        let component_arg = format!("name={}", local_image_name);
         let check_args = vec!["ps", "-a", "-q", "-f", &component_arg];
         match run_command("check".white().bold(), toolchain.docker(), check_args).await {
             Ok(output) => {
                 if !output.trim().is_empty() {
                     // Container exists, proceed with removal
-                    let remove_args = vec!["rm", "-f", &component_name];
+                    let remove_args = vec!["rm", "-f", &local_image_name];
                     match run_command("clean".white().bold(), toolchain.docker(), remove_args).await
                     {
                         Ok(_) => trace!(
                             "Successfully removed Docker container for {}",
-                            component_name
+                            local_image_name
                         ),
                         Err(e) => warn!(
                             "Failed to remove Docker container for {}: {}",
-                            component_name, e
+                            local_image_name, e
                         ),
                     }
                 } else {
                     trace!(
                         "No container found for {}. Skipping removal.",
-                        component_name
+                        local_image_name
                     );
                 }
             }
             Err(e) => warn!(
                 "Failed to check for existing container {}: {}",
-                component_name, e
+                local_image_name, e
             ),
         }
 
@@ -636,40 +636,6 @@ impl DockerImage {
     pub async fn kill_and_clean(&self) {
         self.kill().await;
         self.clean().await;
-    }
-
-    pub async fn run(&self) -> Result<(), String> {
-        self.build().await?;
-
-        let toolchain = match &self.toolchain {
-            Some(toolchain) => toolchain.clone(),
-            None => panic!("Cannot launch docker image without a toolchain"),
-        };
-
-        let env_guard = DockerImage::create_cross_compile_guard(
-            &self.spec.lock().unwrap().build_type,
-            &toolchain,
-        );
-
-        let formatted_label = format!(
-            "{} [{}]",
-            self.spec.lock().unwrap().component_name,
-            env_guard.target()
-        );
-        let formatted_label = formatted_label.white().bold();
-        let extra_args = self.spec.lock().unwrap().docker_extra_run_args.clone();
-
-        // TODO: Get ports
-        let image_name = self.tagged_image_name();
-        let mut args = vec!["run", "-p", "8000:80", &image_name];
-        for arg in &extra_args {
-            args.push(arg);
-        }
-
-        match run_command(formatted_label, toolchain.docker(), args).await {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        }
     }
 
     pub async fn push(&self) -> Result<(), String> {

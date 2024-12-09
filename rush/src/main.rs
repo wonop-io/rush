@@ -20,7 +20,7 @@ use crate::toolchain::ToolchainContext;
 use crate::utils::Directory;
 use crate::vault::Base64SecretsEncoder;
 use crate::vault::SecretsDefinitions;
-use clap::{arg, Arg, Command};
+use clap::{arg, value_parser, Arg, Command};
 use cluster::Minikube;
 use colored::Colorize;
 use log::warn;
@@ -224,6 +224,7 @@ async fn main() -> io::Result<()> {
         .arg(arg!(environment : --env <ENVIRONMENT> "Environment"))
         .arg(arg!(docker_registry : --registry <DOCKER_REGISTRY> "Docker Registry"))
         .arg(arg!(log_level : -l --loglevel <LOG_LEVEL> "Log level (trace, debug, info, warn, error)").default_value("info"))
+        .arg(arg!(start_port: --port <START_PORT> "Starting port for services").value_parser(value_parser!(u16)).default_value("8129"))
         .arg(Arg::new("product_name").required(true))
         .subcommand(Command::new("describe")
             .about("Describes the current configuration")
@@ -293,6 +294,7 @@ async fn main() -> io::Result<()> {
         )
         .get_matches();
 
+    let start_port = *matches.get_one::<u16>("start_port").unwrap();
     let redirected_components: HashMap<String, (String, u16)> = matches
         .subcommand_matches("dev")
         .and_then(|dev_matches| dev_matches.get_many::<String>("redirect"))
@@ -375,7 +377,13 @@ async fn main() -> io::Result<()> {
     let product_name = matches.get_one::<String>("product_name").unwrap();
     info!("Product name: {}", product_name);
 
-    let config = match Config::new(&root_dir, product_name, &environment, &docker_registry) {
+    let config = match Config::new(
+        &root_dir,
+        product_name,
+        &environment,
+        &docker_registry,
+        start_port,
+    ) {
         Ok(config) => config,
         Err(e) => {
             error!("Failed to create config: {}", e);

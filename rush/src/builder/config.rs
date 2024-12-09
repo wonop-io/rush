@@ -27,9 +27,13 @@ pub struct Config {
     vault_name: String,
     k8s_encoder: String,
     one_password_account: Option<String>,
+    start_port: u16,
 }
 
 impl Config {
+    pub fn start_port(&self) -> u16 {
+        self.start_port
+    }
     pub fn k8s_encoder(&self) -> &str {
         &self.k8s_encoder
     }
@@ -89,6 +93,7 @@ impl Config {
         product_name: &str,
         environment: &str,
         docker_registry: &str,
+        start_port: u16,
     ) -> Result<Arc<Self>, String> {
         let product_name = product_name.to_string();
         let environment = environment.to_string();
@@ -228,6 +233,7 @@ impl Config {
             vault_name,
             k8s_encoder,
             one_password_account,
+            start_port,
         };
 
         Ok(Arc::new(ret))

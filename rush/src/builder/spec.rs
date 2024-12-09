@@ -48,6 +48,10 @@ pub struct ComponentBuildSpec {
 }
 
 impl ComponentBuildSpec {
+    pub fn docker_local_name(&self) -> String {
+        format!("{}-{}", self.product_name, self.component_name)
+    }
+
     pub fn set_services(&mut self, services: Arc<ServicesSpec>) {
         self.services = Some(services);
     }

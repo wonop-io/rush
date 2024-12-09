@@ -4,6 +4,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceSpec {
     pub name: String,
+    pub docker_host: String,
     pub host: String,
     pub port: u16,
     pub target_port: u16,
