@@ -199,7 +199,7 @@ impl ContainerReactor {
             Err(e) => return Err(format!("Failed to read stack config: {}", e)),
         };
 
-        let mut next_port = 8000;
+        let mut next_port = config.start_port();
         let stack_config_value: serde_yaml::Value = serde_yaml::from_str(&stack_config).unwrap();
         let mut images = Vec::new();
 
@@ -316,6 +316,7 @@ impl ContainerReactor {
                         target_port,
                         mount_point: image.spec().mount_point.clone(),
                         domain: image.spec().domain.clone(),
+                        docker_host: image.spec().docker_local_name(),
                     };
                     services
                         .entry(image.spec().domain.clone())
