@@ -199,6 +199,18 @@ impl SecretsDefinitions {
         Ok(all_valid)
     }
 
+    fn is_reference(&self, component_name: &str, secret_name: &str) -> bool {
+        if let Some(component) = self.components.get(component_name) {
+            if let Some(generation_method) = component.secrets.get(secret_name) {
+                matches!(generation_method, GenerationMethod::Ref(_))
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
     pub fn generate_secret(&self, component_name: &str, secret_name: &str) -> GenerationResult {
         if let Some(component) = self.components.get(component_name) {
             if let Some(generation_method) = component.secrets.get(secret_name) {
@@ -385,42 +397,173 @@ impl SecretsDefinitions {
             GenerationResult::None
         }
     }
+}
 
+#[derive(Debug, Clone)]
+struct SecretReference {
+    secret_name: String,
+    component: String,
+    referenced_secret: String,
+}
+
+#[derive(Debug, Clone)]
+struct ComponentSecretSet {
+    secrets: HashMap<String, String>,
+    references: Vec<SecretReference>,
+}
+
+#[derive(Debug, Clone)]
+struct SecretStore {
+    components: HashMap<String, ComponentSecretSet>,
+    overwrite_all: Option<bool>,
+}
+
+impl SecretStore {
+    fn new() -> Self {
+        Self {
+            components: HashMap::new(),
+            overwrite_all: None,
+        }
+    }
+
+    fn add_secret(&mut self, component: &str, name: String, value: String) {
+        self.components
+            .entry(component.to_string())
+            .or_insert_with(|| ComponentSecretSet {
+                secrets: HashMap::new(),
+                references: Vec::new(),
+            })
+            .secrets
+            .insert(name, value);
+    }
+
+    fn add_reference(
+        &mut self,
+        component: &str,
+        name: String,
+        ref_component: String,
+        ref_secret: String,
+    ) {
+        self.components
+            .entry(component.to_string())
+            .or_insert_with(|| ComponentSecretSet {
+                secrets: HashMap::new(),
+                references: Vec::new(),
+            })
+            .references
+            .push(SecretReference {
+                secret_name: name,
+                component: ref_component,
+                referenced_secret: ref_secret,
+            });
+    }
+
+    fn resolve_references(&mut self) {
+        let components = self.components.clone();
+
+        for (component_name, component_set) in &mut self.components {
+            for reference in &component_set.references {
+                if let Some(ref_component) = components.get(&reference.component) {
+                    if let Some(ref_value) = ref_component.secrets.get(&reference.referenced_secret)
+                    {
+                        component_set
+                            .secrets
+                            .insert(reference.secret_name.clone(), ref_value.clone());
+                    }
+                }
+            }
+        }
+    }
+}
+impl SecretsDefinitions {
     pub async fn populate(
         &self,
         vault: Arc<Mutex<dyn Vault + Send>>,
         env: &str,
     ) -> Result<(), Box<dyn Error>> {
-        let mut all_secrets = HashMap::new();
-        let mut all_references = HashMap::new();
-        let mut overwrite_all = None;
+        let mut store = SecretStore::new();
 
         let mut sorted_components: Vec<_> = self.components.keys().collect();
         sorted_components.sort();
 
+        // Load all existing secrets for all components upfront
+        let mut existing_secrets = HashMap::new();
+        for component_name in &sorted_components {
+            match vault
+                .lock()
+                .unwrap()
+                .get(&self.product_name, component_name, env)
+                .await
+            {
+                Ok(secrets) => {
+                    existing_secrets.insert(component_name.to_string(), secrets);
+                }
+                Err(_) => {
+                    existing_secrets.insert(component_name.to_string(), HashMap::new());
+                }
+            }
+        }
+
         for component_name in sorted_components {
+            let existing_component_secrets = existing_secrets.get(component_name).unwrap();
             let component_secrets = &self.components[component_name];
-            let mut secrets = HashMap::new();
-            let mut references = Vec::new();
             trace!("Generating secret for component: {}", component_name);
             println!("");
             println!("{}", component_name.white().bold());
             println!("{}", "=".repeat(component_name.len()));
+
             let mut sorted_secrets: Vec<_> = component_secrets.secrets.keys().collect();
             sorted_secrets.sort();
 
             for secret_name in sorted_secrets {
+                let should_generate_new = if self.is_reference(component_name, secret_name) {
+                    true
+                } else if let Some(existing_value) = existing_component_secrets.get(secret_name) {
+                    let mut input = String::new();
+                    let value = if existing_value.len() >= 7 {
+                        format!(
+                            "{}****{}",
+                            &existing_value[..2],
+                            &existing_value[existing_value.len() - 3..]
+                        )
+                    } else {
+                        "****".to_string()
+                    };
+                    print!(
+                        "The secret `{}` [{}] already exists. Do you want to override it? (y/N)",
+                        secret_name, value
+                    );
+                    std::io::stdout().flush()?;
+                    std::io::stdin().read_line(&mut input)?;
+                    matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+                } else {
+                    true
+                };
+
+                if !should_generate_new {
+                    continue;
+                }
+
                 let secret_value = self.generate_secret(component_name, secret_name);
+
                 match secret_value {
                     GenerationResult::Value(value) => {
-                        secrets.insert(secret_name.clone(), value);
+                        store.add_secret(component_name, secret_name.clone(), value);
                     }
                     GenerationResult::KeyPair(private_key, public_key) => {
-                        secrets.insert(format!("{}_PRIVATE_KEY", secret_name), private_key);
-                        secrets.insert(format!("{}_PUBLIC_KEY", secret_name), public_key);
+                        store.add_secret(
+                            component_name,
+                            format!("{}_PRIVATE_KEY", secret_name),
+                            private_key,
+                        );
+                        store.add_secret(
+                            component_name,
+                            format!("{}_PUBLIC_KEY", secret_name),
+                            public_key,
+                        );
                     }
                     GenerationResult::Ref(component, secret) => {
-                        references.push((secret_name.clone(), component.clone(), secret.clone()));
+                        store.add_reference(component_name, secret_name.clone(), component, secret);
                     }
                     GenerationResult::None => {
                         panic!(
@@ -430,89 +573,18 @@ impl SecretsDefinitions {
                     }
                 }
             }
-            let vault = vault.clone();
-            let product_name = self.product_name.clone();
-            let component_name = component_name.clone();
-            let env = env.to_string();
-
-            all_secrets.insert(component_name.clone(), secrets.clone());
-            all_references.insert(component_name.clone(), references.clone());
         }
 
-        for (component_name, references) in &all_references {
-            let vault = vault.clone();
-            let product_name = self.product_name.clone();
-            let env = env.to_string();
-            let mut secrets = all_secrets.get(component_name).unwrap().clone();
+        store.resolve_references();
 
-            for (secret_name, ref_component, ref_secret) in references {
-                if let Some(ref_secrets) = all_secrets.get(ref_component) {
-                    if let Some(ref_value) = ref_secrets.get(ref_secret) {
-                        secrets.insert(secret_name.clone(), ref_value.clone());
-                    } else {
-                        panic!(
-                            "Failed to get reference secret value for {} in component {}",
-                            ref_secret, ref_component
-                        );
-                    }
-                } else {
-                    panic!(
-                        "Failed to get reference secrets for component {}: Choices are {:?}",
-                        ref_component,
-                        all_secrets.keys()
-                    );
-                }
-            }
-
-            let existing_secrets = match vault
-                .lock()
-                .unwrap()
-                .get(&product_name, component_name, &env)
-                .await
-            {
-                Ok(secrets) => secrets,
-                Err(e) => HashMap::new(),
-            };
-            for (key, value) in secrets.clone() {
-                if let Some(value) = existing_secrets.get(&key) {
-                    if let Some(false) = overwrite_all {
-                        secrets.insert(key.clone(), value.clone());
-                    } else if overwrite_all.is_none() {
-                        let mut input = String::new();
-                        let mut ok = false;
-                        while !ok {
-                            println!(
-                                "Secret '{}' already exists. Overwrite? (Yes/No/All/nOne)",
-                                key
-                            );
-                            ok = true;
-                            std::io::stdin().read_line(&mut input)?;
-                            match input.trim().to_lowercase().as_str() {
-                                "y" | "yes" => {}
-                                "n" | "no" => {
-                                    secrets.insert(key.clone(), value.clone());
-                                }
-                                "a" | "all" => {
-                                    overwrite_all = Some(true);
-                                }
-                                "o" | "none" => {
-                                    overwrite_all = Some(false);
-                                    secrets.insert(key.clone(), value.clone());
-                                }
-                                _ => {
-                                    println!("Invalid input. Please enter Yes/No/All/nOne.");
-                                    ok = false;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        for (component_name, component_set) in &store.components {
+            let mut secrets = component_set.secrets.clone();
+            let existing_secrets = existing_secrets.get(component_name).unwrap();
 
             vault
                 .lock()
                 .unwrap()
-                .set(&product_name, component_name, &env, secrets)
+                .set(&self.product_name, component_name, env, secrets)
                 .await
                 .expect("Failed to set reference secrets in vault");
         }
