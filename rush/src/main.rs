@@ -430,7 +430,8 @@ async fn main() -> io::Result<()> {
     // Creating environment
     let public_environment = PublicEnvironmentDefinitions::new(
         product_name.clone(),
-        &format!("{}/stack.env.public.yaml", config.product_path()),
+        &format!("{}/stack.env.base.yaml", config.product_path()),
+        &format!("{}/stack.env.{}.yaml", config.product_path(), environment),
     );
     match public_environment.generate_dotenv_files() {
         Ok(_) => (),

@@ -31,40 +31,83 @@ pub enum GenerationMethod {
 }
 
 impl PublicEnvironmentDefinitions {
-    pub fn new(product_name: String, yaml_filename: &str) -> Self {
-        let product_dir = PathBuf::from(yaml_filename).parent().unwrap().to_path_buf();
-        let components = match File::open(yaml_filename) {
+    pub fn new(product_name: String, base_yaml: &str, specialisation_yaml: &str) -> Self {
+        let product_dir = PathBuf::from(base_yaml).parent().unwrap().to_path_buf();
+
+        let base_components = Self::load_components(base_yaml, true);
+        let specialisation_components = Self::load_components(specialisation_yaml, false);
+        let components = Self::merge_components(base_components, specialisation_components);
+
+        Self {
+            product_name,
+            components,
+            product_dir,
+        }
+    }
+
+    fn load_components(
+        yaml_path: &str,
+        is_base: bool,
+    ) -> HashMap<String, HashMap<String, GenerationMethod>> {
+        match File::open(yaml_path) {
             Ok(mut file) => {
                 let mut contents = String::new();
                 match file.read_to_string(&mut contents) {
-                    Ok(_) => match serde_yaml::from_str(&contents) {
-                        Ok(parsed_components) => parsed_components,
-                        Err(e) => {
-                            panic!(
-                                "Unable to parse YAML file '{}': {}. Returning empty definition.",
-                                yaml_filename, e
-                            );
+                    Ok(_) => {
+                        match serde_yaml::from_str(&contents) {
+                            Ok(parsed_components) => parsed_components,
+                            Err(e) => {
+                                let message = if is_base {
+                                    panic!("Unable to parse YAML file '{}': {}. Returning empty definition.", yaml_path, e)
+                                } else {
+                                    warn!("Unable to parse YAML file '{}': {}. Ignoring specialisation.", yaml_path, e);
+                                    HashMap::new()
+                                };
+                                message
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
-                        panic!(
-                            "Unable to read YAML file '{}': {}. Returning empty definition.",
-                            yaml_filename, e
-                        );
+                        let message = if is_base {
+                            panic!(
+                                "Unable to read YAML file '{}': {}. Returning empty definition.",
+                                yaml_path, e
+                            )
+                        } else {
+                            warn!(
+                                "Unable to read YAML file '{}': {}. Ignoring specialisation.",
+                                yaml_path, e
+                            );
+                            HashMap::new()
+                        };
+                        message
                     }
                 }
             }
             Err(e) => {
                 warn!(
                     "Unable to open YAML file '{}': {}. Returning empty definition.",
-                    yaml_filename, e
+                    yaml_path, e
                 );
                 HashMap::new()
             }
-        };
+        }
+    }
 
-        let components = components
-            .into_iter()
+    fn merge_components(
+        mut base: HashMap<String, HashMap<String, GenerationMethod>>,
+        specialisation: HashMap<String, HashMap<String, GenerationMethod>>,
+    ) -> HashMap<String, ComponentEnvironment> {
+        for (component_name, env_vars) in specialisation {
+            match base.get_mut(&component_name) {
+                Some(base_env_vars) => base_env_vars.extend(env_vars),
+                None => {
+                    base.insert(component_name, env_vars);
+                }
+            }
+        }
+
+        base.into_iter()
             .map(|(component_name, environment_variables)| {
                 (
                     component_name,
@@ -73,13 +116,7 @@ impl PublicEnvironmentDefinitions {
                     },
                 )
             })
-            .collect();
-
-        Self {
-            product_name,
-            components,
-            product_dir,
-        }
+            .collect()
     }
 
     pub fn add_component(&mut self, component_name: String) {
