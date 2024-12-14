@@ -414,15 +414,13 @@ struct ComponentSecretSet {
 
 #[derive(Debug, Clone)]
 struct SecretStore {
-    components: HashMap<String, ComponentSecretSet>,
-    overwrite_all: Option<bool>,
+    pub components: HashMap<String, ComponentSecretSet>,
 }
 
 impl SecretStore {
     fn new() -> Self {
         Self {
             components: HashMap::new(),
-            overwrite_all: None,
         }
     }
 
@@ -535,7 +533,16 @@ impl SecretsDefinitions {
                     );
                     std::io::stdout().flush()?;
                     std::io::stdin().read_line(&mut input)?;
-                    matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+                    let ret = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
+                    if !ret {
+                        store.add_secret(
+                            component_name,
+                            secret_name.clone(),
+                            existing_value.to_string(),
+                        );
+                    }
+
+                    ret
                 } else {
                     true
                 };
@@ -578,6 +585,10 @@ impl SecretsDefinitions {
         store.resolve_references();
 
         for (component_name, component_set) in &store.components {
+            println!("Writing {}", component_name);
+            for (secret_name, _) in &component_set.secrets {
+                println!("{}: ***", secret_name,);
+            }
             let mut secrets = component_set.secrets.clone();
             let existing_secrets = existing_secrets.get(component_name).unwrap();
 
