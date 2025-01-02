@@ -730,6 +730,7 @@ impl ContainerReactor {
             let _guard = Directory::chdir(&self.product_directory);
 
             for image in &mut self.images {
+                image.set_was_recently_rebuild(false);
                 if image.should_ignore_in_devmode() {
                     println!(
                         "{}  ..... [  {}  ]",
@@ -749,6 +750,8 @@ impl ContainerReactor {
 
                 print!("Building {}  ..... ", image.identifier());
                 std::io::stdout().flush().expect("Failed to flush stdout");
+                image.set_was_recently_rebuild(true);
+
                 match image.build().await {
                     Ok(_) => {
                         image.set_should_rebuild(false);
@@ -789,9 +792,10 @@ impl ContainerReactor {
         let mut break_type = BreakType::Running;
         while matches!(break_type, BreakType::Running | BreakType::FileChanged) {
             // Invalidating cache
-            self.kill_and_clean().await;
+            self.kill_and_clean(false).await;
             trace!("Cleaned up previous resources");
 
+            println!("Step A");
             if let Err(e) = self
                 .build_and_handle_errors(&mut break_type, &test_if_files_changed)
                 .await
@@ -799,8 +803,12 @@ impl ContainerReactor {
                 continue;
             }
 
+            println!("Step B");
+
             let (max_label_length, longest_paths) = self.prepare_for_launch();
+            println!("Step C");
             self.launch_images(max_label_length, longest_paths).await;
+            println!("Step D");
 
             break_type = self.monitor_and_handle_events(&test_if_files_changed).await;
         }
@@ -932,7 +940,7 @@ impl ContainerReactor {
             if test_if_files_changed() {
                 if self.test_if_siginificant_change().await {
                     trace!("File change detected. Rebuilding all images.");
-                    let _ = self.terminate_sender.send(());
+                    // let _ = self.terminate_sender.send(());
                     *break_type = BreakType::FileChanged;
                     break;
                 }
@@ -961,10 +969,6 @@ impl ContainerReactor {
             .map(|image| image.component_name().len())
             .max()
             .unwrap_or_default();
-        self.images_by_id = HashMap::new();
-        self.statuses_receivers = HashMap::new();
-        self.statuses = HashMap::new();
-        self.handles = HashMap::new();
 
         let dependency_graph = self
             .images
@@ -1009,6 +1013,11 @@ impl ContainerReactor {
         max_label_length: usize,
         longest_paths: HashMap<String, usize>,
     ) {
+        self.images_by_id = HashMap::new();
+        self.statuses_receivers = HashMap::new();
+        self.statuses = HashMap::new();
+        self.handles = HashMap::new();
+
         let mut jobs = self
             .images
             .iter_mut()
@@ -1026,6 +1035,9 @@ impl ContainerReactor {
 
         for (priority, image_id, image) in jobs {
             if image.should_ignore_in_devmode() {
+                continue;
+            }
+            if !image.was_recently_rebuild() {
                 continue;
             }
             println!(
@@ -1150,7 +1162,7 @@ impl ContainerReactor {
             trace!("File change detected. Rebuilding all images.");
             let significant_change = self.test_if_siginificant_change().await;
             if significant_change {
-                let _ = self.terminate_sender.send(());
+                // let _ = self.terminate_sender.send(());
                 *stop_time = Some(std::time::Instant::now());
                 *stopping = true;
                 true
@@ -1169,7 +1181,7 @@ impl ContainerReactor {
             .any(|status| matches!(status, Status::Finished(_)));
         if any_finished {
             warn!("Proceeding with forced shutdown due to image completion...");
-            self.kill_and_clean().await;
+            self.kill_and_clean(true).await;
             true
         } else {
             false
@@ -1229,7 +1241,7 @@ impl ContainerReactor {
         println!("******************************************************************");
 
         warn!("Proceeding with forced shutdown...");
-        self.kill_and_clean().await;
+        self.kill_and_clean(true).await;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
     }
@@ -1251,7 +1263,7 @@ impl ContainerReactor {
             println!("  {}: {}", component_name, status_str);
         }
         println!("Proceeding with forced shutdown...");
-        self.kill_and_clean().await;
+        self.kill_and_clean(true).await;
     }
 
     async fn wait_for_handles(&mut self) {
@@ -1312,13 +1324,16 @@ impl ContainerReactor {
         }
     }
 
-    pub async fn kill_and_clean(&self) {
+    pub async fn kill_and_clean(&self, force_all: bool) {
         trace!("Starting kill and cleanup process");
         for image in &self.images {
-            debug!("Cleaning up image: {}", image.identifier());
-            image.kill_and_clean().await;
+            if force_all || image.should_rebuild() {
+                log::info!("Cleaning up image: {}", image.identifier());
+                image.kill_and_clean().await;
+            }
         }
         trace!("Kill and cleanup process completed");
+        println!("Done");
     }
 
     pub async fn clean(&self) {

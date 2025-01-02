@@ -32,6 +32,20 @@ impl BuildScript {
                     }
                 }
             }
+            BuildType::DixiousWasm { .. } => {
+                match TEMPLATES.render("build/wasm_dixious.sh", &context) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        let mut cause = e.source();
+                        while let Some(e) = cause {
+                            println!("Reason: {}", e);
+                            cause = e.source();
+                        }
+                        panic!("Failed rendering");
+                    }
+                }
+            }
             BuildType::RustBinary { .. } => {
                 match TEMPLATES.render("build/rust_binary.sh", &context) {
                     Ok(s) => s,

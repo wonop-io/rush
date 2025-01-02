@@ -6,6 +6,11 @@ pub enum BuildType {
         dockerfile_path: String,
         context_dir: Option<String>,
     },
+    DixiousWasm {
+        location: String,
+        dockerfile_path: String,
+        context_dir: Option<String>,
+    },
     RustBinary {
         location: String,
         dockerfile_path: String,
