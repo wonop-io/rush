@@ -95,6 +95,21 @@ impl ComponentBuildSpec {
                     .unwrap()
                     .to_string(),
             },
+            "DixiousWasm" => BuildType::DixiousWasm {
+                context_dir: None,
+                location: yaml_section
+                    .get("location")
+                    .expect("location is required for DixiousWasm")
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+                dockerfile_path: yaml_section
+                    .get("dockerfile")
+                    .expect("dockerfile_path is required")
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+            },
             "RustBinary" => BuildType::RustBinary {
                 context_dir: Some(
                     yaml_section
@@ -228,6 +243,7 @@ impl ComponentBuildSpec {
         // Loading environment
         let location = match &build_type {
             BuildType::TrunkWasm { location, .. } => Some(location.clone()),
+            BuildType::DixiousWasm { location, .. } => Some(location.clone()),
             BuildType::RustBinary { location, .. } => Some(location.clone()),
             BuildType::Zola { location, .. } => Some(location.clone()),
             BuildType::Book { location, .. } => Some(location.clone()),
@@ -468,6 +484,7 @@ impl ComponentBuildSpec {
         .clone();
         let (location, services) = match &self.build_type {
             BuildType::TrunkWasm { location, .. } => (Some(location.clone()), None),
+            BuildType::DixiousWasm { location, .. } => (Some(location.clone()), None),
             BuildType::RustBinary { location, .. } => (Some(location.clone()), None),
             BuildType::Zola { location, .. } => (Some(location.clone()), None),
             BuildType::Book { location, .. } => (Some(location.clone()), None),

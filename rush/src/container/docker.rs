@@ -51,9 +51,18 @@ pub struct DockerImage {
 
     dev_ignore_image: bool,
     silence_output: bool,
+    was_recently_rebuild: bool,
 }
 
 impl DockerImage {
+    pub fn was_recently_rebuild(&self) -> bool {
+        self.was_recently_rebuild
+    }
+
+    pub fn set_was_recently_rebuild(&mut self, v: bool) {
+        self.was_recently_rebuild = v;
+    }
+
     pub fn depends_on(&self) -> &Vec<String> {
         &self.depends_on
     }
@@ -109,6 +118,11 @@ impl DockerImage {
         let config = spec.config();
         let (dockerfile_path, context_dir) = match &spec.build_type {
             BuildType::TrunkWasm {
+                dockerfile_path,
+                context_dir,
+                ..
+            } => (Some(dockerfile_path.clone()), context_dir.clone()),
+            BuildType::DixiousWasm {
                 dockerfile_path,
                 context_dir,
                 ..
@@ -236,6 +250,7 @@ impl DockerImage {
             network_name: None,
             dev_ignore_image: false,
             silence_output: false,
+            was_recently_rebuild: false,
         })
     }
 
@@ -251,25 +266,7 @@ impl DockerImage {
         debug!("Setting port to: {}", port);
         self.port = Some(port);
     }
-    /*
-    pub fn set_target_port(&mut self, target_port: u16) {
-        self.target_port = Some(target_port);
-    }
 
-    pub fn set_color(&mut self, color: String) {
-        self.spec.color = color;
-    }
-
-    pub fn set_product_name(&mut self, product_name: String) {
-        self.spec.product_name = product_name;
-        self.image_name = format!("{}-{}", self.spec.product_name, self.spec.component_name);
-    }
-
-    pub fn set_component_name(&mut self, component_name: String) {
-        self.spec.component_name = component_name;
-        self.image_name = format!("{}-{}", self.spec.product_name, self.spec.component_name);
-    }
-    */
     pub fn set_tag(&mut self, tag: String) {
         debug!("Setting tag to: {}", tag);
         self.tag = Some(tag);
@@ -493,12 +490,25 @@ impl DockerImage {
                     println!("Waiting for process '{}' to finish", spec.component_name);
                     tokio::select! {
                         _ = futures::future::join_all(vec![stdout_task, stderr_task]) => {
-                            debug!("Process finished");
+                            println!(
+                                "{} |   {}",
+                                formatted_label,
+                                "Exit reason: Process finished".bold().white()
+                            );
                         }
                         _ = child.wait() => {
-                            debug!("Process finished");
+                            println!(
+                                "{} |   {}",
+                                formatted_label,
+                                "Exit reason: Process finished".bold().white()
+                            );
                         }
                         _ =  terminate_receiver.recv() => {
+                            println!(
+                                "{} |   {}",
+                                formatted_label,
+                                "Exit reason: Received terminate signal".bold().white()
+                            );
                             let _ = status_sender.send(Status::Terminate);
                             debug!("Received termination signal for {}", spec.component_name);
                             // TODO: See you can find something more cross-platform friendly
@@ -567,7 +577,7 @@ impl DockerImage {
                         vec!["kill", &output],
                     )
                     .await;
-                    trace!("Killed Docker container for {}", local_container_name);
+                    log::info!("Killed Docker container for {}", local_container_name);
                 } else {
                     trace!(
                         "No running container found for {}. Skipping kill.",
@@ -699,6 +709,9 @@ impl DockerImage {
             BuildType::TrunkWasm {
                 dockerfile_path, ..
             }
+            | BuildType::DixiousWasm {
+                dockerfile_path, ..
+            }
             | BuildType::RustBinary {
                 dockerfile_path, ..
             }
@@ -752,6 +765,9 @@ impl DockerImage {
 
         let dockerfile_path = match &spec.build_type {
             BuildType::TrunkWasm {
+                dockerfile_path, ..
+            } => dockerfile_path.clone(),
+            BuildType::DixiousWasm {
                 dockerfile_path, ..
             } => dockerfile_path.clone(),
             BuildType::RustBinary {
