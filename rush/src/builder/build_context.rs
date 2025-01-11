@@ -8,7 +8,9 @@ use std::str;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BuildContext {
+    #[serde(flatten)]
     pub build_type: BuildType,
+
     pub location: Option<String>,
     pub target: Platform,
     pub host: Platform,
