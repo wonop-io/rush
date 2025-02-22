@@ -1,3 +1,4 @@
+set -e
 cd {{ location }} || exit
 {% for d,v in domains -%}
 export DOMAIN_{{ d | envname }}="{{ v }}"

@@ -1,3 +1,4 @@
+set -e
 cd {{ location }} || exit
 {% for d,v in domains -%}
 export DOMAIN_{{ d | envname }}="{{ v }}"
@@ -11,9 +12,14 @@ export {{ d | envname }}="{{ v }}"
 {{ p }}
 {% endfor %}
 {% endif %}
-CARGO_TARGET_DIR=./target wasm-trunk build --features csr --release
+
+{% if ssr %}
+CARGO_TARGET_DIR=./target wasm-trunk build  --features hydration --release
+{% else %}
+CARGO_TARGET_DIR=./target wasm-trunk build  --features csr --release
+{% endif %}
 
 {% if ssr %}
 export SQLX_OFFLINE=true
-CARGO_TARGET_DIR=./target cargo build --features ssr,hydration --release --target {{ rust_target }} --config "target.{{ rust_target }}.linker = '{{toolchain.cc}}'"
+CARGO_TARGET_DIR=./target cargo build --features ssr --release --target {{ rust_target }} --config "target.{{ rust_target }}.linker = '{{toolchain.cc}}'"
 {% endif %}
