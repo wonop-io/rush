@@ -88,12 +88,35 @@ impl ComponentBuildSpec {
                     .as_str()
                     .unwrap()
                     .to_string(),
+                ssr: yaml_section
+                    .get("ssr")
+                    .expect("ssr is required for TrunkWasm")
+                    .as_bool()
+                    .unwrap_or_default(),
                 dockerfile_path: yaml_section
                     .get("dockerfile")
                     .expect("dockerfile_path is required")
                     .as_str()
                     .unwrap()
                     .to_string(),
+                features: yaml_section.get("features").map(|v| {
+                    v.as_sequence()
+                        .unwrap()
+                        .iter()
+                        .map(|item| {
+                            Self::process_template_string(item.as_str().unwrap(), &variables)
+                        })
+                        .collect()
+                }),
+                precompile_commands: yaml_section.get("precompile_commands").map(|v| {
+                    v.as_sequence()
+                        .unwrap()
+                        .iter()
+                        .map(|item| {
+                            Self::process_template_string(item.as_str().unwrap(), &variables)
+                        })
+                        .collect()
+                }),
             },
             "DixiousWasm" => BuildType::DixiousWasm {
                 context_dir: None,
@@ -128,6 +151,24 @@ impl ComponentBuildSpec {
                     .as_str()
                     .unwrap()
                     .to_string(),
+                features: yaml_section.get("features").map(|v| {
+                    v.as_sequence()
+                        .unwrap()
+                        .iter()
+                        .map(|item| {
+                            Self::process_template_string(item.as_str().unwrap(), &variables)
+                        })
+                        .collect()
+                }),
+                precompile_commands: yaml_section.get("precompile_commands").map(|v| {
+                    v.as_sequence()
+                        .unwrap()
+                        .iter()
+                        .map(|item| {
+                            Self::process_template_string(item.as_str().unwrap(), &variables)
+                        })
+                        .collect()
+                }),
             },
             "Zola" => BuildType::Zola {
                 context_dir: Some(
