@@ -27,8 +27,15 @@ impl Artefact {
             .unwrap();
         let context = Context::from_serialize(context).expect("Could not create context");
 
-        tera.render(&self.input_path, &context)
-            .expect("Could not render template")
+        match tera.render(&self.input_path, &context) {
+            Ok(rendered) => rendered,
+            Err(e) => {
+                println!("File: {}", self.input_path);
+                println!("Context: {:#?}", context);
+                panic!("Failed to render template: {}", e);
+            }
+        }
+        // .expect("Could not render template")
     }
 
     pub fn render_to_file(&self, context: &BuildContext) {
