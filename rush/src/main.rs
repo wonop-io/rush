@@ -32,6 +32,7 @@ use std::fs::File;
 use std::io::Read;
 use std::sync::Mutex;
 use std::{path::Path, sync::Arc};
+use tera::Context;
 use tokio::io;
 use vault::{DotenvVault, OnePassword, Vault};
 
@@ -469,88 +470,100 @@ async fn main() -> io::Result<()> {
 
     let minikube = Minikube::new(toolchain.clone());
 
-    if let Some(matches) = matches.subcommand_matches("describe") {
+    if let Some(describe_matches) = matches.subcommand_matches("describe") {
         trace!("Executing 'describe' subcommand");
-        if matches.subcommand_matches("toolchain").is_some() {
+        if let Some(_) = describe_matches.subcommand_matches("toolchain") {
             println!("{:#?}", toolchain);
             debug!("Described toolchain");
             std::process::exit(0);
         }
 
-        if matches.subcommand_matches("images").is_some() {
+        if let Some(_) = describe_matches.subcommand_matches("images") {
             println!("{:#?}", reactor.images());
             debug!("Described images");
             std::process::exit(0);
         }
 
-        if matches.subcommand_matches("services").is_some() {
+        if let Some(_) = describe_matches.subcommand_matches("services") {
             println!("{:#?}", reactor.services());
             debug!("Described services");
             std::process::exit(0);
         }
 
-        if matches.subcommand_matches("build-script").is_some() {
-            let component_name = matches.get_one::<String>("component_name").unwrap();
-            trace!("Describing build script for component: {}", component_name);
-            let image = reactor
-                .get_image(component_name)
-                .expect("Component not found");
-            let secrets = vault
-                .lock()
-                .unwrap()
-                .get(&product_name, &component_name, &environment)
-                .await
-                .unwrap_or_default();
-            let ctx = image.generate_build_context(secrets);
+        if let Some(build_script_matches) = describe_matches.subcommand_matches("build-script") {
+            trace!("Describing build script");
+            if let Some(component_name) = build_script_matches.get_one::<String>("component_name") {
+                trace!("Describing build script for component: {}", component_name);
+                let image = reactor
+                    .get_image(component_name)
+                    .expect("Component not found");
+                let secrets = vault
+                    .lock()
+                    .unwrap()
+                    .get(&product_name, &component_name, &environment)
+                    .await
+                    .unwrap_or_default();
+                let ctx = image.generate_build_context(secrets);
 
-            println!("{}", image.build_script(&ctx).unwrap());
-            debug!("Described build script for component: {}", component_name);
-            std::process::exit(0);
-        }
-
-        if matches.subcommand_matches("build-context").is_some() {
-            let component_name = matches.get_one::<String>("component_name").unwrap();
-            trace!("Describing build context for component: {}", component_name);
-            let image = reactor
-                .get_image(component_name)
-                .expect("Component not found");
-            let secrets = vault
-                .lock()
-                .unwrap()
-                .get(&product_name, &component_name, &environment)
-                .await
-                .unwrap_or_default();
-            let ctx = image.generate_build_context(secrets);
-            println!("{:#?}", ctx);
-            debug!("Described build context for component: {}", component_name);
-            std::process::exit(0);
-        }
-
-        if matches.subcommand_matches("artefacts").is_some() {
-            let _pop_dir = Directory::chdir(reactor.product_directory());
-            let component_name = matches.get_one::<String>("component_name").unwrap();
-            trace!("Describing artefacts for component: {}", component_name);
-            let image = reactor
-                .get_image(component_name)
-                .expect("Component not found");
-            let secrets = vault
-                .lock()
-                .unwrap()
-                .get(&product_name, &component_name, &environment)
-                .await
-                .unwrap_or_default();
-            let ctx = image.generate_build_context(secrets);
-            for (k, v) in image.spec().build_artefacts() {
-                let message = format!("{} {}", "Artefact".green(), k.white());
-                println!("{}\n", &message.bold());
-
-                println!("{}\n", v.render(&ctx));
+                println!("{}", image.build_script(&ctx).unwrap());
+                debug!("Described build script for component: {}", component_name);
+                std::process::exit(0);
             }
-            debug!("Described artefacts for component: {}", component_name);
-            std::process::exit(0);
+            error!("No component name provided");
+            std::process::exit(1);
         }
 
-        if matches.subcommand_matches("k8s").is_some() {
+        if let Some(build_context_matches) = describe_matches.subcommand_matches("build-context") {
+            if let Some(component_name) = build_context_matches.get_one::<String>("component_name")
+            {
+                trace!("Describing build context for component: {}", component_name);
+                let image = reactor
+                    .get_image(component_name)
+                    .expect("Component not found");
+                let secrets = vault
+                    .lock()
+                    .unwrap()
+                    .get(&product_name, &component_name, &environment)
+                    .await
+                    .unwrap_or_default();
+                let ctx = image.generate_build_context(secrets);
+                let ctx = Context::from_serialize(ctx).expect("Could not create context");
+                println!("{:#?}", ctx);
+                debug!("Described build context for component: {}", component_name);
+                std::process::exit(0);
+            }
+            error!("No component name provided");
+            std::process::exit(1);
+        }
+
+        if let Some(artefacts_matches) = describe_matches.subcommand_matches("artefacts") {
+            if let Some(component_name) = artefacts_matches.get_one::<String>("component_name") {
+                let _pop_dir = Directory::chdir(reactor.product_directory());
+                trace!("Describing artefacts for component: {}", component_name);
+                let image = reactor
+                    .get_image(component_name)
+                    .expect("Component not found");
+                let secrets = vault
+                    .lock()
+                    .unwrap()
+                    .get(&product_name, &component_name, &environment)
+                    .await
+                    .unwrap_or_default();
+                let ctx = image.generate_build_context(secrets);
+                for (k, v) in image.spec().build_artefacts() {
+                    let message = format!("{} {}", "Artefact".green(), k.white());
+                    println!("{}\n", &message.bold());
+
+                    println!("{}\n", v.render(&ctx));
+                }
+                debug!("Described artefacts for component: {}", component_name);
+                std::process::exit(0);
+            }
+            error!("No component name provided");
+            std::process::exit(1);
+        }
+
+        if let Some(_) = describe_matches.subcommand_matches("k8s") {
             trace!("Describing Kubernetes manifests");
             let manifests = reactor.cluster_manifests();
             for component in manifests.components() {

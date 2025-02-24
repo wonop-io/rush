@@ -8,9 +8,11 @@ use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
 use openssl::rsa::Rsa;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distributions::Alphanumeric, Rng, RngCore};
 use serde::{Deserialize, Serialize};
+use ssh_key::{self, private::KeypairData, PrivateKey, PublicKey};
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
@@ -43,12 +45,13 @@ pub enum GenerationMethod {
     RandomBase64(usize),
     RandomUUID,
     Timestamp,
+    FromFile(bool, bool, String), // (whether to ask, encode base64, default_file_path)
     Ref(String),
-    RSAKeyPair(usize, bool),    // Added bool to specify base64 encoding
-    ECDSAKeyPair(String, bool), // Added bool to specify base64 encoding
-    Ed25519KeyPair(bool),       // Added bool to specify base64 encoding
-    AESKey(usize, bool),        // Added bool to specify base64 encoding
-    HMACKey(usize, bool),       // Added bool to specify base64 encoding
+    OpenSshRSAKeyPair(usize, bool), // Added bool to specify base64 encoding
+    OpenSshECDSAKeyPair(String, bool), // Added bool to specify base64 encoding
+    OpenSshEd25519KeyPair(bool),    // Added bool to specify base64 encoding
+    AESKey(usize, bool),            // Added bool to specify base64 encoding
+    HMACKey(usize, bool),           // Added bool to specify base64 encoding
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,9 +143,9 @@ impl SecretsDefinitions {
 
             for secret_name in component.secrets.keys() {
                 match &component.secrets[secret_name] {
-                    GenerationMethod::RSAKeyPair(_, _)
-                    | GenerationMethod::ECDSAKeyPair(_, _)
-                    | GenerationMethod::Ed25519KeyPair(_) => {
+                    GenerationMethod::OpenSshRSAKeyPair(_, _)
+                    | GenerationMethod::OpenSshECDSAKeyPair(_, _)
+                    | GenerationMethod::OpenSshEd25519KeyPair(_) => {
                         let private_key = format!("{}_PRIVATE_KEY", secret_name);
                         let public_key = format!("{}_PUBLIC_KEY", secret_name);
 
@@ -220,9 +223,6 @@ impl SecretsDefinitions {
                         GenerationResult::Value(base64::encode(value))
                     }
                     GenerationMethod::Ask(prompt) => {
-                        // Implement the logic to handle the ask generation
-                        // Print the prompt to the CLI and get the input from the user
-
                         let prompt = format!("{} ", format!("\n{}:", prompt).white().bold());
                         let mut input = String::new();
                         print!("{}", prompt);
@@ -231,9 +231,6 @@ impl SecretsDefinitions {
                         GenerationResult::Value(input.trim().to_string())
                     }
                     GenerationMethod::AskWithDefault(prompt, default) => {
-                        // Implement the logic to handle the ask with default generation
-                        // Print the prompt to the CLI and get the input from the user
-
                         let prompt = format!(
                             "{} ",
                             format!("\n{} [default: {}]:", prompt, default)
@@ -252,15 +249,11 @@ impl SecretsDefinitions {
                         GenerationResult::Value(value)
                     }
                     GenerationMethod::AskPassword(prompt) => {
-                        // Implement the logic to handle the ask password generation
-                        // Print the prompt to the CLI and get the input from the user
-
                         let prompt = format!("{} ", format!("\n{}:", prompt).white().bold());
                         let password = rpassword::prompt_password(&prompt).unwrap();
                         GenerationResult::Value(password)
                     }
                     GenerationMethod::RandomString(length) => {
-                        // Generate a random string of the specified length
                         let random_string: String = rand::thread_rng()
                             .sample_iter(&Alphanumeric)
                             .take(*length)
@@ -269,7 +262,6 @@ impl SecretsDefinitions {
                         GenerationResult::Value(random_string)
                     }
                     GenerationMethod::RandomAlphanumeric(length) => {
-                        // Generate a random alphanumeric string of the specified length
                         let random_string: String = rand::thread_rng()
                             .sample_iter(&Alphanumeric)
                             .take(*length)
@@ -278,24 +270,61 @@ impl SecretsDefinitions {
                         GenerationResult::Value(random_string)
                     }
                     GenerationMethod::RandomHex(length) => {
-                        // Generate a random hex string of the specified length
                         let random_bytes: Vec<u8> =
                             (0..*length).map(|_| rand::random::<u8>()).collect();
                         GenerationResult::Value(hex::encode(random_bytes))
                     }
                     GenerationMethod::RandomBase64(length) => {
-                        // Generate a random base64 string of the specified length
                         let random_bytes: Vec<u8> =
                             (0..*length).map(|_| rand::random::<u8>()).collect();
                         GenerationResult::Value(base64::encode(random_bytes))
                     }
                     GenerationMethod::RandomUUID => {
-                        // Generate a random UUID
                         GenerationResult::Value(Uuid::new_v4().to_string())
                     }
-                    GenerationMethod::Timestamp => {
-                        // Generate current timestamp
-                        GenerationResult::Value(Utc::now().to_rfc3339())
+                    GenerationMethod::Timestamp => GenerationResult::Value(Utc::now().to_rfc3339()),
+                    GenerationMethod::FromFile(should_ask, encode_base64, default_path) => {
+                        let file_path = if *should_ask {
+                            let prompt = format!(
+                                "{} ",
+                                format!("\nEnter file path [default: {}]:", default_path)
+                                    .white()
+                                    .bold()
+                            );
+                            let mut input = String::new();
+                            print!("{}", prompt);
+                            std::io::stdout().flush().unwrap();
+                            std::io::stdin().read_line(&mut input).unwrap();
+                            if input.trim().is_empty() {
+                                default_path.clone()
+                            } else {
+                                input.trim().to_string()
+                            }
+                        } else {
+                            default_path.clone()
+                        };
+
+                        // Expand home directory if path starts with ~
+                        let expanded_path = if file_path.starts_with("~/") {
+                            dirs::home_dir()
+                                .expect("Could not find home directory")
+                                .join(&file_path[2..])
+                                .to_string_lossy()
+                                .into_owned()
+                        } else {
+                            file_path
+                        };
+
+                        let mut file = File::open(&expanded_path).expect("Failed to open file");
+                        let mut contents = Vec::new();
+                        file.read_to_end(&mut contents)
+                            .expect("Failed to read file contents");
+
+                        if *encode_base64 {
+                            GenerationResult::Value(base64::encode(contents))
+                        } else {
+                            GenerationResult::Value(String::from_utf8_lossy(&contents).to_string())
+                        }
                     }
                     GenerationMethod::Ref(path) => {
                         let path: Vec<&str> = path.split('.').collect();
@@ -303,76 +332,55 @@ impl SecretsDefinitions {
                         let secret = path[1..].join(".");
                         GenerationResult::Ref(component, secret)
                     }
-                    GenerationMethod::RSAKeyPair(bits, base64_encode) => {
-                        // Generate RSA key pair
-                        let rsa = Rsa::generate((*bits).try_into().unwrap())
-                            .expect("Failed to generate RSA key pair");
-                        let private_key = rsa
-                            .private_key_to_pem()
-                            .expect("Failed to get private key PEM");
-                        let public_key = rsa
-                            .public_key_to_pem()
-                            .expect("Failed to get public key PEM");
-                        if *base64_encode {
-                            GenerationResult::KeyPair(
-                                base64::encode(&private_key),
-                                base64::encode(&public_key),
-                            )
-                        } else {
-                            GenerationResult::KeyPair(
-                                String::from_utf8_lossy(&private_key).to_string(),
-                                String::from_utf8_lossy(&public_key).to_string(),
-                            )
-                        }
+                    GenerationMethod::OpenSshRSAKeyPair(bits, _) => {
+                        let mut rng = rand::thread_rng();
+                        let key =
+                            PrivateKey::random(&mut rng, ssh_key::Algorithm::Rsa { hash: None })
+                                .unwrap();
+
+                        GenerationResult::KeyPair(
+                            key.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string(),
+                            format!(
+                                "{} {}",
+                                key.public_key().to_openssh().unwrap(),
+                                env::var("USER").unwrap_or_else(|_| "user".to_string())
+                            ),
+                        )
                     }
-                    GenerationMethod::ECDSAKeyPair(curve, base64_encode) => {
-                        // Generate ECDSA key pair
-                        let nid = match curve.as_str() {
-                            "P-256" => Nid::X9_62_PRIME256V1,
-                            "secp256k1" => Nid::SECP256K1,
-                            _ => panic!("Unsupported curve: {}", curve),
-                        };
-                        let group =
-                            EcGroup::from_curve_name(nid).expect("Failed to create EC group");
-                        let key = EcKey::generate(&group).expect("Failed to generate EC key");
-                        let pkey =
-                            PKey::from_ec_key(key).expect("Failed to create PKey from EC key");
-                        let private_key = pkey
-                            .private_key_to_pem_pkcs8()
-                            .expect("Failed to get private key PEM");
-                        let public_key = pkey
-                            .public_key_to_pem()
-                            .expect("Failed to get public key PEM");
-                        if *base64_encode {
-                            GenerationResult::KeyPair(
-                                base64::encode(&private_key),
-                                base64::encode(&public_key),
-                            )
-                        } else {
-                            GenerationResult::KeyPair(
-                                String::from_utf8_lossy(&private_key).to_string(),
-                                String::from_utf8_lossy(&public_key).to_string(),
-                            )
-                        }
+                    GenerationMethod::OpenSshECDSAKeyPair(curve, _) => {
+                        let mut rng = rand::thread_rng();
+                        let key = PrivateKey::random(
+                            &mut rng,
+                            ssh_key::Algorithm::Ecdsa {
+                                curve: ssh_key::EcdsaCurve::NistP256,
+                            },
+                        )
+                        .unwrap();
+
+                        GenerationResult::KeyPair(
+                            key.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string(),
+                            format!(
+                                "{} {}",
+                                key.public_key().to_openssh().unwrap(),
+                                env::var("USER").unwrap_or_else(|_| "user".to_string())
+                            ),
+                        )
                     }
-                    GenerationMethod::Ed25519KeyPair(base64_encode) => {
-                        // Generate Ed25519 key pair
-                        let signing_key = SigningKey::from_bytes(&rand::random());
-                        let verifying_key = VerifyingKey::from(&signing_key);
-                        if *base64_encode {
-                            GenerationResult::KeyPair(
-                                base64::encode(signing_key.to_bytes()),
-                                base64::encode(verifying_key.to_bytes()),
-                            )
-                        } else {
-                            GenerationResult::KeyPair(
-                                hex::encode(signing_key.to_bytes()),
-                                hex::encode(verifying_key.to_bytes()),
-                            )
-                        }
+                    GenerationMethod::OpenSshEd25519KeyPair(_) => {
+                        let mut rng = rand::thread_rng();
+                        let key =
+                            PrivateKey::random(&mut rng, ssh_key::Algorithm::Ed25519).unwrap();
+
+                        GenerationResult::KeyPair(
+                            key.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string(),
+                            format!(
+                                "{} {}",
+                                key.public_key().to_openssh().unwrap(),
+                                env::var("USER").unwrap_or_else(|_| "user".to_string())
+                            ),
+                        )
                     }
                     GenerationMethod::AESKey(bits, base64_encode) => {
-                        // Generate AES key
                         let key: Vec<u8> = (0..bits / 8).map(|_| rand::random::<u8>()).collect();
                         if *base64_encode {
                             GenerationResult::Value(base64::encode(key))
@@ -381,7 +389,6 @@ impl SecretsDefinitions {
                         }
                     }
                     GenerationMethod::HMACKey(bits, base64_encode) => {
-                        // Generate HMAC key
                         let key: Vec<u8> = (0..bits / 8).map(|_| rand::random::<u8>()).collect();
                         if *base64_encode {
                             GenerationResult::Value(base64::encode(key))
@@ -473,6 +480,7 @@ impl SecretStore {
         }
     }
 }
+
 impl SecretsDefinitions {
     pub async fn populate(
         &self,
@@ -484,7 +492,6 @@ impl SecretsDefinitions {
         let mut sorted_components: Vec<_> = self.components.keys().collect();
         sorted_components.sort();
 
-        // Load all existing secrets for all components upfront
         let mut existing_secrets = HashMap::new();
         for component_name in &sorted_components {
             match vault
