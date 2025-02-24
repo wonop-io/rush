@@ -33,6 +33,7 @@ use tokio::sync::broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastS
 pub struct ContainerReactor {
     config: Arc<Config>,
     product_directory: String,
+    available_components: Vec<String>,
     images: Vec<DockerImage>,
     handles: HashMap<usize, tokio::task::JoinHandle<()>>,
     images_by_id: HashMap<usize, DockerImage>,
@@ -202,6 +203,7 @@ impl ContainerReactor {
         let mut next_port = config.start_port();
         let stack_config_value: serde_yaml::Value = serde_yaml::from_str(&stack_config).unwrap();
         let mut images = Vec::new();
+        let mut available_components = Vec::new();
 
         let mut cluster_manifests = {
             let product_directory = std::path::Path::new("./target"); // TODO: Hardcoded
@@ -216,6 +218,9 @@ impl ContainerReactor {
 
         if let serde_yaml::Value::Mapping(config_map) = stack_config_value {
             for (component_name, yaml_section) in config_map {
+                let component_name = component_name.as_str().unwrap().to_string();
+                available_components.push(component_name.clone());
+
                 let mut yaml_section_clone = yaml_section.clone();
 
                 if let serde_yaml::Value::Mapping(ref mut yaml_section_map) = yaml_section_clone {
@@ -224,7 +229,7 @@ impl ContainerReactor {
                     {
                         yaml_section_map.insert(
                             serde_yaml::Value::String("component_name".to_string()),
-                            serde_yaml::Value::String(component_name.as_str().unwrap().to_string()),
+                            serde_yaml::Value::String(component_name.clone()),
                         );
                     }
                 }
@@ -243,14 +248,6 @@ impl ContainerReactor {
                     match k8s {
                         Some(ref path) => {
                             let k8spath = std::path::Path::new(path).into();
-                            let component_name: String = match component_name.as_str() {
-                                Some(name) => name.to_string(),
-                                None => {
-                                    return Err(
-                                        "Could not convert component name to string".to_string()
-                                    )
-                                }
-                            };
                             let component_name = format!("{}_{}", priority, component_name);
                             cluster_manifests.add_component(
                                 &component_name,
@@ -298,6 +295,7 @@ impl ContainerReactor {
                 all_component_specs.push(component_spec);
             }
         }
+
         log::trace!("Generating service list");
         let mut services: HashMap<String, Vec<ServiceSpec>> = HashMap::new();
         for image in &images {
@@ -325,6 +323,7 @@ impl ContainerReactor {
                 }
             }
         }
+
         log::trace!("Generating domain list");
         let mut component_to_domain = HashMap::new();
         for component_spec in &mut all_component_specs {
@@ -354,6 +353,7 @@ impl ContainerReactor {
             config,
             // product_name: product_name.to_string(),
             product_directory: product_path.to_string(),
+            available_components,
             images,
             images_by_id: HashMap::new(),
             statuses_receivers: HashMap::new(),
@@ -370,6 +370,10 @@ impl ContainerReactor {
             changed_files: Arc::new(Mutex::new(Vec::new())),
         })
         //        Ok(Self::new(&product_name, &product_path, images, toolchain))
+    }
+
+    pub fn available_components(&self) -> &Vec<String> {
+        &self.available_components
     }
 
     pub async fn build_and_push(&mut self) -> Result<(), String> {

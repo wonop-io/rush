@@ -30,11 +30,12 @@ use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::{path::Path, sync::Arc};
 use tera::Context;
 use tokio::io;
-use vault::{DotenvVault, OnePassword, Vault};
+use vault::{DotenvVault, FileVault, OnePassword, Vault};
 
 fn setup_environment() {
     trace!("Setting up environment");
@@ -199,6 +200,38 @@ async fn check_version() {
     }
 }
 
+fn create_vault(
+    product_path: &PathBuf,
+    config: &Config,
+    name: &str,
+) -> Arc<Mutex<dyn Vault + Send>> {
+    let vault = match name {
+        ".env" => {
+            info!("Vault: .env");
+            Arc::new(Mutex::new(DotenvVault::new(product_path.clone())))
+                as Arc<Mutex<dyn Vault + Send>>
+        }
+        "1Password" => {
+            let account_name = config
+                .one_password_account()
+                .expect("1Password account not found. Please set this in rushd.yaml");
+            info!("Vault: {}", account_name);
+            Arc::new(Mutex::new(OnePassword::new(account_name))) as Arc<Mutex<dyn Vault + Send>>
+        }
+        "json" => {
+            let json_path = std::path::PathBuf::from(
+                config
+                    .json_vault_dir()
+                    .expect("JSON path not found. Please set this in rushd.yaml"),
+            );
+            info!("JSON Vault: {}", json_path.display());
+            Arc::new(Mutex::new(FileVault::new(json_path, None))) as Arc<Mutex<dyn Vault + Send>>
+        }
+        _ => panic!("Invalid vault"),
+    };
+    vault
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     check_version().await;
@@ -285,7 +318,10 @@ async fn main() -> io::Result<()> {
             .subcommand(Command::new("remove")
                 .arg(Arg::new("component_name").required(true))
             )
-            .subcommand(Command::new("generate"))
+            .subcommand(Command::new("migrate")
+                .about("Migrates secrets")
+                .arg(Arg::new("dest").required(true))
+            )
         )
         .subcommand(Command::new("secrets")
             .about("Manages secrets")
@@ -329,7 +365,7 @@ async fn main() -> io::Result<()> {
         .map(|values| values.cloned().map(|s| s.to_string()).collect())
         .unwrap_or_default();
 
-    println!("Redirecting components: {:#?}", redirected_components);
+    log::info!("Redirecting components: {:#?}", redirected_components);
 
     debug!("Command line arguments parsed");
 
@@ -399,21 +435,8 @@ async fn main() -> io::Result<()> {
         &format!("{}/stack.env.secrets.yaml", config.product_path()),
     );
     let product_path = std::path::PathBuf::from(config.product_path());
-    let vault = match config.vault_name() {
-        ".env" => {
-            info!("Vault: .env");
-            Arc::new(Mutex::new(DotenvVault::new(product_path.clone())))
-                as Arc<Mutex<dyn Vault + Send>>
-        }
-        "1Password" => {
-            let account_name = config
-                .one_password_account()
-                .expect("1Password account not found. Please set this in rushd.yaml");
-            info!("Vault: {}", account_name);
-            Arc::new(Mutex::new(OnePassword::new(account_name))) as Arc<Mutex<dyn Vault + Send>>
-        }
-        _ => panic!("Invalid vault"),
-    };
+
+    let vault = create_vault(&product_path, &config, config.vault_name());
 
     let secrets_encoder = Arc::new(Base64SecretsEncoder);
     let k8s_encoder = match config.k8s_encoder() {
@@ -592,6 +615,33 @@ async fn main() -> io::Result<()> {
 
     if let Some(matches) = matches.subcommand_matches("vault") {
         trace!("Executing 'vault' subcommand");
+        if let Some(matches) = matches.subcommand_matches("migrate") {
+            let dest = matches.get_one::<String>("dest").unwrap();
+            let dest_vault = create_vault(&product_path, &config, dest.as_str());
+            trace!("Migrating secrets to: {}", dest);
+
+            let mut dest_vault = dest_vault.lock().unwrap();
+            dest_vault.create_vault(product_name);
+
+            let vault = vault.lock().unwrap();
+            let manifests = reactor.cluster_manifests();
+
+            println!("Migrating:");
+            for component_name in reactor.available_components() {
+                println!(" - {}", component_name);
+                let secrets = vault
+                    .get(&product_name, &component_name, &environment)
+                    .await
+                    .unwrap_or_default();
+
+                if !secrets.is_empty() {
+                    dest_vault
+                        .set(&product_name, &component_name, &environment, secrets)
+                        .await
+                        .unwrap();
+                }
+            }
+        }
 
         if matches.subcommand_matches("create").is_some() {
             trace!("Creating vault");
@@ -656,6 +706,7 @@ async fn main() -> io::Result<()> {
                 }
             }
         }
+        return Ok(());
     }
 
     if let Some(matches) = matches.subcommand_matches("secrets") {
