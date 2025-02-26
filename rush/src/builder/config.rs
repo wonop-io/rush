@@ -27,6 +27,7 @@ pub struct Config {
     vault_name: String,
     k8s_encoder: String,
     one_password_account: Option<String>,
+    json_vault_dir: Option<String>,
     start_port: u16,
 }
 
@@ -71,6 +72,9 @@ impl Config {
     }
     pub fn one_password_account(&self) -> Option<&String> {
         self.one_password_account.as_ref()
+    }
+    pub fn json_vault_dir(&self) -> Option<&String> {
+        self.json_vault_dir.as_ref()
     }
     pub fn domain(&self, subdomain: Option<String>) -> String {
         let ctx = DomainContext {
@@ -217,6 +221,7 @@ impl Config {
         trace!("Product dirname: {}", product_dirname);
 
         let one_password_account = std::env::var("ONE_PASSWORD_ACCOUNT").ok();
+        let json_vault_dir = std::env::var("JSON_VAULT_DIR").ok();
 
         let ret = Self {
             root_path: root_path.to_string(),
@@ -233,6 +238,7 @@ impl Config {
             vault_name,
             k8s_encoder,
             one_password_account,
+            json_vault_dir,
             start_port,
         };
 

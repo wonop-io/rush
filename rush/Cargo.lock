@@ -2263,7 +2263,7 @@ dependencies = [
 
 [[package]]
 name = "rush-cli"
-version = "0.0.19"
+version = "0.0.20"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2289,6 +2289,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "slug",
  "ssh-key",
  "tempfile",
