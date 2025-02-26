@@ -32,6 +32,8 @@ pub struct DockerImage {
     image_name: String,
     repo: Option<String>,
     tag: Option<String>,
+    docker_file: Option<PathBuf>,
+
     depends_on: Vec<String>,
     context_dir: Option<String>,
     should_rebuild: bool,
@@ -228,6 +230,7 @@ impl DockerImage {
             .map(move |s| format!("{}-{}", product_name, s))
             .collect::<Vec<String>>();
 
+        let docker_file = DockerImage::docker_path_from_spec(&spec);
         trace!(
             "Created DockerImage for {}-{}",
             spec.product_name,
@@ -237,6 +240,7 @@ impl DockerImage {
             image_name,
             repo: None, // Assuming repo is not part of ComponentBuildSpec and defaults to None
             depends_on,
+            docker_file,
             context_dir,
             should_rebuild: true,
             tag,
@@ -273,11 +277,24 @@ impl DockerImage {
     }
 
     pub fn tagged_image_name(&self) -> String {
-        format!(
-            "{}:{}",
-            self.image_name,
-            self.tag.clone().expect("Image is not tagged")
-        )
+        let base_tag = self.tag.clone().expect("Image is not tagged");
+        let tag = if let Some((_, s)) = self.get_context_path() {
+            let path = s.display().to_string();
+            let tag = match self
+                .toolchain
+                .clone()
+                .expect("Toolchain not found")
+                .get_git_wip(&path)
+            {
+                Ok(wip) => format!("{}{}", base_tag, wip),
+                Err(_e) => base_tag,
+            };
+            tag
+        } else {
+            base_tag
+        };
+
+        format!("{}:{}", self.image_name, tag)
     }
 
     pub fn set_toolchain(&mut self, toolchain: Arc<ToolchainContext>) {
@@ -694,18 +711,8 @@ impl DockerImage {
         self.push().await
     }
 
-    pub fn is_any_file_in_context(&self, file_paths: &Vec<PathBuf>) -> bool {
-        let spec = self.spec.lock().unwrap();
-
-        if let Some(watch) = &spec.watch {
-            for file in file_paths {
-                if watch.matches(file) {
-                    return true;
-                }
-            }
-        }
-
-        let dockerfile_path = match &spec.build_type {
+    fn docker_path_from_spec(spec: &ComponentBuildSpec) -> Option<PathBuf> {
+        match &spec.build_type {
             BuildType::TrunkWasm {
                 dockerfile_path, ..
             }
@@ -726,14 +733,23 @@ impl DockerImage {
             }
             | BuildType::Ingress {
                 dockerfile_path, ..
-            } => std::fs::canonicalize(dockerfile_path).expect(
-                format!(
-                    "Failed to get absolute dockerfile path for {:?}",
-                    dockerfile_path
-                )
-                .as_str(),
+            } => Some(
+                std::fs::canonicalize(dockerfile_path).expect(
+                    format!(
+                        "Failed to get absolute dockerfile path for {:?}",
+                        dockerfile_path
+                    )
+                    .as_str(),
+                ),
             ),
-            _ => return false, // If there's no Dockerfile, the files can't be in context
+            _ => None,
+        }
+    }
+
+    fn get_context_path(&self) -> Option<(PathBuf, PathBuf)> {
+        let dockerfile_path = match self.docker_file.clone() {
+            Some(path) => path,
+            None => return None,
         };
 
         let dockerfile_dir = dockerfile_path
@@ -746,10 +762,29 @@ impl DockerImage {
             None => dockerfile_dir.to_path_buf(),
         };
 
+        Some((dockerfile_dir.to_path_buf(), context_dir))
+    }
+
+    pub fn is_any_file_in_context(&self, file_paths: &Vec<PathBuf>) -> bool {
+        let spec = self.spec.lock().unwrap();
+
+        if let Some(watch) = &spec.watch {
+            for file in file_paths {
+                if watch.matches(file) {
+                    return true;
+                }
+            }
+        }
+
+        let (dockerfile_dir, context_dir) = match self.get_context_path() {
+            Some(paths) => paths,
+            None => return false,
+        };
+
         file_paths.iter().any(|file_path| {
             if let Ok(absolute_file_path) = std::fs::canonicalize(file_path) {
                 absolute_file_path.starts_with(&context_dir)
-                    || absolute_file_path.starts_with(dockerfile_dir)
+                    || absolute_file_path.starts_with(&dockerfile_dir)
             } else {
                 false
             }
@@ -761,103 +796,123 @@ impl DockerImage {
             Some(toolchain) => toolchain.clone(),
             None => panic!("Cannot launch docker image without a toolchain"),
         };
-        let spec = self.spec.lock().unwrap().clone();
-
-        let dockerfile_path = match &spec.build_type {
-            BuildType::TrunkWasm {
-                dockerfile_path, ..
-            } => dockerfile_path.clone(),
-            BuildType::DixiousWasm {
-                dockerfile_path, ..
-            } => dockerfile_path.clone(),
-            BuildType::RustBinary {
-                dockerfile_path, ..
-            } => dockerfile_path.clone(),
-            BuildType::Zola {
-                dockerfile_path, ..
-            } => dockerfile_path.clone(),
-            BuildType::Book {
-                dockerfile_path, ..
-            } => dockerfile_path.clone(),
-            BuildType::Script {
-                dockerfile_path, ..
-            } => dockerfile_path.clone(),
-            BuildType::Ingress {
-                dockerfile_path, ..
-            } => dockerfile_path.clone(),
-            _ => return Ok(()),
-        };
-        let context_dir = match &self.context_dir {
-            Some(context_dir) => context_dir.clone(),
-            None => ".".to_string(),
-        };
-
-        let _env_guard = DockerImage::create_cross_compile_guard(
-            &self.spec.lock().unwrap().build_type,
-            &toolchain,
-        );
-
-        let dockerfile_path = std::path::Path::new(&dockerfile_path);
-        let dockerfile_dir = dockerfile_path
-            .parent()
-            .expect("Failed to get dockerfile directory");
-        let dockerfile_name = dockerfile_path
-            .file_name()
-            .expect("Failed to get dockerfile name")
-            .to_str()
-            .expect("Failed to convert dockerfile name to str");
-
-        let secrets = self
-            .vault
-            .as_ref()
-            .expect("Vault not set")
-            .lock()
-            .unwrap()
-            .get(
-                &spec.product_name,
-                &spec.component_name,
-                &spec.config.environment().to_string(),
-            )
-            .await
-            .unwrap_or_default();
-        let ctx = self.generate_build_context(secrets);
-
-        // Creating artefacts if needed
-        let artefacts = spec.build_artefacts();
-        if !artefacts.is_empty() {
-            let artefact_output_dir = Path::new(&spec.artefact_output_dir);
-            std::fs::create_dir_all(artefact_output_dir)
-                .expect("Failed to create artefact output directory");
-
-            let _dir_raii = Directory::chpath(artefact_output_dir);
-            for (_k, artefact) in artefacts {
-                artefact.render_to_file(&ctx);
-            }
-        }
-
-        // Cross compiling if needed
-        if let Some(build_command) = &self.build_script(&ctx) {
-            let start_time = std::time::Instant::now();
-            match run_command_in_window(10, "build", "sh", vec!["-c", build_command]).await {
-                Ok(_) => {
-                    let duration = start_time.elapsed();
-                    info!("Build command completed in {:?}", duration);
-                }
-                Err(e) => {
-                    let duration = start_time.elapsed();
-                    debug!("Build command failed after {:?}", duration);
-                    return Err(e);
-                }
-            }
-        }
-
-        let _dir_raii = Directory::chpath(dockerfile_dir);
 
         let tag = self.tagged_image_name();
-        let build_command_args = vec!["build", "-t", &tag, "-f", dockerfile_name, &context_dir];
-        match run_command_in_window(10, "docker", toolchain.docker(), build_command_args).await {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
+
+        // Check if image exists
+        let image_exists = match Command::new(toolchain.docker())
+            .args(["image", "inspect", &tag])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+        {
+            Ok(status) => status.success(),
+            Err(_) => false,
+        };
+
+        if !image_exists {
+            let spec = self.spec.lock().unwrap().clone();
+
+            let dockerfile_path = match &spec.build_type {
+                BuildType::TrunkWasm {
+                    dockerfile_path, ..
+                } => dockerfile_path.clone(),
+                BuildType::DixiousWasm {
+                    dockerfile_path, ..
+                } => dockerfile_path.clone(),
+                BuildType::RustBinary {
+                    dockerfile_path, ..
+                } => dockerfile_path.clone(),
+                BuildType::Zola {
+                    dockerfile_path, ..
+                } => dockerfile_path.clone(),
+                BuildType::Book {
+                    dockerfile_path, ..
+                } => dockerfile_path.clone(),
+                BuildType::Script {
+                    dockerfile_path, ..
+                } => dockerfile_path.clone(),
+                BuildType::Ingress {
+                    dockerfile_path, ..
+                } => dockerfile_path.clone(),
+                _ => return Ok(()),
+            };
+            let context_dir = match &self.context_dir {
+                Some(context_dir) => context_dir.clone(),
+                None => ".".to_string(),
+            };
+
+            let _env_guard = DockerImage::create_cross_compile_guard(
+                &self.spec.lock().unwrap().build_type,
+                &toolchain,
+            );
+
+            let dockerfile_path = std::path::Path::new(&dockerfile_path);
+            let dockerfile_dir = dockerfile_path
+                .parent()
+                .expect("Failed to get dockerfile directory");
+            let dockerfile_name = dockerfile_path
+                .file_name()
+                .expect("Failed to get dockerfile name")
+                .to_str()
+                .expect("Failed to convert dockerfile name to str");
+
+            let secrets = self
+                .vault
+                .as_ref()
+                .expect("Vault not set")
+                .lock()
+                .unwrap()
+                .get(
+                    &spec.product_name,
+                    &spec.component_name,
+                    &spec.config.environment().to_string(),
+                )
+                .await
+                .unwrap_or_default();
+            let ctx = self.generate_build_context(secrets);
+
+            // Creating artefacts if needed
+            let artefacts = spec.build_artefacts();
+            if !artefacts.is_empty() {
+                let artefact_output_dir = Path::new(&spec.artefact_output_dir);
+                std::fs::create_dir_all(artefact_output_dir)
+                    .expect("Failed to create artefact output directory");
+
+                let _dir_raii = Directory::chpath(artefact_output_dir);
+                for (_k, artefact) in artefacts {
+                    artefact.render_to_file(&ctx);
+                }
+            }
+
+            // Cross compiling if needed
+            if let Some(build_command) = &self.build_script(&ctx) {
+                let start_time = std::time::Instant::now();
+                match run_command_in_window(10, "build", "sh", vec!["-c", build_command]).await {
+                    Ok(_) => {
+                        let duration = start_time.elapsed();
+                        info!("Build command completed in {:?}", duration);
+                    }
+                    Err(e) => {
+                        let duration = start_time.elapsed();
+                        debug!("Build command failed after {:?}", duration);
+                        return Err(e);
+                    }
+                }
+            }
+
+            let _dir_raii = Directory::chpath(dockerfile_dir);
+
+            let build_command_args = vec!["build", "-t", &tag, "-f", dockerfile_name, &context_dir];
+            match run_command_in_window(10, "docker", toolchain.docker(), build_command_args).await
+            {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        } else {
+            debug!("Image {} already exists, skipping build", tag);
+            Ok(())
         }
     }
 }

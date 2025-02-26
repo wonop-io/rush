@@ -1,8 +1,10 @@
 mod platform;
 use crate::toolchain::platform::{ArchType, OperatingSystem};
 use crate::utils::{first_which, resolve_toolchain_path};
+use hex;
 pub use platform::Platform;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::process::Command;
 use std::str;
 
@@ -263,7 +265,11 @@ impl ToolchainContext {
             .to_string();
 
         if !diff.is_empty() {
-            return Ok("-wip".to_string());
+            let mut hasher = Sha256::new();
+            hasher.update(diff.as_bytes());
+            let wip_hash = hex::encode(hasher.finalize());
+            let suffix = &wip_hash[..8];
+            return Ok(format!("-wip-{}", suffix));
         }
 
         Ok("".to_string())

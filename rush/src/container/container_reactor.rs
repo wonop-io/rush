@@ -186,11 +186,6 @@ impl ContainerReactor {
         }
 
         let tag = git_hash[..8].to_string();
-        let tag = match toolchain.get_git_wip(product_path) {
-            Ok(wip) => format!("{}{}", tag, wip),
-            Err(_e) => tag,
-        };
-
         let _guard = Directory::chdir(product_path);
 
         let variables = Variables::new("variables.yaml", config.environment());
