@@ -1,6 +1,7 @@
 mod infrastructure;
 mod k8_encoder;
 mod k8s;
+mod validation;
 
 use crate::toolchain::ToolchainContext;
 use crate::utils::run_command;
@@ -11,6 +12,7 @@ use std::sync::Arc;
 pub use infrastructure::InfrastructureRepo;
 pub use k8_encoder::{K8Encoder, NoopEncoder, SealedSecretsEncoder};
 pub use k8s::K8ClusterManifests;
+pub use validation::{K8Validation, KubeconformValidator, KubevalValidator};
 
 pub struct Minikube {
     toolchain: Arc<ToolchainContext>,
