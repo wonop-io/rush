@@ -20,6 +20,8 @@ pub struct ToolchainContext {
     kubectl: Option<String>,
     kubectx: Option<String>,
     minikube: Option<String>,
+    kubeconform: Option<String>,
+    kubeval: Option<String>,
 
     // Secondary
     cc: String,
@@ -51,6 +53,8 @@ impl ToolchainContext {
             kubectl: first_which(vec!["kubectl"]),
             kubectx: first_which(vec!["kubectx"]),
             minikube: first_which(vec!["minikube"]),
+            kubeconform: first_which(vec!["kubeconform"]),
+            kubeval: first_which(vec!["kubeval"]),
 
             cc: first_which(vec!["clang", "gcc"])
                 .expect("None of the default toolchains are availablefor this architecture"),
@@ -122,6 +126,8 @@ impl ToolchainContext {
                 kubectl: first_which(vec!["kubectl"]),
                 kubectx: first_which(vec!["kubectx"]),
                 minikube: first_which(vec!["minikube"]),
+                kubeconform: first_which(vec!["kubeconform"]),
+                kubeval: first_which(vec!["kubeval"]),
 
                 cc,
                 cxx,
@@ -222,6 +228,22 @@ impl ToolchainContext {
 
     pub fn kubectx(&self) -> &str {
         self.kubectx.as_ref().expect("kubectx not found")
+    }
+
+    pub fn has_kubeconform(&self) -> bool {
+        self.kubeconform.is_some()
+    }
+
+    pub fn kubeconform(&self) -> &str {
+        self.kubeconform.as_ref().expect("kubeconform not found")
+    }
+
+    pub fn has_kubeval(&self) -> bool {
+        self.kubeval.is_some()
+    }
+
+    pub fn kubeval(&self) -> &str {
+        self.kubeval.as_ref().expect("kubeval not found")
     }
 
     pub fn git(&self) -> &str {

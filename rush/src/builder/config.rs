@@ -26,6 +26,8 @@ pub struct Config {
     root_path: String,
     vault_name: String,
     k8s_encoder: String,
+    k8s_validator: String,
+    k8s_version: String,
     one_password_account: Option<String>,
     json_vault_dir: Option<String>,
     start_port: u16,
@@ -37,6 +39,12 @@ impl Config {
     }
     pub fn k8s_encoder(&self) -> &str {
         &self.k8s_encoder
+    }
+    pub fn k8s_validator(&self) -> &str {
+        &self.k8s_validator
+    }
+    pub fn k8s_version(&self) -> &str {
+        &self.k8s_version
     }
 
     pub fn vault_name(&self) -> &str {
@@ -152,6 +160,30 @@ impl Config {
             _ => panic!("Invalid environment"),
         };
 
+        let k8s_validator = match environment.as_str() {
+            "dev" => std::env::var("K8S_VALIDATOR_DEV")
+                .expect("K8S_VALIDATOR_DEV environment variable not found"),
+            "prod" => std::env::var("K8S_VALIDATOR_PROD")
+                .expect("K8S_VALIDATOR_PROD environment variable not found"),
+            "staging" => std::env::var("K8S_VALIDATOR_STAGING")
+                .expect("K8S_VALIDATOR_STAGING environment variable not found"),
+            "local" => std::env::var("K8S_VALIDATOR_LOCAL")
+                .expect("K8S_VALIDATOR_LOCAL environment variable not found"),
+            _ => panic!("Invalid environment"),
+        };
+
+        let k8s_version = match environment.as_str() {
+            "dev" => std::env::var("K8S_VERSION_DEV")
+                .expect("K8S_VERSION_DEV environment variable not found"),
+            "prod" => std::env::var("K8S_VERSION_PROD")
+                .expect("K8S_VERSION_PROD environment variable not found"),
+            "staging" => std::env::var("K8S_VERSION_STAGING")
+                .expect("K8S_VERSION_STAGING environment variable not found"),
+            "local" => std::env::var("K8S_VERSION_LOCAL")
+                .expect("K8S_VERSION_LOCAL environment variable not found"),
+            _ => panic!("Invalid environment"),
+        };
+
         let domain_template =
             match environment.as_str() {
                 "dev" => {
@@ -237,6 +269,8 @@ impl Config {
             docker_registry,
             vault_name,
             k8s_encoder,
+            k8s_validator,
+            k8s_version,
             one_password_account,
             json_vault_dir,
             start_port,

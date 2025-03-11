@@ -13,6 +13,7 @@ mod vault;
 
 use crate::builder::Config;
 use crate::cluster::{K8Encoder, NoopEncoder, SealedSecretsEncoder};
+use crate::cluster::{K8Validation, KubeconformValidator, KubevalValidator};
 use crate::container::ContainerReactor;
 use crate::public_env_defs::PublicEnvironmentDefinitions;
 use crate::toolchain::Platform;
@@ -36,6 +37,13 @@ use std::{path::Path, sync::Arc};
 use tera::Context;
 use tokio::io;
 use vault::{DotenvVault, FileVault, OnePassword, Vault};
+fn create_k8s_validator(config: &Config) -> Box<dyn K8Validation> {
+    match config.k8s_validator() {
+        "kubeconform" => Box::new(KubeconformValidator),
+        "kubeval" => Box::new(KubevalValidator),
+        _ => panic!("Invalid k8s validator"),
+    }
+}
 
 fn setup_environment() {
     trace!("Setting up environment");
@@ -308,6 +316,17 @@ async fn main() -> io::Result<()> {
         .subcommand(Command::new("uninstall"))
         .subcommand(Command::new("apply"))
         .subcommand(Command::new("unapply"))
+        .subcommand(Command::new("validate")
+            .about("Validates Kubernetes manifests")
+            .subcommand(Command::new("manifests")
+                .about("Validates Kubernetes manifests with schema validation")
+                .arg(arg!(target_version : --version <K8S_VERSION> "Target Kubernetes version"))
+            )
+            .subcommand(Command::new("deprecations")
+                .about("Checks for deprecated APIs in Kubernetes manifests")
+                .arg(arg!(target_version : --version <K8S_VERSION> "Target Kubernetes version"))
+            )
+        )
         .subcommand(Command::new("vault")
             .about("Manages vault operations")
             .subcommand(Command::new("create"))
@@ -492,6 +511,44 @@ async fn main() -> io::Result<()> {
     };
 
     let minikube = Minikube::new(toolchain.clone());
+
+    if let Some(validate_matches) = matches.subcommand_matches("validate") {
+        let _pop_dir = Directory::chdir(reactor.product_directory());
+        if let Some(manifest_matches) = validate_matches.subcommand_matches("manifests") {
+            let target_version = manifest_matches
+                .get_one::<String>("version")
+                .map(|v| v.as_str())
+                .unwrap_or_else(|| config.k8s_version());
+            let validator = create_k8s_validator(&config);
+
+            let mut validation_failed = false;
+            for component in reactor.cluster_manifests().components() {
+                trace!(
+                    "Validating manifests for component: {}",
+                    component.spec().component_name
+                );
+                if let Err(e) = validator.validate(
+                    component.output_directory().to_str().unwrap(),
+                    target_version,
+                ) {
+                    error!(
+                        "Validation failed for {}: {}",
+                        component.spec().component_name,
+                        e
+                    );
+                    validation_failed = true;
+                }
+            }
+
+            if validation_failed {
+                println!("One or more components failed validation!");
+                std::process::exit(1);
+            } else {
+                println!("All manifests validated successfully!");
+                std::process::exit(0);
+            }
+        }
+    }
 
     if let Some(describe_matches) = matches.subcommand_matches("describe") {
         trace!("Executing 'describe' subcommand");
