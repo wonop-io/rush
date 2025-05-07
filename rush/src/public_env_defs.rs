@@ -17,6 +17,21 @@ pub struct PublicEnvironmentDefinitions {
     product_dir: PathBuf,
 }
 
+impl PublicEnvironmentDefinitions {
+    // Getters for private fields
+    pub fn get_product_name(&self) -> &str {
+        &self.product_name
+    }
+    
+    pub fn get_product_dir(&self) -> &PathBuf {
+        &self.product_dir
+    }
+    
+    pub fn get_components(&self) -> &HashMap<String, ComponentEnvironment> {
+        &self.components
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentEnvironment {
     environment_variables: HashMap<String, GenerationMethod>,
@@ -31,6 +46,7 @@ pub enum GenerationMethod {
 }
 
 impl PublicEnvironmentDefinitions {
+    
     pub fn new(product_name: String, base_yaml: &str, specialisation_yaml: &str) -> Self {
         let product_dir = PathBuf::from(base_yaml).parent().unwrap().to_path_buf();
 

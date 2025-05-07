@@ -5,10 +5,12 @@
 // Import the rush_cli crate and re-export it for tests
 pub use crate as rush_cli;
 
+// Test modules
+pub mod unit;
+
 // Temporarily disable problematic test modules
 // pub mod test_utils;
 // pub mod integration;
-// pub mod unit;
 
 // Re-export the TestProjectBuilder for easier use in tests
 // pub use test_utils::TestProjectBuilder;
