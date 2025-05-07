@@ -10,7 +10,7 @@ use crate::builder::ComponentBuildSpec;
 use crate::builder::Config;
 use crate::utils::{handle_stream, run_command, run_command_in_window};
 use crate::vault::Vault;
-use crate::Directory;
+use crate::utils::Directory;
 use crate::{toolchain::ToolchainContext, utils::DockerCrossCompileGuard};
 use colored::Colorize;
 use log::{debug, error, info, trace, warn};

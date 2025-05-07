@@ -4,7 +4,7 @@ use tera::Tera;
 
 use serde_json::value::{to_value, Value};
 use std::error::Error;
-use tera::{Context, Result};
+use tera::{Context, Result, try_get_value};
 lazy_static! {
     pub static ref TEMPLATES: Tera = {
         let template_path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "src/builder/templates/**");

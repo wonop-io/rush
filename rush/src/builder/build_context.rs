@@ -1,7 +1,7 @@
 use crate::builder::BuildType;
 use crate::container::ServicesSpec;
 use crate::toolchain::Platform;
-use crate::ToolchainContext;
+use crate::toolchain::ToolchainContext;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str;
