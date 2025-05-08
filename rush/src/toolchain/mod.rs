@@ -1,4 +1,4 @@
-mod platform;
+pub mod platform;
 use crate::toolchain::platform::{ArchType, OperatingSystem};
 use crate::utils::{first_which, resolve_toolchain_path};
 use hex;

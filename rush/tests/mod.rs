@@ -6,6 +6,8 @@
 pub use crate as rush_cli;
 
 // Test modules
+pub mod integration;
+pub mod test_utils;
 pub mod unit;
 
 // Temporarily disable problematic test modules
@@ -15,7 +17,7 @@ pub mod unit;
 // Re-export the TestProjectBuilder for easier use in tests
 // pub use test_utils::TestProjectBuilder;
 
-// Temporarily disabled test modules 
+// Temporarily disabled test modules
 // #[cfg(test)]
 // mod tests {
 //     // Top-level tests
@@ -27,13 +29,13 @@ pub mod unit;
 fn setup() {
     // Set up the test environment
     std::env::set_var("RUSH_TEST_MODE", "true");
-    
+
     // Initialize the logger for tests
     let _ = env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .is_test(true)
         .try_init();
-    
+
     println!("Running Rush CLI test suite...");
 }
 
