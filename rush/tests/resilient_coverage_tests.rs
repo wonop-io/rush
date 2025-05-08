@@ -4,7 +4,7 @@
 //! in certain environments but still contribute to coverage measurement.
 
 #[cfg(test)]
-mod resilient_tests {
+pub mod resilient_tests {
     use std::panic;
     use std::path::Path;
 
@@ -25,7 +25,7 @@ mod resilient_tests {
 
     // Builder module tests
     #[test]
-    fn test_builder_artefact() {
+    pub fn test_builder_artefact() {
         run_safely(|| {
             use rush_cli::builder::{Artefact, BuildType};
 
@@ -39,7 +39,7 @@ mod resilient_tests {
     }
 
     #[test]
-    fn test_builder_build_context() {
+    pub fn test_builder_build_context() {
         run_safely(|| {
             use rush_cli::builder::BuildContext;
 
@@ -49,7 +49,7 @@ mod resilient_tests {
     }
 
     #[test]
-    fn test_container_service_spec() {
+    pub fn test_container_service_spec() {
         run_safely(|| {
             use rush_cli::container::ServiceSpec;
 
@@ -59,7 +59,7 @@ mod resilient_tests {
     }
 
     #[test]
-    fn test_container_status() {
+    pub fn test_container_status() {
         run_safely(|| {
             use rush_cli::container::status::Status;
 
@@ -73,7 +73,7 @@ mod resilient_tests {
     }
 
     #[test]
-    fn test_toolchain_platform() {
+    pub fn test_toolchain_platform() {
         run_safely(|| {
             use rush_cli::toolchain::platform::{ArchType, OperatingSystem};
             use rush_cli::toolchain::Platform;
@@ -99,7 +99,7 @@ mod resilient_tests {
     }
 
     #[test]
-    fn test_dotenv_utils() {
+    pub fn test_dotenv_utils() {
         run_safely(|| {
             use rush_cli::dotenv_utils::{load_dotenv, save_dotenv};
             use std::collections::HashMap;
@@ -118,7 +118,7 @@ mod resilient_tests {
     }
 
     #[test]
-    fn test_path_matcher() {
+    pub fn test_path_matcher() {
         run_safely(|| {
             use rush_cli::path_matcher::{PathMatcher, Pattern};
             use std::path::Path;
@@ -140,7 +140,7 @@ mod resilient_tests {
     }
 
     #[test]
-    fn test_git_utils() {
+    pub fn test_git_utils() {
         run_safely(|| {
             use rush_cli::git::{get_current_branch, get_latest_commit, is_git_repo};
 

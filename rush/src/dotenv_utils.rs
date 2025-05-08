@@ -8,9 +8,9 @@ pub fn load_dotenv(path: &Path) -> Result<HashMap<String, String>, std::io::Erro
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let mut env_map = HashMap::new();
+    let mut lines_iter = reader.lines().peekable();
 
-    for line in reader.lines() {
-        let line = line?;
+    while let Some(Ok(line)) = lines_iter.next() {
         let line = line.trim();
 
         // Skip empty lines and comments
@@ -19,13 +19,36 @@ pub fn load_dotenv(path: &Path) -> Result<HashMap<String, String>, std::io::Erro
         }
 
         // Split the line into key and value
-        if let Some((key, value)) = line.split_once('=') {
+        if let Some((key, mut value)) = line.split_once('=') {
             let key = key.trim().to_string();
-            let value = value.trim().to_string();
-            if value.starts_with('"') && value.ends_with('"') {
-                env_map.insert(key, value[1..value.len() - 1].to_string());
+            let value_str = value.trim().to_string();
+            
+            // Handle quoted values
+            if value_str.starts_with('"') && !value_str.ends_with('"') {
+                // This is a multi-line value
+                let mut full_value = value_str[1..].to_string();
+                
+                // Keep reading lines until we find the closing quote
+                while let Some(Ok(next_line)) = lines_iter.next() {
+                    full_value.push('\n');
+                    full_value.push_str(&next_line);
+                    if next_line.trim().ends_with('"') {
+                        break;
+                    }
+                }
+                
+                // Remove the last quote
+                if full_value.ends_with('"') {
+                    full_value.pop();
+                }
+                
+                env_map.insert(key, full_value);
+            } else if value_str.starts_with('"') && value_str.ends_with('"') {
+                // Single-line quoted value
+                env_map.insert(key, value_str[1..value_str.len() - 1].to_string());
             } else {
-                env_map.insert(key, value);
+                // Unquoted value
+                env_map.insert(key, value_str);
             }
         }
     }

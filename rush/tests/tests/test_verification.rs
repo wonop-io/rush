@@ -9,14 +9,18 @@ mod tests {
 
     #[test]
     fn verify_test_directory_structure() {
+        // Get the cargo manifest directory, which should be the root of the package
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let tests_dir = Path::new(&manifest_dir).join("tests");
+        
         // Check that the test directories exist
-        assert!(Path::new("../").exists());
-        assert!(Path::new("../unit").exists());
-        assert!(Path::new("../integration").exists());
+        assert!(tests_dir.exists(), "Tests directory exists");
+        assert!(tests_dir.join("unit").exists(), "Unit test directory exists");
+        assert!(tests_dir.join("integration").exists(), "Integration test directory exists");
 
         // Check that we have test utilities
-        assert!(Path::new("../test_utils/mod.rs").exists());
-        assert!(Path::new("../integration/common/mod.rs").exists());
+        assert!(tests_dir.join("test_utils").join("mod.rs").exists(), "Test utilities exist");
+        assert!(tests_dir.join("integration").join("common").join("mod.rs").exists(), "Integration test commons exist");
     }
 
     #[test]

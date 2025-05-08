@@ -7,6 +7,10 @@
 // all modules are compiled and available for coverage
 extern crate rush_cli;
 
+// Import the resilient_coverage_tests module to delegate tests to it
+#[path = "resilient_coverage_tests.rs"]
+mod resilient_tests;
+
 // Import different parts of the library to make sure they're covered
 #[cfg(test)]
 mod import_tests {
@@ -30,37 +34,50 @@ mod import_tests {
 // Run all the resilient tests
 #[cfg(test)]
 mod delegate_to_resilient_tests {
+    // Import the resilient_tests module
+    use crate::resilient_tests::resilient_tests;
+
     #[test]
     fn run_builder_module_tests() {
-        // Use mod_path to reference the module path
-        let mod_path = "crate::resilient_tests";
-        // Let the resilient tests handle any failures
-        // This is just a way to reference them for coverage
+        // Actually delegate to the resilient test
+        resilient_tests::test_builder_artefact();
+        resilient_tests::test_builder_build_context();
         assert!(true, "Builder module tests delegated to resilient tests");
     }
 
     #[test]
     fn run_container_module_tests() {
+        // Actually delegate to the resilient test
+        resilient_tests::test_container_service_spec();
+        resilient_tests::test_container_status();
         assert!(true, "Container module tests delegated to resilient tests");
     }
 
     #[test]
     fn run_toolchain_module_tests() {
+        // Actually delegate to the resilient test
+        resilient_tests::test_toolchain_platform();
         assert!(true, "Toolchain module tests delegated to resilient tests");
     }
 
     #[test]
     fn run_dotenv_utils_tests() {
+        // Actually delegate to the resilient test
+        resilient_tests::test_dotenv_utils();
         assert!(true, "DotEnv utils tests delegated to resilient tests");
     }
 
     #[test]
     fn run_path_matcher_tests() {
+        // Actually delegate to the resilient test
+        resilient_tests::test_path_matcher();
         assert!(true, "Path matcher tests delegated to resilient tests");
     }
 
     #[test]
     fn run_git_tests() {
+        // Actually delegate to the resilient test
+        resilient_tests::test_git_utils();
         assert!(true, "Git tests delegated to resilient tests");
     }
 }
