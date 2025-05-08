@@ -10,19 +10,14 @@ pub mod integration;
 pub mod test_utils;
 pub mod unit;
 
-// Temporarily disable problematic test modules
-// pub mod test_utils;
-// pub mod integration;
-
 // Re-export the TestProjectBuilder for easier use in tests
-// pub use test_utils::TestProjectBuilder;
+pub use test_utils::TestProjectBuilder;
 
-// Temporarily disabled test modules
-// #[cfg(test)]
-// mod tests {
-//     // Top-level tests
-//     mod test_verification;
-// }
+#[cfg(test)]
+mod tests {
+    // Top-level tests
+    mod test_verification;
+}
 
 #[cfg(test)]
 #[ctor::ctor]

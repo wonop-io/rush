@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::Path;
+use crate::test_utils::TestProjectBuilder;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::TestProjectBuilder;
 
     // This is a basic integration test to make sure the rush config loading works
     #[test]

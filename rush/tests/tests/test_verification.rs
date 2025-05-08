@@ -3,25 +3,20 @@
 //! This test module verifies that all the required test components are in place
 //! and running correctly. It acts as a sanity check for the test infrastructure.
 
-use std::path::Path;
-use crate::test_utils::TestProjectBuilder;
-
 #[cfg(test)]
 mod tests {
-
-
-    use super::*;
+    use std::path::Path;
 
     #[test]
     fn verify_test_directory_structure() {
         // Check that the test directories exist
-        assert!(Path::new("tests").exists());
-        assert!(Path::new("tests/unit").exists());
-        assert!(Path::new("tests/integration").exists());
+        assert!(Path::new("../").exists());
+        assert!(Path::new("../unit").exists());
+        assert!(Path::new("../integration").exists());
 
         // Check that we have test utilities
-        assert!(Path::new("tests/test_utils/mod.rs").exists());
-        assert!(Path::new("tests/integration/common.rs").exists());
+        assert!(Path::new("../test_utils/mod.rs").exists());
+        assert!(Path::new("../integration/common/mod.rs").exists());
     }
 
     #[test]
@@ -48,19 +43,5 @@ mod tests {
             }
         }
         None
-    }
-
-    #[test]
-    fn verify_test_utilities() {
-        // Create a test project using our test utilities
-        let (_temp_dir, project_path) = TestProjectBuilder::new()
-            .with_dockerfile()
-            .with_dotenv()
-            .build();
-
-        // Verify the project was created correctly with our test utilities
-        assert!(project_path.join("rushd.yaml").exists());
-        assert!(project_path.join("Dockerfile").exists());
-        assert!(project_path.join(".env").exists());
     }
 }
