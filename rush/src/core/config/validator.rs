@@ -1,0 +1,170 @@
+use crate::core::config::types::Config;
+use log::{debug, trace};
+use std::fmt;
+use std::path::Path;
+
+/// Represents a validation error for a configuration
+#[derive(Debug)]
+pub struct ConfigValidationError {
+    message: String,
+    field: Option<String>,
+}
+
+impl ConfigValidationError {
+    /// Creates a new validation error
+    pub fn new<S: Into<String>>(message: S) -> Self {
+        ConfigValidationError {
+            message: message.into(),
+            field: None,
+        }
+    }
+
+    /// Creates a new validation error with a field name
+    pub fn with_field<S: Into<String>, F: Into<String>>(message: S, field: F) -> Self {
+        ConfigValidationError {
+            message: message.into(),
+            field: Some(field.into()),
+        }
+    }
+}
+
+impl fmt::Display for ConfigValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(field) = &self.field {
+            write!(f, "Configuration error in '{}': {}", field, self.message)
+        } else {
+            write!(f, "Configuration error: {}", self.message)
+        }
+    }
+}
+
+impl std::error::Error for ConfigValidationError {}
+
+/// Validates a configuration object to ensure all required values are present and valid
+pub fn validate_config(config: &Config) -> Result<(), ConfigValidationError> {
+    trace!("Validating configuration");
+
+    // Validate environment
+    let valid_environments = ["local", "dev", "prod", "staging"];
+    if !valid_environments.contains(&config.environment()) {
+        return Err(ConfigValidationError::with_field(
+            format!(
+                "Invalid environment: '{}'. Valid values are: {:?}",
+                config.environment(),
+                valid_environments
+            ),
+            "environment",
+        ));
+    }
+
+    // Validate product path exists
+    if !Path::new(config.product_path()).exists() {
+        return Err(ConfigValidationError::with_field(
+            format!("Product path does not exist: '{}'", config.product_path()),
+            "product_path",
+        ));
+    }
+
+    // Validate docker registry is not empty
+    if config.docker_registry().is_empty() {
+        return Err(ConfigValidationError::with_field(
+            "Docker registry cannot be empty",
+            "docker_registry",
+        ));
+    }
+
+    // Validate start port is in valid range
+    let start_port = config.start_port();
+    if start_port < 1024 || start_port > 65535 {
+        return Err(ConfigValidationError::with_field(
+            format!(
+                "Invalid start port: {}. Port must be between 1024 and 65535",
+                start_port
+            ),
+            "start_port",
+        ));
+    }
+
+    // Validate root path
+    if !Path::new(config.root_path()).exists() {
+        return Err(ConfigValidationError::with_field(
+            format!("Root path does not exist: '{}'", config.root_path()),
+            "root_path",
+        ));
+    }
+
+    // Validate Kubernetes version is in valid format (e.g., "v1.24.0")
+    let k8s_version = config.k8s_version();
+    if !k8s_version.starts_with('v')
+        || !k8s_version[1..]
+            .split('.')
+            .all(|s| s.parse::<u32>().is_ok())
+    {
+        return Err(ConfigValidationError::with_field(
+            format!(
+                "Invalid Kubernetes version format: '{}'. Expected format: 'vX.Y.Z'",
+                k8s_version
+            ),
+            "k8s_version",
+        ));
+    }
+
+    debug!("Configuration validation successful");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::config::types::Config;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_validate_valid_config() {
+        // Create a temporary directory for testing
+        let temp_dir = TempDir::new().unwrap();
+        let root_path = temp_dir.path().to_str().unwrap();
+        let product_path = temp_dir.path().to_str().unwrap();
+
+        // Set required environment variables for the test
+        std::env::set_var("DEV_CTX", "test-context");
+        std::env::set_var("DEV_VAULT", "test-vault");
+        std::env::set_var("K8S_ENCODER_DEV", "noop");
+        std::env::set_var("K8S_VALIDATOR_DEV", "kubevalidator");
+        std::env::set_var("K8S_VERSION_DEV", "v1.24.0");
+        std::env::set_var("DEV_DOMAIN", "test.domain");
+        std::env::set_var("INFRASTRUCTURE_REPOSITORY", "git@github.com:test/repo.git");
+
+        // Create a valid config
+        let config = Config::new(root_path, "test-product", "dev", "test-registry", 8080);
+
+        // Validation should pass
+        let result = validate_config(&config);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_environment() {
+        let temp_dir = TempDir::new().unwrap();
+        let root_path = temp_dir.path().to_str().unwrap();
+        let product_path = temp_dir.path().to_str().unwrap();
+
+        // Set required environment variables
+        std::env::set_var("INVALID_CTX", "test-context");
+        std::env::set_var("INVALID_VAULT", "test-vault");
+        std::env::set_var("K8S_ENCODER_INVALID", "noop");
+        std::env::set_var("K8S_VALIDATOR_INVALID", "kubevalidator");
+        std::env::set_var("K8S_VERSION_INVALID", "v1.24.0");
+        std::env::set_var("INVALID_DOMAIN", "test.domain");
+        std::env::set_var("INFRASTRUCTURE_REPOSITORY", "git@github.com:test/repo.git");
+
+        // Create a config with invalid environment
+        let config = Config::new(root_path, "test-product", "invalid", "test-registry", 8080);
+
+        // Validation should fail
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.message.contains("Invalid environment"));
+    }
+}

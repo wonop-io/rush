@@ -1,7 +1,25 @@
-pub mod container_reactor;
-pub mod docker;
-pub mod service_spec;
-pub mod status;
+mod build;
+mod docker;
+mod lifecycle;
+mod network;
+mod reactor;
+mod service;
+mod status;
+mod watcher;
 
-pub use container_reactor::ContainerReactor;
-pub use service_spec::{ServiceSpec, ServicesSpec};
+pub use build::{handle_build_error, BuildError, BuildProcessor};
+pub use docker::{
+    ContainerStatus, DockerCliClient, DockerClient, DockerService, DockerServiceConfig,
+};
+pub use lifecycle::{launch_containers, LifecycleManager, LifecycleMonitor, ShutdownManager};
+pub use network::DockerNetwork;
+pub use service::{ContainerService, ServiceCollection, ServiceConfig, ServicesSpec};
+pub use status::Status;
+
+// Re-export container-related types and functions
+pub type Container = docker::DockerService;
+pub type ContainerHandle = docker::DockerService;
+
+// Re-export functions
+pub use network::setup_network;
+pub use watcher::{create_component_matcher, setup_file_watcher, ChangeProcessor, WatcherConfig};
