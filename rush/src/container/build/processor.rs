@@ -1,13 +1,12 @@
 use colored::Colorize;
-use log::{debug, error, info, trace, warn};
-use std::collections::HashMap;
+use log::{debug, error, info, warn};
 use std::path::Path;
 
 use crate::build::BuildContext;
 use crate::build::BuildScript;
 use crate::build::BuildType;
-use crate::container::docker::DockerImage;
-use crate::security::Vault;
+use crate::container::ImageBuilder;
+use crate::error::{Error, Result};
 use crate::utils::{run_command_in_window, Directory};
 
 /// Manages the build process for containers
@@ -31,16 +30,8 @@ impl BuildProcessor {
     /// # Returns
     ///
     /// Result indicating success or failure
-    pub async fn build_image(&self, image: &DockerImage) -> Result<(), String> {
+    pub async fn build_image(&self, image: &ImageBuilder) -> Result<()> {
         debug!("Building image: {}", image.component_name());
-
-        if image.should_ignore_in_devmode() {
-            info!(
-                "Skipping build for {} (ignored in dev mode)",
-                image.component_name()
-            );
-            return Ok(());
-        }
 
         if !image.should_rebuild() {
             debug!("Image {} doesn't need rebuilding", image.component_name());
@@ -48,85 +39,22 @@ impl BuildProcessor {
         }
 
         let component_name = image.component_name();
-        let identifier = image.identifier();
 
-        info!("Building {}", identifier);
+        info!("Building {}", component_name);
 
-        // Get the vault and secrets
-        let vault = match image.vault() {
-            Some(vault) => vault,
-            None => return Err("No vault configured for image".to_string()),
+        // Generate build context
+        let _build_context = match image.generate_build_context().await {
+            Ok(context) => context,
+            Err(e) => return Err(format!("Failed to generate build context: {}", e).into()),
         };
 
-        let toolchain = match image.toolchain() {
-            Some(toolchain) => toolchain,
-            None => return Err("No toolchain configured for image".to_string()),
-        };
-
-        let spec = image.spec();
-        let environment = spec.config().environment().to_string();
-
-        // Get secrets from vault
-        let secrets = {
-            let vault_guard = vault.lock().unwrap();
-            match vault_guard
-                .get(&spec.product_name, &component_name, &environment)
-                .await
-            {
-                Ok(secrets) => secrets,
-                Err(e) => {
-                    warn!("Failed to get secrets for {}: {}", component_name, e);
-                    HashMap::new()
-                }
-            }
-        };
-
-        // Create build context
-        let build_context = image.generate_build_context(secrets);
-
-        // Change to product directory
-        let _dir_guard = Directory::chpath(&spec.product_dir);
-
-        // Execute build script if needed
-        if let Some(build_script) = self.get_build_script(image, &build_context) {
-            trace!("Executing build script for {}", component_name);
-
-            let window_size = if self.verbose { 20 } else { 10 };
-            let start_time = std::time::Instant::now();
-
-            match run_command_in_window(
-                window_size,
-                &format!("Building {}", component_name),
-                "sh",
-                vec!["-c", &build_script],
-            )
-            .await
-            {
-                Ok(_) => {
-                    let duration = start_time.elapsed();
-                    info!(
-                        "Build script for {} completed in {:?}",
-                        component_name, duration
-                    );
-                }
-                Err(e) => {
-                    let duration = start_time.elapsed();
-                    error!(
-                        "Build script for {} failed after {:?}: {}",
-                        component_name, duration, e
-                    );
-                    return Err(format!("Build script failed: {}", e));
-                }
-            }
-        }
-
-        // Build Docker image if required
-        if let Err(e) = self.build_docker_image(image).await {
-            error!("Docker build for {} failed: {}", component_name, e);
+        // Execute build
+        if let Err(e) = image.build().await {
+            error!("Build failed for {}: {}", component_name, e);
             return Err(e);
         }
 
-        info!("Successfully built {}", identifier);
+        info!("Successfully built {}", component_name);
         Ok(())
     }
 
@@ -140,13 +68,19 @@ impl BuildProcessor {
     /// # Returns
     ///
     /// Optional build script string
-    fn get_build_script(&self, image: &DockerImage, context: &BuildContext) -> Option<String> {
-        match &image.spec().build_type {
+    fn get_build_script(&self, image: &ImageBuilder, context: &BuildContext) -> Option<String> {
+        let spec = image.spec();
+        let build_type = match spec.lock() {
+            Ok(spec) => spec.build_type.clone(),
+            Err(_) => return None,
+        };
+
+        match &build_type {
             BuildType::PureDockerImage { .. } => None,
             BuildType::PureKubernetes => None,
             BuildType::KubernetesInstallation { .. } => None,
             _ => {
-                let script = BuildScript::new(image.spec().build_type.clone()).render(context);
+                let script = BuildScript::new(build_type).render(context);
                 if script.is_empty() {
                     None
                 } else {
@@ -165,20 +99,24 @@ impl BuildProcessor {
     /// # Returns
     ///
     /// Result indicating success or failure
-    async fn build_docker_image(&self, image: &DockerImage) -> Result<(), String> {
+    async fn build_docker_image(&self, image: &ImageBuilder) -> Result<()> {
         let spec = image.spec();
+        let spec_guard = match spec.lock() {
+            Ok(guard) => guard,
+            Err(_) => return Err(Error::Internal("Failed to lock spec".into())),
+        };
 
-        match &spec.build_type {
+        match &spec_guard.build_type {
             BuildType::PureDockerImage { .. } => Ok(()),
             BuildType::PureKubernetes => Ok(()),
             BuildType::KubernetesInstallation { .. } => Ok(()),
             _ => {
-                let dockerfile_path = match spec.build_type.dockerfile_path() {
+                let dockerfile_path = match spec_guard.build_type.dockerfile_path() {
                     Some(path) => path,
-                    None => return Err("No Dockerfile path specified".to_string()),
+                    None => return Err(Error::Setup("No Dockerfile path specified".into())),
                 };
 
-                let context_dir = match &spec.build_type {
+                let context_dir = match &spec_guard.build_type {
                     BuildType::TrunkWasm { context_dir, .. } => context_dir,
                     BuildType::RustBinary { context_dir, .. } => context_dir,
                     BuildType::DixiousWasm { context_dir, .. } => context_dir,
@@ -192,18 +130,20 @@ impl BuildProcessor {
                 let context_dir = context_dir.clone().unwrap_or_else(|| ".".to_string());
                 let dockerfile_dir = Path::new(dockerfile_path)
                     .parent()
-                    .ok_or_else(|| "Invalid Dockerfile path".to_string())?;
+                    .ok_or_else(|| Error::Setup("Invalid Dockerfile path".into()))?;
                 let dockerfile_name = Path::new(dockerfile_path)
                     .file_name()
-                    .ok_or_else(|| "Invalid Dockerfile path".to_string())?
+                    .ok_or_else(|| Error::Setup("Invalid Dockerfile path".into()))?
                     .to_str()
-                    .ok_or_else(|| "Invalid Dockerfile name".to_string())?;
+                    .ok_or_else(|| Error::Setup("Invalid Dockerfile name".into()))?;
 
                 let _dir_guard = Directory::chpath(dockerfile_dir);
 
-                let toolchain = match image.toolchain() {
+                // Get the toolchain
+                let toolchain = image.toolchain();
+                let toolchain = match toolchain {
                     Some(toolchain) => toolchain,
-                    None => return Err("No toolchain configured for image".to_string()),
+                    None => return Err(Error::Setup("No toolchain configured for image".into())),
                 };
 
                 let tag = image.tagged_image_name();
@@ -221,7 +161,7 @@ impl BuildProcessor {
                 .await
                 {
                     Ok(_) => Ok(()),
-                    Err(e) => Err(e),
+                    Err(e) => Err(Error::Docker(e)),
                 }
             }
         }
@@ -243,7 +183,7 @@ impl BuildProcessor {
         error: String,
         component_name: &str,
         test_if_files_changed: F,
-    ) -> Result<(), String>
+    ) -> Result<()>
     where
         F: Fn() -> bool,
     {
@@ -271,13 +211,12 @@ impl BuildProcessor {
                     }
                 }
                 _ = &mut timeout => {
-                    warn!("Build error recovery timeout reached for
-            {}", component_name);
-                    return Err(format!("Build failed for {} and recovery timeout reached", component_name));
+                    warn!("Build error recovery timeout reached for {}", component_name);
+                    return Err(format!("Build failed for {} and recovery timeout reached", component_name).into());
                 }
                 _ = tokio::signal::ctrl_c() => {
                     info!("Termination signal received during build error recovery");
-                    return Err("Build process terminated by user".to_string());
+                    return Err(Error::Terminated("Build process terminated by user".into()));
                 }
             }
         }

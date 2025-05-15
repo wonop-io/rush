@@ -567,47 +567,89 @@ impl DockerService {
     }
 }
 
+// Type alias for backward compatibility with old code
+pub type DockerImage = crate::container::image_builder::ImageBuilder;
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockall::predicate::*;
-    use mockall::*;
-
-    mock! {
-        DockerClient {}
-
-        #[async_trait]
-        impl DockerClient for DockerClient {
-            async fn create_network(&self, name: &str) -> Result<()>;
-            async fn delete_network(&self, name: &str) -> Result<()>;
-            async fn network_exists(&self, name: &str) -> Result<bool>;
-            async fn pull_image(&self, image: &str) -> Result<()>;
-            async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()>;
-            async fn run_container(
-                &self,
-                image: &str,
-                name: &str,
-                network: &str,
-                env_vars: &[String],
-                ports: &[String],
-                volumes: &[String],
-            ) -> Result<String>;
-            async fn stop_container(&self, container_id: &str) -> Result<()>;
-            async fn remove_container(&self, container_id: &str) -> Result<()>;
-            async fn container_status(&self, container_id: &str) -> Result<ContainerStatus>;
-            async fn container_exists(&self, name: &str) -> Result<bool>;
-            async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String>;
-            async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()>;
-        }
-    }
 
     #[tokio::test]
     async fn test_docker_service_stop() {
-        let mut mock = MockDockerClient::new();
-        mock.expect_stop_container()
-            .with(eq("test-container"))
-            .times(1)
-            .returning(|_| Ok(()));
+        // Create a mock using a simple test double approach
+        struct MockDockerClient {
+            stop_container_called: std::sync::Mutex<bool>,
+        }
+
+        impl fmt::Debug for MockDockerClient {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("MockDockerClient").finish()
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl DockerClient for MockDockerClient {
+            async fn create_network(&self, _name: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn delete_network(&self, _name: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn network_exists(&self, _name: &str) -> Result<bool> {
+                unimplemented!()
+            }
+            async fn pull_image(&self, _image: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn build_image(
+                &self,
+                _tag: &str,
+                _dockerfile: &str,
+                _context: &str,
+            ) -> Result<()> {
+                unimplemented!()
+            }
+            async fn run_container(
+                &self,
+                _image: &str,
+                _name: &str,
+                _network: &str,
+                _env_vars: &[String],
+                _ports: &[String],
+                _volumes: &[String],
+            ) -> Result<String> {
+                unimplemented!()
+            }
+            async fn stop_container(&self, container_id: &str) -> Result<()> {
+                assert_eq!(container_id, "test-container");
+                let mut called = self.stop_container_called.lock().unwrap();
+                *called = true;
+                Ok(())
+            }
+            async fn remove_container(&self, _container_id: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn container_status(&self, _container_id: &str) -> Result<ContainerStatus> {
+                unimplemented!()
+            }
+            async fn container_exists(&self, _name: &str) -> Result<bool> {
+                unimplemented!()
+            }
+            async fn container_logs(&self, _container_id: &str, _lines: usize) -> Result<String> {
+                unimplemented!()
+            }
+            async fn send_signal_to_container(
+                &self,
+                _container_id: &str,
+                _signal: i32,
+            ) -> Result<()> {
+                unimplemented!()
+            }
+        }
+
+        let mock = Arc::new(MockDockerClient {
+            stop_container_called: std::sync::Mutex::new(false),
+        });
 
         let config = DockerServiceConfig {
             name: "test".to_string(),
@@ -621,20 +663,90 @@ mod tests {
         let service = DockerService {
             id: "test-container".to_string(),
             config,
-            client: Arc::new(mock),
+            client: mock.clone(),
         };
 
         let result = service.stop().await;
         assert!(result.is_ok());
+        assert!(*mock.stop_container_called.lock().unwrap());
     }
 
     #[tokio::test]
     async fn test_docker_service_status() {
-        let mut mock = MockDockerClient::new();
-        mock.expect_container_status()
-            .with(eq("test-container"))
-            .times(1)
-            .returning(|_| Ok(ContainerStatus::Running));
+        // Create a mock using a simple test double approach
+        struct MockDockerClient {
+            container_status_called: std::sync::Mutex<bool>,
+        }
+
+        impl fmt::Debug for MockDockerClient {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("MockDockerClient").finish()
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl DockerClient for MockDockerClient {
+            async fn create_network(&self, _name: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn delete_network(&self, _name: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn network_exists(&self, _name: &str) -> Result<bool> {
+                unimplemented!()
+            }
+            async fn pull_image(&self, _image: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn build_image(
+                &self,
+                _tag: &str,
+                _dockerfile: &str,
+                _context: &str,
+            ) -> Result<()> {
+                unimplemented!()
+            }
+            async fn run_container(
+                &self,
+                _image: &str,
+                _name: &str,
+                _network: &str,
+                _env_vars: &[String],
+                _ports: &[String],
+                _volumes: &[String],
+            ) -> Result<String> {
+                unimplemented!()
+            }
+            async fn stop_container(&self, _container_id: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn remove_container(&self, _container_id: &str) -> Result<()> {
+                unimplemented!()
+            }
+            async fn container_status(&self, container_id: &str) -> Result<ContainerStatus> {
+                assert_eq!(container_id, "test-container");
+                let mut called = self.container_status_called.lock().unwrap();
+                *called = true;
+                Ok(ContainerStatus::Running)
+            }
+            async fn container_exists(&self, _name: &str) -> Result<bool> {
+                unimplemented!()
+            }
+            async fn container_logs(&self, _container_id: &str, _lines: usize) -> Result<String> {
+                unimplemented!()
+            }
+            async fn send_signal_to_container(
+                &self,
+                _container_id: &str,
+                _signal: i32,
+            ) -> Result<()> {
+                unimplemented!()
+            }
+        }
+
+        let mock = Arc::new(MockDockerClient {
+            container_status_called: std::sync::Mutex::new(false),
+        });
 
         let config = DockerServiceConfig {
             name: "test".to_string(),
@@ -648,11 +760,12 @@ mod tests {
         let service = DockerService {
             id: "test-container".to_string(),
             config,
-            client: Arc::new(mock),
+            client: mock.clone(),
         };
 
         let result = service.status().await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ContainerStatus::Running);
+        assert!(*mock.container_status_called.lock().unwrap());
     }
 }
