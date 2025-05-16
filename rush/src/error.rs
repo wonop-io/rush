@@ -25,14 +25,22 @@ pub enum Error {
     Vault(String),
     /// File system error
     FileSystem { path: PathBuf, message: String },
+    /// Filesystem error with message only (legacy)
+    Filesystem(String),
     /// Template error
     Template(String),
     /// Terminated error
     Terminated(String),
     /// Internal error
     Internal(String),
+    /// External error (typically tool)
+    External(String),
     /// Launch failed error
     LaunchFailed(String),
+    /// Input validation error
+    InvalidInput(String),
+    /// Validation error
+    Validation(String),
     /// Unknown error
     Other(String),
 }
@@ -52,10 +60,14 @@ impl fmt::Display for Error {
             Error::FileSystem { path, message } => {
                 write!(f, "File system error at '{}': {}", path.display(), message)
             }
+            Error::Filesystem(msg) => write!(f, "Filesystem error: {}", msg),
             Error::Template(msg) => write!(f, "Template error: {}", msg),
             Error::Terminated(msg) => write!(f, "Terminated: {}", msg),
             Error::Internal(msg) => write!(f, "Internal error: {}", msg),
+            Error::External(msg) => write!(f, "External error: {}", msg),
             Error::LaunchFailed(msg) => write!(f, "Launch failed: {}", msg),
+            Error::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+            Error::Validation(msg) => write!(f, "Validation error: {}", msg),
             Error::Other(msg) => write!(f, "Error: {}", msg),
         }
     }

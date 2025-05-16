@@ -1,5 +1,6 @@
 use log::trace;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tera::Context;
 use tera::Tera;
@@ -16,7 +17,7 @@ pub struct Config {
     product_name: String,
     product_uri: String,
     product_dirname: String,
-    product_path: String,
+    product_path: PathBuf,
     network_name: String,
     environment: String,
     domain_template: String,
@@ -62,8 +63,12 @@ impl Config {
         &self.product_uri
     }
 
-    pub fn product_path(&self) -> &str {
+    pub fn product_path(&self) -> &PathBuf {
         &self.product_path
+    }
+
+    pub fn output_path(&self) -> PathBuf {
+        self.product_path.join("target")
     }
 
     pub fn network_name(&self) -> &str {
@@ -223,6 +228,7 @@ impl Config {
             .collect::<Vec<&str>>()
             .join(".");
         let products_dir = std::env::current_dir().unwrap().join("products");
+        trace!("Products directory: {:?}", products_dir);
 
         // To support the Apple quirk that ".app" is an "App", we allow for using _ in the product name
         if let Ok(entries) = std::fs::read_dir(&products_dir) {
@@ -265,7 +271,6 @@ impl Config {
             );
         }
 
-        let product_path = product_path.to_str().unwrap().to_string();
         let network_name = format!("net-{}", product_uri);
         trace!("Product dirname: {}", product_dirname);
 

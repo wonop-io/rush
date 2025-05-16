@@ -2,6 +2,7 @@
 //!
 //! The reactor is responsible for orchestrating container lifecycle events,
 //! monitoring containers, and handling file change events that trigger rebuilds.
+use crate::container::DockerCliClient;
 use crate::container::Status;
 use crate::container::{
     docker::{ContainerStatus, DockerClient, DockerService, DockerServiceConfig},
@@ -9,7 +10,9 @@ use crate::container::{
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
     BuildProcessor, ServiceCollection,
 };
+use crate::core::config::Config;
 use crate::error::Result;
+use crate::security::FileVault;
 use crate::security::Vault;
 
 use log::{error, info, warn};
@@ -125,6 +128,39 @@ impl ContainerReactor {
         })
     }
 
+    /// Creates a new ContainerReactor with a Config
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Application configuration
+    ///
+    /// # Returns
+    ///
+    /// A new ContainerReactor instance
+    pub fn new_with_config(config: Arc<Config>) -> Result<Self> {
+        // Create default implementations
+        let docker_client = Arc::new(DockerCliClient::new("docker".to_string()));
+        let vault = Arc::new(Mutex::new(FileVault::new(
+            PathBuf::from("/tmp/vault"),
+            None,
+        )));
+
+        // Create reactor config
+        let reactor_config = ContainerReactorConfig {
+            product_name: config.product_name().to_string(),
+            product_dir: config.product_path().clone(),
+            network_name: config.network_name().to_string(),
+            environment: config.environment().to_string(),
+            docker_registry: config.docker_registry().to_string(),
+            redirected_components: HashMap::new(),
+            silenced_components: HashSet::new(),
+            verbose: false,
+            watch_config: WatcherConfig::default(),
+        };
+
+        Self::new(reactor_config, docker_client, vault)
+    }
+
     /// Sets up services based on the build context
     ///
     /// # Arguments
@@ -156,6 +192,30 @@ impl ContainerReactor {
 
         // Start the main launch loop
         self.launch_loop().await
+    }
+
+    /// Performs a container rollout
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure
+    pub async fn rollout(&mut self) -> Result<()> {
+        info!("Rolling out containers...");
+        // Implementation details for container rollout
+        // This could involve stopping and starting containers in sequence
+        // or applying new configurations to running containers
+
+        // Clean up any existing containers
+        self.cleanup_containers().await?;
+
+        // Build all containers
+        self.build_all().await?;
+
+        // Launch all containers
+        self.launch_containers().await?;
+
+        info!("Rollout completed successfully");
+        Ok(())
     }
 
     /// Main container lifecycle loop that handles:
@@ -220,12 +280,12 @@ impl ContainerReactor {
     async fn launch_containers(&mut self) -> Result<()> {
         info!("Launching containers");
 
-        let (status_sender, mut status_receiver) = mpsc::channel::<Status>(100);
+        let (status_sender, _status_receiver) = mpsc::channel::<Status>(100);
 
         // Create service configs for each service
         let mut service_configs = Vec::new();
 
-        for (domain, service_list) in &self.services {
+        for (_domain, service_list) in &self.services {
             for service in service_list {
                 let should_redirect = self
                     .config
@@ -234,7 +294,7 @@ impl ContainerReactor {
 
                 if !should_redirect {
                     // Create Docker service config
-                    let mut env_vars = HashMap::new();
+                    let env_vars = HashMap::new();
                     // Add environment variables and secrets here
 
                     let config = DockerServiceConfig {

@@ -60,7 +60,10 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigValidationError> {
     // Validate product path exists
     if !Path::new(config.product_path()).exists() {
         return Err(ConfigValidationError::with_field(
-            format!("Product path does not exist: '{}'", config.product_path()),
+            format!(
+                "Product path does not exist: '{}'",
+                config.product_path().display()
+            ),
             "product_path",
         ));
     }

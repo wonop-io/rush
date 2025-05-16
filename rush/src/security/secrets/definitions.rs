@@ -1,4 +1,4 @@
-use crate::security::vault::Vault;
+use crate::security::Vault;
 use base64;
 use chrono::Utc;
 use log::{debug, trace, warn};

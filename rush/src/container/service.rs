@@ -4,6 +4,7 @@
 //! configuration, launch parameters, and runtime state.
 
 use crate::build::ServiceSpec;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -33,7 +34,7 @@ pub struct ServiceConfig {
 }
 
 /// Represents a running container service
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ContainerService {
     /// Container ID
     pub id: String,

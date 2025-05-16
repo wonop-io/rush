@@ -15,6 +15,7 @@ pub use docker::{
 pub use image_builder::{BuildConfig, ImageBuilder};
 pub use lifecycle::{launch_containers, LifecycleManager, LifecycleMonitor, ShutdownManager};
 pub use network::DockerNetwork;
+pub use reactor::{ContainerReactor, ContainerReactorConfig};
 pub use service::{ContainerService, ServiceCollection, ServiceConfig, ServicesSpec};
 pub use status::Status;
 
