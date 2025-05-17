@@ -1,4 +1,5 @@
 // TODO: Apparently unused pub mod git;
+pub mod path_matcher;
 
 use std::sync::mpsc::{self, Receiver, Sender};
 
