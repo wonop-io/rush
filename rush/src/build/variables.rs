@@ -33,6 +33,18 @@ pub struct Variables {
 }
 
 impl Variables {
+    pub fn empty() -> Arc<Self> {
+        Arc::new(Variables {
+            values: VariablesFile {
+                dev: HashMap::new(),
+                staging: HashMap::new(),
+                prod: HashMap::new(),
+                local: HashMap::new(),
+            },
+            env: String::new(),
+        })
+    }
+
     /// Creates a new Variables instance from a file and specified environment
     ///
     /// # Arguments

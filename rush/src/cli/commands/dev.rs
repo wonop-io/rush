@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -7,9 +8,8 @@ use log::{debug, error, info, trace};
 
 use crate::container::{ContainerReactor, ContainerReactorConfig, DockerCliClient};
 use crate::core::config::Config;
-use crate::core::environment::setup_environment;
 use crate::error::{Error, Result};
-use crate::security::{FileVault, SecretsProvider};
+use crate::security::{Base64SecretsEncoder, FileVault, SecretsEncoder, SecretsProvider};
 use crate::toolchain::ToolchainContext;
 
 /// Command to run the development environment
@@ -44,15 +44,30 @@ impl DevCommand {
     pub async fn execute(&self) -> Result<()> {
         trace!("Starting development environment for {}", self.product_name);
 
-        // Ensure environment is properly set up
-        setup_environment();
+        // Get the git hash for tagging
+        let git_hash = match self
+            .toolchain
+            .get_git_folder_hash(&self.config.product_path().display().to_string())
+        {
+            Ok(hash) => {
+                if hash.is_empty() {
+                    "latest".to_string()
+                } else {
+                    hash[..8].to_string()
+                }
+            }
+            Err(_) => "latest".to_string(),
+        };
+
+        // Create vault adapter
+        let vault_adapter = Arc::new(Mutex::new(FileVault::new(
+            PathBuf::from("/tmp/vault"),
+            None,
+        )));
+        let secrets_encoder = Arc::new(Base64SecretsEncoder);
 
         // Create docker client
         let docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));
-
-        // Create vault adapter
-        let vault_impl = FileVault::new(PathBuf::from("/tmp/vault"), None);
-        let vault_adapter = Arc::new(Mutex::new(vault_impl));
 
         // Create the container reactor config
         let reactor_config = ContainerReactorConfig {
@@ -69,11 +84,19 @@ impl DevCommand {
                 .collect::<HashSet<_>>(),
             verbose: false,
             watch_config: Default::default(),
+            git_hash,
+            start_port: self.config.start_port(),
         };
 
-        // Create the container reactor
-        let mut reactor = ContainerReactor::new(reactor_config, docker_client, vault_adapter)
-            .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {}", e)))?;
+        // Create the container reactor from product directory
+        let mut reactor = ContainerReactor::from_product_dir(
+            self.config.clone(),
+            vault_adapter,
+            secrets_encoder,
+            self.redirect_components.clone(),
+            self.silence_components.clone(),
+        )
+        .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {}", e)))?;
 
         debug!("Container reactor initialized successfully");
 

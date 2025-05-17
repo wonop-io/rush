@@ -248,6 +248,18 @@ impl ImageBuilder {
     pub async fn build(&self) -> Result<()> {
         // Implementation of build logic using service and toolchain
         // Similar to the old DockerImage.build() but using DockerService
+        panic!("Not implemented");
+        /*
+        info!("Building image {}", image_name);
+
+        let tag = format!("{}:{}", image_name, image_tag);
+        let dockerfile_path = dockerfile.to_string_lossy();
+        let context_path = context_dir.to_string_lossy();
+
+        self.docker_client
+            .build_image(&tag, &dockerfile_path, &context_path)
+            .await
+        */
         Ok(())
     }
 

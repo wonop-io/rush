@@ -154,6 +154,7 @@ async fn launch_service(
         target_port: config.target_port,
         domain: config.domain.clone(),
         mount_point: config.mount_point.clone(),
+        docker_host: "TODO".to_string(), // config.docker_host.clone(),
     };
 
     Ok(service)
