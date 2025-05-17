@@ -1,3 +1,5 @@
+// TODO: Apparently unused pub mod git;
+
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use colored::ColoredString;

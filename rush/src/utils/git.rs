@@ -1,3 +1,4 @@
+// use crate::error::Error;
 use std::path::Path;
 use std::process::Command;
 use std::str;
@@ -19,7 +20,7 @@ pub fn get_current_branch(path: &Path) -> Option<String> {
         .current_dir(path)
         .output()
         .ok()?;
-    
+
     if output.status.success() {
         let branch = str::from_utf8(&output.stdout).ok()?;
         Some(branch.trim().to_string())
@@ -35,7 +36,7 @@ pub fn get_latest_commit(path: &Path) -> Option<String> {
         .current_dir(path)
         .output()
         .ok()?;
-    
+
     if output.status.success() {
         let commit = str::from_utf8(&output.stdout).ok()?;
         Some(commit.trim().to_string())
@@ -50,12 +51,12 @@ pub fn is_working_dir_clean(path: &Path) -> bool {
         .args(["status", "--porcelain"])
         .current_dir(path)
         .output();
-    
+
     match output {
         Ok(output) if output.status.success() => {
             let status = str::from_utf8(&output.stdout).unwrap_or("");
             status.trim().is_empty()
-        },
+        }
         _ => false,
     }
 }

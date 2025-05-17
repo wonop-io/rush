@@ -4,7 +4,7 @@ use crate::build::BuildContext;
 use crate::build::Config;
 use crate::build::{BuildScript, BuildType};
 use crate::container::{ServiceSpec, ServicesSpec};
-use crate::dotenv_utils::load_dotenv;
+use crate::core::dotenv::load_dotenv;
 use crate::path_matcher::PathMatcher;
 use crate::toolchain::ToolchainContext;
 use crate::vault::Vault;

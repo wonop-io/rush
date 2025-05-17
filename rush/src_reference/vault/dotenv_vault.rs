@@ -1,4 +1,4 @@
-use crate::dotenv_utils::{load_dotenv, save_dotenv};
+use crate::core::dotenv::{load_dotenv, save_dotenv};
 use crate::vault::vault_trait::Vault;
 use async_trait::async_trait;
 use log::warn;

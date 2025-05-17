@@ -5,7 +5,7 @@ mod build;
 mod cli;
 mod cluster;
 mod container;
-mod dotenv_utils;
+mod core;
 mod path_matcher;
 mod public_env_defs;
 mod toolchain;
@@ -229,7 +229,7 @@ fn create_vault(
     };
     vault
 }
-// src/main.rs - Entry point that calls into CLI modules
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     // Initialize the application

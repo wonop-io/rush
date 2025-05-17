@@ -1,5 +1,5 @@
-use crate::dotenv_utils::load_dotenv;
-use crate::dotenv_utils::save_dotenv;
+use crate::core::dotenv::load_dotenv;
+use crate::core::dotenv::save_dotenv;
 use chrono::Local;
 use colored::Colorize;
 use log::{error, trace, warn};
@@ -22,11 +22,11 @@ impl PublicEnvironmentDefinitions {
     pub fn get_product_name(&self) -> &str {
         &self.product_name
     }
-    
+
     pub fn get_product_dir(&self) -> &PathBuf {
         &self.product_dir
     }
-    
+
     pub fn get_components(&self) -> &HashMap<String, ComponentEnvironment> {
         &self.components
     }
@@ -46,7 +46,6 @@ pub enum GenerationMethod {
 }
 
 impl PublicEnvironmentDefinitions {
-    
     pub fn new(product_name: String, base_yaml: &str, specialisation_yaml: &str) -> Self {
         let product_dir = PathBuf::from(base_yaml).parent().unwrap().to_path_buf();
 
