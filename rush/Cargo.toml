@@ -67,6 +67,6 @@ ctor = "0.2.6"
 name = "rush"
 path = "src/main.rs"
 
-[lib]
-name = "rush_cli"
-path = "src/lib.rs"
+#[lib]
+#name = "rush_cli"
+#path = "src/lib.rs"

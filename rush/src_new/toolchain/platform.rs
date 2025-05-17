@@ -38,7 +38,6 @@ impl ToString for OperatingSystem {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-
 pub enum ArchType {
     X86_64,
     AARCH64,
