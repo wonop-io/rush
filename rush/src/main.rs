@@ -6,7 +6,6 @@ mod cli;
 mod cluster;
 mod container;
 mod core;
-mod public_env_defs;
 mod toolchain;
 mod utils;
 mod vault;
