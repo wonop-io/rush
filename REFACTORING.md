@@ -22,50 +22,124 @@
 
 ```
 rush/
+├── Cargo.toml
+├── Cargo.lock
+├── tests/                  # Integration tests
+│   ├── cli_tests.rs
+│   ├── build_tests.rs
+│   └── container_tests.rs
 └── src/
-    ├── cli/               # Command-line interface logic
-    │   ├── args.rs        # Argument parsing
-    │   ├── commands/      # Individual command implementations
-    │   └── mod.rs
-    ├── core/              # Core domain models and business logic
-    │   ├── config/        # Configuration management
-    │   ├── environment/   # Environment management
-    │   ├── product/       # Product management
-    │   └── mod.rs
-    ├── build/             # Building capabilities
-    │   ├── context.rs     # Build context
-    │   ├── script.rs      # Build script processing
-    │   ├── artefact.rs    # Build artifacts
-    │   ├── variables.rs   # Build variables
-    │   └── mod.rs
-    ├── container/         # Container management
-    │   ├── docker.rs      # Docker API interactions
-    │   ├── network.rs     # Network management
-    │   ├── lifecycle/     # Container lifecycle management
-    │   │   ├── launch.rs
-    │   │   ├── monitor.rs
-    │   │   └── shutdown.rs
-    │   ├── service.rs     # Service definition
-    │   └── mod.rs
-    ├── k8s/               # Kubernetes functionality
-    │   ├── context.rs     # Kubernetes context
-    │   ├── manifests.rs   # Manifest generation
-    │   ├── deployment.rs  # Deployment logic
-    │   ├── validation.rs  # Manifest validation
-    │   └── mod.rs
-    ├── security/          # Security related functionality
-    │   ├── vault/         # Secret vault implementation
-    │   ├── secrets.rs     # Secrets management
-    │   └── mod.rs
-    ├── utils/             # Utility functions
-    │   ├── fs.rs          # File system utilities
-    │   ├── git.rs         # Git utilities
-    │   ├── path.rs        # Path utilities
-    │   ├── template.rs    # Template utilities
-    │   └── mod.rs
-    ├── error.rs           # Centralized error handling
-    ├── lib.rs             # Library exports
-    └── main.rs            # Simplified entry point
+    ├── cli/                # Command-line interface logic
+    │   ├── args.rs         # Argument parsing
+    │   ├── commands/       # Individual command implementations
+    │   │   ├── describe.rs # Describe command implementation
+    │   │   ├── dev.rs      # Dev command implementation
+    │   │   ├── build.rs    # Build command implementation
+    │   │   ├── deploy.rs   # Deploy command implementation
+    │   │   ├── vault.rs    # Vault command implementation
+    │   │   ├── rollout.rs  # Rollout command implementation
+    │   │   ├── apply.rs    # Apply command implementation
+    │   │   ├── unapply.rs  # Unapply command implementation
+    │   │   ├── validate.rs # Validate command implementation
+    │   │   ├── minikube.rs # Minikube command implementation
+    │   │   └── mod.rs      # Command module exports
+    │   └── mod.rs          # CLI module exports
+    ├── core/               # Core domain models and business logic
+    │   ├── config/         # Configuration management
+    │   │   ├── loader.rs   # Config loading
+    │   │   ├── types.rs    # Config types
+    │   │   ├── validator.rs # Config validation
+    │   │   └── mod.rs      # Config module exports
+    │   ├── environment/    # Environment management
+    │   │   ├── setup.rs    # Environment setup
+    │   │   ├── variables.rs # Environment variables
+    │   │   └── mod.rs      # Environment module exports
+    │   ├── product/        # Product management
+    │   │   ├── types.rs    # Product types
+    │   │   ├── loader.rs   # Product loading
+    │   │   └── mod.rs      # Product module exports
+    │   ├── dotenv.rs       # Dotenv utilities
+    │   ├── types.rs        # Common types
+    │   └── mod.rs          # Core module exports
+    ├── build/              # Building capabilities
+    │   ├── context.rs      # Build context
+    │   ├── script.rs       # Build script processing
+    │   ├── artefact.rs     # Build artifacts
+    │   ├── variables.rs    # Build variables
+    │   ├── types.rs        # Build types
+    │   ├── spec.rs         # Build specifications
+    │   ├── build_type.rs   # Build type definitions
+    │   ├── templates/      # Build templates
+    │   │   ├── build/      # Build script templates
+    │   │   │   ├── mdbook.sh
+    │   │   │   ├── rust_binary.sh
+    │   │   │   ├── wasm_dixious.sh
+    │   │   │   ├── wasm_trunk.sh
+    │   │   │   └── zola.sh
+    │   │   └── mod.rs      # Templates module exports
+    │   └── mod.rs          # Build module exports
+    ├── container/          # Container management
+    │   ├── docker.rs       # Docker API interactions
+    │   ├── network.rs      # Network management
+    │   ├── lifecycle/      # Container lifecycle management
+    │   │   ├── launch.rs   # Container launch
+    │   │   ├── monitor.rs  # Container monitoring
+    │   │   ├── shutdown.rs # Container shutdown
+    │   │   └── mod.rs      # Lifecycle module exports
+    │   ├── build/          # Container build process
+    │   │   ├── processor.rs # Build processing
+    │   │   ├── error.rs    # Build error handling
+    │   │   └── mod.rs      # Build module exports
+    │   ├── watcher/        # File watching
+    │   │   ├── setup.rs    # Watcher setup
+    │   │   ├── processor.rs # File change processing
+    │   │   └── mod.rs      # Watcher module exports
+    │   ├── service.rs      # Service definition
+    │   ├── status.rs       # Container status
+    │   ├── reactor.rs      # Simplified reactor
+    │   └── mod.rs          # Container module exports
+    ├── k8s/                # Kubernetes functionality
+    │   ├── context.rs      # Kubernetes context
+    │   ├── manifests.rs    # Manifest generation
+    │   ├── deployment.rs   # Deployment logic
+    │   ├── validation.rs   # Manifest validation
+    │   ├── encoder.rs      # Kubernetes secret encoding
+    │   ├── infrastructure.rs # Infrastructure management
+    │   ├── minikube.rs     # Minikube operations
+    │   └── mod.rs          # K8s module exports
+    ├── security/           # Security related functionality
+    │   ├── vault/          # Secret vault implementation
+    │   │   ├── dotenv.rs   # Dotenv vault
+    │   │   ├── file.rs     # File-based vault
+    │   │   ├── onepassword.rs # 1Password vault
+    │   │   ├── adapter.rs  # Vault adapter
+    │   │   ├── trait.rs    # Vault trait definition
+    │   │   └── mod.rs      # Vault module exports
+    │   ├── secrets/        # Secrets management
+    │   │   ├── definitions.rs # Secret definitions
+    │   │   ├── provider.rs # Secrets provider
+    │   │   ├── encoder.rs  # Secrets encoder
+    │   │   ├── adapter.rs  # Secrets adapter
+    │   │   └── mod.rs      # Secrets module exports
+    │   ├── env_defs.rs     # Environment definitions
+    │   └── mod.rs          # Security module exports
+    ├── toolchain/          # Toolchain management
+    │   ├── platform.rs     # Platform detection & support
+    │   ├── context.rs      # Toolchain context
+    │   └── mod.rs          # Toolchain module exports
+    ├── utils/              # Utility functions
+    │   ├── fs.rs           # File system utilities
+    │   ├── git.rs          # Git utilities
+    │   ├── path.rs         # Path utilities
+    │   ├── template.rs     # Template utilities
+    │   ├── process.rs      # Process execution utilities
+    │   ├── directory.rs    # Directory management
+    │   ├── docker_cross.rs # Docker cross-compilation
+    │   ├── path_matcher.rs # Path matching utilities
+    │   └── mod.rs          # Utils module exports
+    ├── error.rs            # Centralized error handling
+    ├── lib.rs              # Library exports
+    └── main.rs             # Simplified entry point
 ```
 
 ### 3.2. Module-Specific Refactoring
@@ -84,12 +158,12 @@ Break down `container_reactor.rs` into smaller modules:
    - `container::lifecycle::shutdown::handle_shutdown`
 
 3. **Build Process**:
-   - `container::build::build_and_handle_errors`
-   - `container::build::handle_build_error`
+   - `container::build::processor::build_and_handle_errors`
+   - `container::build::error::handle_build_error`
 
 4. **File Watching**:
-   - `container::watcher::setup_file_watcher`
-   - `container::watcher::handle_file_changes`
+   - `container::watcher::setup::setup_file_watcher`
+   - `container::watcher::processor::handle_file_changes`
 
 #### 3.2.2. Main.rs Refactoring
 
@@ -100,12 +174,18 @@ Break down `main.rs` into a cleaner CLI structure:
    - `cli::commands::dev::execute`
    - `cli::commands::build::execute`
    - `cli::commands::deploy::execute`
+   - `cli::commands::vault::execute`
+   - `cli::commands::rollout::execute`
+   - `cli::commands::apply::execute`
+   - `cli::commands::unapply::execute`
+   - `cli::commands::validate::execute`
+   - `cli::commands::minikube::execute`
 
 2. **Argument Parsing**:
    - `cli::args::parse_args`
 
 3. **Environment Setup**:
-   - `core::environment::setup`
+   - `core::environment::setup::setup_environment`
 
 #### 3.2.3. Builder Refactoring
 
@@ -118,6 +198,10 @@ Create more focused builder components:
 2. **Build Script**:
    - `build::script::parse_script`
    - `build::script::execute_script`
+
+3. **Artefact Management**:
+   - `build::artefact::create_artefact`
+   - `build::artefact::render_artefact`
 
 ## 4. Detailed Implementation Plan
 
@@ -225,7 +309,7 @@ fn generate_build_plan(component: &str, config: &Config) -> Result<BuildPlan, Er
 }
 
 async fn execute_build_plan(
-    plan: &BuildPlan, 
+    plan: &BuildPlan,
     docker_client: &dyn DockerClient
 ) -> Result<(), Error> {
     // Focused execution
@@ -242,7 +326,7 @@ Focus on testing pure functions and traits with mock implementations:
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_generate_build_plan() {
         let config = Config::default();
@@ -250,7 +334,7 @@ mod tests {
         assert_eq!(plan.component_name, "test-component");
         // Other assertions
     }
-    
+
     #[tokio::test]
     async fn test_execute_build_plan() {
         let mock_docker = MockDockerClient::new();
@@ -272,10 +356,10 @@ async fn test_container_lifecycle() {
     // Setup test environment
     let temp_dir = tempfile::tempdir().unwrap();
     // Create test fixtures
-    
+
     // Execute operations
     let result = launch_and_monitor(temp_dir.path()).await;
-    
+
     // Verify results
     assert!(result.is_ok());
     // Other assertions

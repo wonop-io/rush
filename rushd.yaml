@@ -10,10 +10,20 @@ env:
   STAGING_DOMAIN: "{%-if subdomain-%}{{ subdomain }}-{%-endif-%}{{ product_uri }}-staging.wonop.dev"
   PROD_DOMAIN: "{%-if subdomain-%}{{ subdomain }}.{%-endif-%}{{ product_name }}"
 
-  LOCAL_VAULT: .env
-  DEV_VAULT: 1Password
-  STAGING_VAULT: 1Password
-  PROD_VAULT: 1Password
+  LOCAL_VAULT: ".env"
+  DEV_VAULT: "1Password"
+  STAGING_VAULT: "json"
+  PROD_VAULT: "json"
+
+  K8S_VALIDATOR_LOCAL: kubeconform
+  K8S_VALIDATOR_DEV: kubeconform
+  K8S_VALIDATOR_STAGING: kubeconform
+  K8S_VALIDATOR_PROD: kubeconform
+
+  K8S_VERSION_LOCAL: "1.29.13"
+  K8S_VERSION_DEV: "1.29.13"
+  K8S_VERSION_STAGING: "1.29.13"
+  K8S_VERSION_PROD: "1.29.13"
 
   ONE_PASSWORD_ACCOUNT: hello.1password.com
 

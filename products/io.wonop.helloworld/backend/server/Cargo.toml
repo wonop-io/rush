@@ -5,6 +5,7 @@ edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+
 [dependencies]
 axum = { version = "^0.7.4", features = ["tokio"] }
 axum-server = { version = "0.6", features = ["tls-rustls"] }
@@ -19,7 +20,7 @@ chrono = { version = "0.4.23", features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { version = "0.12.2", default-features = false, features = [
-  "json",
-  "rustls-tls",
+    "json",
+    "rustls-tls",
 ] }
 api_types = { path = "../../api/types" }
