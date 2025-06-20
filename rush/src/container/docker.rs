@@ -782,11 +782,23 @@ impl DockerImage {
         };
 
         file_paths.iter().any(|file_path| {
-            if let Ok(absolute_file_path) = std::fs::canonicalize(file_path) {
-                absolute_file_path.starts_with(&context_dir)
-                    || absolute_file_path.starts_with(&dockerfile_dir)
-            } else {
-                false
+            debug!("Canonicalizing file path: {}", file_path.display());
+            match std::fs::canonicalize(file_path) {
+                Ok(absolute_file_path) => {
+                    debug!(
+                        "{} vs {} or {}",
+                        absolute_file_path.display(),
+                        context_dir.display(),
+                        dockerfile_dir.display()
+                    );
+
+                    absolute_file_path.starts_with(&context_dir)
+                        || absolute_file_path.starts_with(&dockerfile_dir)
+                }
+                Err(e) => {
+                    error!("Failed to canonicalize file path: {}", e);
+                    false
+                }
             }
         })
     }

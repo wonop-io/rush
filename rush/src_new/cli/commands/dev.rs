@@ -6,7 +6,7 @@ use std::sync::Mutex;
 
 use log::{debug, error, info, trace};
 
-use crate::container::{ContainerReactor, ContainerReactorConfig, DockerCliClient};
+use crate::container::{ContainerReactorConfig, DockerCliClient, Reactor};
 use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::security::{Base64SecretsEncoder, FileVault, SecretsEncoder, SecretsProvider};
@@ -89,7 +89,7 @@ impl DevCommand {
         };
 
         // Create the container reactor from product directory
-        let mut reactor = ContainerReactor::from_product_dir(
+        let mut reactor = Reactor::from_product_dir(
             self.config.clone(),
             vault_adapter,
             secrets_encoder,

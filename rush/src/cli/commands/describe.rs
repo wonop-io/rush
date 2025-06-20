@@ -67,9 +67,10 @@ async fn describe_build_script(
             .get(&ctx.product_name, component_name, &ctx.environment)
             .await
             .unwrap_or_default();
-        let build_ctx = image.generate_build_context(secrets);
+        let image_guard = image.lock().unwrap();
+        let build_ctx = image_guard.generate_build_context(secrets);
 
-        println!("{}", image.build_script(&build_ctx).unwrap());
+        println!("{}", image_guard.build_script(&build_ctx).unwrap());
         debug!("Described build script for component: {}", component_name);
         process::exit(0);
     }
@@ -96,7 +97,8 @@ async fn describe_build_context(
             .get(&ctx.product_name, component_name, &ctx.environment)
             .await
             .unwrap_or_default();
-        let build_ctx = image.generate_build_context(secrets);
+        let image_guard = image.lock().unwrap();
+        let build_ctx = image_guard.generate_build_context(secrets);
         let tera_ctx = Context::from_serialize(build_ctx).expect("Could not create context");
         println!("{:#?}", tera_ctx);
         debug!("Described build context for component: {}", component_name);
@@ -126,8 +128,9 @@ async fn describe_artefacts(
             .get(&ctx.product_name, component_name, &ctx.environment)
             .await
             .unwrap_or_default();
-        let build_ctx = image.generate_build_context(secrets);
-        for (k, v) in image.spec().build_artefacts() {
+        let image_guard = image.lock().unwrap();
+        let build_ctx = image_guard.generate_build_context(secrets);
+        for (k, v) in image_guard.spec().build_artefacts() {
             let message = format!("{} {}", "Artefact".green(), k.white());
             println!("{}\n", &message.bold());
 

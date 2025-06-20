@@ -16,7 +16,7 @@ export {{ d | envname }}="{{ v }}"
 {% if ssr %}
 CARGO_TARGET_DIR=./target wasm-trunk build  --features hydration --release
 {% else %}
-CARGO_TARGET_DIR=./target wasm-trunk build  --features csr --release
+CARGO_TARGET_DIR=./target wasm-trunk build  --release
 {% endif %}
 
 {% if ssr %}

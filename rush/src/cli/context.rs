@@ -5,7 +5,7 @@ pub struct CliContext {
     pub environment: String,
     pub product_name: String,
     pub toolchain: Arc<ToolchainContext>,
-    pub reactor: ContainerReactor,
+    pub reactor: Reactor,
     pub vault: Arc<Mutex<dyn Vault + Send>>,
     pub secrets_context: SecretsDefinitions,
 }

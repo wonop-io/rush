@@ -6,7 +6,7 @@ use crate::build::Config;
 use crate::check_version;
 use crate::cli::context::CliContext;
 use crate::cluster::{K8Encoder, NoopEncoder, SealedSecretsEncoder};
-use crate::container::ContainerReactor;
+use crate::container::Reactor;
 use crate::core::environment::PublicEnvironmentDefinitions;
 use crate::create_vault;
 use crate::load_config;
@@ -275,7 +275,7 @@ fn create_reactor(
     vault: Arc<Mutex<dyn Vault + Send>>,
     redirected_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
-) -> Result<ContainerReactor, std::io::Error> {
+) -> Result<Reactor, std::io::Error> {
     let secrets_encoder = Arc::new(Base64SecretsEncoder);
     let k8s_encoder = match config.k8s_encoder() {
         "kubeseal" => {
@@ -290,7 +290,7 @@ fn create_reactor(
     };
 
     println!("\n\n");
-    match ContainerReactor::from_product_dir(
+    match Reactor::from_product_dir(
         config,
         toolchain,
         vault,
@@ -301,7 +301,7 @@ fn create_reactor(
     ) {
         Ok(reactor) => Ok(reactor),
         Err(e) => {
-            error!("Failed to create ContainerReactor: {}", e);
+            error!("Failed to create Reactor: {}", e);
             eprintln!("{}", e);
             std::process::exit(1);
         }

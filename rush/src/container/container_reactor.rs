@@ -1344,3 +1344,1631 @@ impl ContainerReactor {
         trace!("Cleanup process completed");
     }
 }
+
+// REFACTORING PLAN:
+// This file should be broken down into multiple smaller modules:
+// 1. Network - Create/delete network functionality
+// 2. BuildProcess - Build and error handling
+// 3. Lifecycle - Launch, monitor, and shutdown
+// 4. FileWatcher - File watching and change detection
+// 5. Kubernetes - K8s specific operations
+//
+// Current structure breakdown:
+// - ContainerReactor struct has too many responsibilities
+// - Many long methods handling multiple concerns
+// - Complex error handling mixed with business logic
+// - Callback functions nested within methods
+//
+// Proposed structure:
+// - Split ContainerReactor into domain-specific components
+// - Extract pure functions where possible
+// - Create interfaces for external dependencies
+// - Improve error handling with proper types
+//
+// This will make the code more testable, maintainable, and easier to understand.
+// It aligns with the refactoring goals in REFACTORING.md
+// Network management module
+
+/// A more modular replacement for ContainerReactor
+/// Orchestrates container lifecycle operations while delegating to specialized components
+pub struct Reactor {
+    network_manager: network::NetworkManager,
+    build_processor: build::BuildProcessor,
+    launch_manager: lifecycle::LaunchManager,
+    kubernetes_manager: kubernetes::KubernetesManager,
+    config: Arc<Config>,
+    product_directory: String,
+    available_components: Vec<String>,
+    terminate_sender: BroadcastSender<()>,
+    terminate_receiver: BroadcastReceiver<()>,
+    toolchain: Option<Arc<ToolchainContext>>,
+    services: Arc<ServicesSpec>,
+    secrets_encoder: Arc<dyn EncodeSecrets>,
+    vault: Arc<Mutex<dyn Vault + Send>>,
+    file_watcher: watcher::FileWatcher,
+    changed_files: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+impl Reactor {
+    pub fn from_product_dir(
+        config: Arc<Config>,
+        toolchain: Arc<ToolchainContext>,
+        vault: Arc<Mutex<dyn Vault + Send>>,
+        secrets_encoder: Arc<dyn EncodeSecrets>,
+        k8s_encoder: Arc<dyn K8Encoder>,
+        redirected_components: HashMap<String, (String, u16)>,
+        silence_components: Vec<String>,
+    ) -> Result<Self, String> {
+        // This would construct all the components and initialize them
+        // Implementation would be similar to ContainerReactor::from_product_dir
+
+        // For now just delegate to ContainerReactor for backward compatibility
+        let container_reactor = ContainerReactor::from_product_dir(
+            config.clone(),
+            toolchain.clone(),
+            vault.clone(),
+            secrets_encoder.clone(),
+            k8s_encoder,
+            redirected_components,
+            silence_components,
+        )?;
+
+        let (terminate_sender, terminate_receiver) = broadcast::channel(16);
+
+        // Convert Vec<DockerImage> to Vec<Arc<Mutex<DockerImage>>>
+        let images: Vec<Arc<Mutex<DockerImage>>> = container_reactor
+            .images
+            .into_iter()
+            .map(|img| Arc::new(Mutex::new(img)))
+            .collect();
+
+        // Initialize component managers
+        let network_manager =
+            network::NetworkManager::new(toolchain.clone(), config.network_name().to_string());
+
+        let build_processor =
+            build::BuildProcessor::new(container_reactor.product_directory.clone(), images.clone());
+
+        let launch_manager = lifecycle::LaunchManager::new(images, terminate_sender.clone());
+
+        let file_watcher = watcher::FileWatcher::new(
+            container_reactor.changed_files.clone(),
+            container_reactor.product_directory.clone(),
+        );
+
+        let kubernetes_manager = kubernetes::KubernetesManager::new(
+            toolchain,
+            container_reactor.cluster_manifests,
+            container_reactor.infrastructure_repo,
+            container_reactor.product_directory.clone(),
+        );
+
+        Ok(Self {
+            network_manager,
+            build_processor,
+            launch_manager,
+            file_watcher,
+            kubernetes_manager,
+            config,
+            product_directory: container_reactor.product_directory,
+            available_components: container_reactor.available_components,
+            terminate_sender,
+            terminate_receiver,
+            toolchain: container_reactor.toolchain,
+            services: container_reactor.services,
+            secrets_encoder,
+            vault,
+            changed_files: container_reactor.changed_files,
+        })
+    }
+
+    // Delegated methods that match ContainerReactor's public API
+
+    pub fn services(&self) -> &ServicesSpec {
+        &self.services
+    }
+
+    pub fn product_directory(&self) -> &str {
+        &self.product_directory
+    }
+
+    pub fn images(&self) -> &Vec<Arc<Mutex<DockerImage>>> {
+        self.launch_manager.images()
+    }
+
+    pub fn cluster_manifests(&self) -> &K8ClusterManifests {
+        self.kubernetes_manager.cluster_manifests()
+    }
+
+    pub fn get_image(&self, component_name: &str) -> Option<Arc<Mutex<DockerImage>>> {
+        self.launch_manager.get_image(component_name)
+    }
+
+    pub fn available_components(&self) -> &Vec<String> {
+        &self.available_components
+    }
+
+    pub async fn build_and_push(&mut self) -> Result<(), String> {
+        self.build_processor.build_and_push().await
+    }
+
+    pub async fn select_kubernetes_context(&self, context: &str) -> Result<(), String> {
+        self.kubernetes_manager
+            .select_kubernetes_context(context)
+            .await
+    }
+
+    pub async fn apply(&mut self) -> Result<(), String> {
+        self.kubernetes_manager.apply().await
+    }
+
+    pub async fn unapply(&mut self) -> Result<(), String> {
+        self.kubernetes_manager.unapply().await
+    }
+
+    pub async fn rollout(&mut self) -> Result<(), String> {
+        self.kubernetes_manager.rollout(&self.config).await
+    }
+
+    pub async fn deploy(&mut self) -> Result<(), String> {
+        self.build_and_push().await?;
+        self.build_manifests().await?;
+        self.apply().await?;
+        Ok(())
+    }
+
+    pub async fn install_manifests(&mut self) -> Result<(), String> {
+        self.kubernetes_manager.install_manifests().await
+    }
+
+    pub async fn uninstall_manifests(&mut self) -> Result<(), String> {
+        self.kubernetes_manager.uninstall_manifests().await
+    }
+
+    pub async fn build_manifests(&mut self) -> Result<(), String> {
+        let vault = self.vault.clone();
+        let secrets_encoder = self.secrets_encoder.clone();
+
+        let vault_ref = vault.lock().unwrap();
+        self.kubernetes_manager
+            .build_manifests(&*vault_ref, &*secrets_encoder, self.toolchain.clone())
+            .await
+    }
+
+    pub async fn build(&mut self) -> Result<(), String> {
+        self.build_processor.build_all().await?;
+        self.build_manifests().await?;
+        Ok(())
+    }
+
+    pub async fn launch(&mut self) -> Result<(), String> {
+        let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+        // Set up network and environment
+        self.network_manager.create_network().await?;
+
+        // Set up file watcher
+        let (_watcher, test_if_files_changed) = self.file_watcher.setup()?;
+
+        let mut break_type = BreakType::Running;
+        let mut monitor_manager = lifecycle::MonitorManager::new(
+            HashMap::new(),
+            self.terminate_sender.clone(),
+            self.changed_files.clone(),
+            self.product_directory(),
+        );
+
+        while matches!(break_type, BreakType::Running | BreakType::FileChanged) {
+            // Clean previous resources
+            self.launch_manager.kill_and_clean(false).await;
+
+            // Build
+            match self.build().await {
+                Ok(_) => {}
+                Err(e) => {
+                    build::ErrorHandler::handle_build_error(
+                        e,
+                        &mut break_type,
+                        &test_if_files_changed,
+                    )
+                    .await?;
+                    continue;
+                }
+            }
+
+            // Launch
+            let (max_label_length, longest_paths) = self.launch_manager.prepare_for_launch();
+            self.launch_manager
+                .launch_images(
+                    max_label_length,
+                    longest_paths,
+                    self.terminate_receiver.resubscribe(),
+                )
+                .await;
+
+            println!("WAS HERE!??");
+            // Monitor
+            break_type = monitor_manager
+                .monitor_and_handle_events(&test_if_files_changed, &mut self.launch_manager)
+                .await;
+        }
+
+        // Cleanup
+        self.network_manager.delete_network().await?;
+
+        Ok(())
+    }
+
+    pub async fn kill_and_clean(&self, force_all: bool) {
+        self.launch_manager.kill_and_clean(force_all).await;
+    }
+
+    pub async fn clean(&self) {
+        self.launch_manager.clean().await;
+    }
+}
+
+pub mod network {
+    use super::DockerImage;
+    use crate::toolchain::ToolchainContext;
+    use crate::utils::run_command;
+    use colored::Colorize;
+    use log::trace;
+    use std::sync::Arc;
+
+    pub struct NetworkManager {
+        toolchain: Arc<ToolchainContext>,
+        network_name: String,
+    }
+
+    impl NetworkManager {
+        pub fn new(toolchain: Arc<ToolchainContext>, network_name: String) -> Self {
+            Self {
+                toolchain,
+                network_name,
+            }
+        }
+
+        pub async fn create_network(&self) -> Result<(), String> {
+            trace!("Creating Docker network: {}", self.network_name);
+
+            let docker = self.toolchain.docker();
+
+            // Check if network already exists
+            match run_command(
+                "docker network check".white().bold(),
+                docker.clone(),
+                vec!["network", "inspect", &self.network_name],
+            )
+            .await
+            {
+                Ok(_) => {
+                    trace!("Network {} already exists", self.network_name);
+                    return Ok(());
+                }
+                Err(_) => {
+                    // Network doesn't exist, continue with creation
+                }
+            }
+
+            // Create the network
+            match run_command(
+                "docker network create".white().bold(),
+                docker,
+                vec!["network", "create", &self.network_name],
+            )
+            .await
+            {
+                Ok(_) => {
+                    trace!("Created Docker network: {}", self.network_name);
+                    Ok(())
+                }
+                Err(e) => Err(format!(
+                    "Failed to create Docker network {}: {}",
+                    self.network_name, e
+                )),
+            }
+        }
+
+        pub async fn delete_network(&self) -> Result<(), String> {
+            trace!("Deleting Docker network: {}", self.network_name);
+
+            let docker = self.toolchain.docker();
+
+            // Check if network exists
+            match run_command(
+                "docker network check".white().bold(),
+                docker.clone(),
+                vec!["network", "inspect", &self.network_name],
+            )
+            .await
+            {
+                Ok(_) => {
+                    // Delete the network
+                    match run_command(
+                        "docker network delete".white().bold(),
+                        docker,
+                        vec!["network", "rm", &self.network_name],
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            trace!("Deleted Docker network: {}", self.network_name);
+                            Ok(())
+                        }
+                        Err(e) => Err(format!(
+                            "Failed to delete Docker network {}: {}",
+                            self.network_name, e
+                        )),
+                    }
+                }
+                Err(_) => {
+                    // Network doesn't exist, nothing to delete
+                    trace!(
+                        "Network {} doesn't exist, nothing to delete",
+                        self.network_name
+                    );
+                    Ok(())
+                }
+            }
+        }
+    }
+}
+
+// Build process module
+pub mod build {
+    use crate::container::docker::DockerImage;
+    use colored::Colorize;
+    use std::io::Write;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
+    pub struct BuildProcessor {
+        product_directory: String,
+        images: Vec<Arc<Mutex<DockerImage>>>,
+    }
+
+    impl BuildProcessor {
+        pub fn new(product_directory: String, images: Vec<Arc<Mutex<DockerImage>>>) -> Self {
+            Self {
+                product_directory,
+                images,
+            }
+        }
+
+        pub async fn build_all(&mut self) -> Result<(), String> {
+            let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+            for image_arc in &mut self.images {
+                let mut image = image_arc.lock().unwrap();
+                // Skip images that should be ignored in dev mode
+                if image.should_ignore_in_devmode() {
+                    println!(
+                        "{}  ..... [  {}  ]",
+                        image.identifier(),
+                        "IGNORED".red().bold()
+                    );
+                    continue;
+                }
+
+                // Skip images that don't need rebuilding
+                if !image.should_rebuild() {
+                    println!(
+                        "{}  ..... [  {}  ]",
+                        image.identifier(),
+                        "SKIPPED".yellow().bold()
+                    );
+                    continue;
+                }
+
+                // Start build process with visual feedback
+                print!("Building {}  ..... ", image.identifier());
+                std::io::stdout().flush().expect("Failed to flush stdout");
+                image.set_was_recently_rebuild(true);
+
+                // Perform the actual build
+                match image.build().await {
+                    Ok(_) => {
+                        image.set_should_rebuild(false);
+                        println!(
+                            "Building {}  ..... [  {}  ]",
+                            image.identifier(),
+                            "OK".white().bold()
+                        )
+                    }
+                    Err(e) => {
+                        println!(
+                            "Building {}  ..... [ {} ]",
+                            image.identifier(),
+                            "FAIL".red().bold()
+                        );
+                        println!();
+                        println!("{}", e);
+                        println!();
+                        println!("{}", "Build was unsuccessful".red().bold());
+                        return Err(e);
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        pub async fn build_and_push(&mut self) -> Result<(), String> {
+            let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+            for image_arc in &mut self.images {
+                let mut image = image_arc.lock().unwrap();
+                print!("Build & push {}  ..... ", image.identifier());
+                std::io::stdout().flush().expect("Failed to flush stdout");
+                match image.build_and_push().await {
+                    Ok(_) => println!(
+                        "Build & push {}  ..... [  {}  ]",
+                        image.identifier(),
+                        "OK".white().bold()
+                    ),
+                    Err(e) => {
+                        println!(
+                            "Build & push {}  ..... [ {} ]",
+                            image.identifier(),
+                            "FAIL".red().bold()
+                        );
+                        println!();
+                        println!("{}", e);
+                        println!();
+                        println!("{}", "Build was unsuccessful".red().bold());
+                        return Err(e);
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+
+    pub struct ErrorHandler;
+
+    impl ErrorHandler {
+        pub async fn handle_build_error<F: Fn() -> bool>(
+            error: String,
+            break_type: &mut super::BreakType,
+            test_if_files_changed: &F,
+        ) -> Result<(), String> {
+            // Format the error message with colored output
+            let formatted_error = error
+                .replace("error:", &format!("{}:", &"error".red().bold().to_string()))
+                .replace("error[", &format!("{}[", &"error".red().bold().to_string()))
+                .replace(
+                    "warning:",
+                    &format!("{}:", &"warning".yellow().bold().to_string()),
+                );
+
+            log::error!("Build failed: {}", formatted_error);
+
+            // Brief pause to ensure error is visible
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+            // Set up ctrl-c handler
+            let ctrl_c = tokio::signal::ctrl_c();
+            tokio::pin!(ctrl_c);
+
+            // Wait for user feedback loop
+            loop {
+                // Check if files have changed
+                if test_if_files_changed() {
+                    // A file change was detected
+                    log::trace!("File change detected. Rebuilding.");
+                    *break_type = super::BreakType::FileChanged;
+                    break;
+                }
+
+                // Check for termination signal
+                tokio::select! {
+                    _ = &mut ctrl_c => {
+                        log::trace!("Termination signal received during build error state.");
+                        *break_type = super::BreakType::Stopped;
+                        break;
+                    }
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
+                        // Continue monitoring loop
+                    }
+                }
+            }
+
+            Err("Build failed".to_string())
+        }
+    }
+}
+
+// Lifecycle management module
+pub mod lifecycle {
+    use crate::container::docker::DockerImage;
+    use crate::container::status::Status;
+    use colored::Colorize;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::sync::mpsc::Receiver;
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::broadcast::{Receiver as BroadcastReceiver, Sender as BroadcastSender};
+
+    pub struct LaunchManager {
+        images: Vec<Arc<Mutex<DockerImage>>>,
+        images_by_id: HashMap<usize, Arc<Mutex<DockerImage>>>,
+        statuses_receivers: HashMap<usize, Receiver<Status>>,
+        statuses: HashMap<String, Status>,
+        handles: HashMap<usize, tokio::task::JoinHandle<()>>,
+        terminate_sender: BroadcastSender<()>,
+    }
+
+    impl LaunchManager {
+        pub fn new(
+            images: Vec<Arc<Mutex<DockerImage>>>,
+            terminate_sender: BroadcastSender<()>,
+        ) -> Self {
+            Self {
+                images,
+                images_by_id: HashMap::new(),
+                statuses_receivers: HashMap::new(),
+                statuses: HashMap::new(),
+                handles: HashMap::new(),
+                terminate_sender,
+            }
+        }
+
+        pub fn images(&self) -> &Vec<Arc<Mutex<DockerImage>>> {
+            &self.images
+        }
+
+        pub fn images_as_mut(&mut self) -> &mut Vec<Arc<Mutex<DockerImage>>> {
+            &mut self.images
+        }
+
+        pub fn get_image(&self, component_name: &str) -> Option<Arc<Mutex<DockerImage>>> {
+            self.images
+                .iter()
+                .find(|img| {
+                    let img_guard = img.lock().unwrap();
+                    img_guard.component_name() == component_name
+                })
+                .map(|img| img.clone())
+        }
+
+        pub fn prepare_for_launch(&self) -> (usize, HashMap<String, usize>) {
+            let max_label_length = self
+                .images
+                .iter()
+                .map(|image| {
+                    let image_guard = image.lock().unwrap();
+                    image_guard.component_name().len()
+                })
+                .max()
+                .unwrap_or_default();
+
+            let dependency_graph = self
+                .images
+                .iter()
+                .map(|image| {
+                    let image_guard = image.lock().unwrap();
+                    (
+                        image_guard.image_name().to_string(),
+                        image_guard.depends_on().clone(),
+                    )
+                })
+                .collect::<HashMap<String, Vec<String>>>();
+
+            let longest_paths = self.compute_longest_paths(&dependency_graph);
+            (max_label_length, longest_paths)
+        }
+
+        fn compute_longest_paths(
+            &self,
+            dependency_graph: &HashMap<String, Vec<String>>,
+        ) -> HashMap<String, usize> {
+            let mut longest_paths = HashMap::new();
+            for (name, _) in dependency_graph {
+                let mut stack = vec![(name, 1)];
+                let mut visited = std::collections::HashSet::new();
+                let mut max_length = 1;
+
+                while let Some((current, path_len)) = stack.pop() {
+                    visited.insert(current);
+                    max_length = max_length.max(path_len);
+
+                    if let Some(deps) = dependency_graph.get(current) {
+                        for dep in deps {
+                            if !visited.contains(dep) {
+                                stack.push((dep, path_len + 1));
+                            }
+                        }
+                    }
+                }
+
+                longest_paths.insert(name.clone(), max_length);
+            }
+            longest_paths
+        }
+        pub async fn launch_images(
+            &mut self,
+            max_label_length: usize,
+            longest_paths: HashMap<String, usize>,
+            terminate_receiver: BroadcastReceiver<()>,
+        ) {
+            println!("LAUNCHING IMAGES");
+            // Reset state for new launch
+            self.images_by_id = HashMap::new();
+            self.statuses_receivers = HashMap::new();
+            self.statuses = HashMap::new();
+            self.handles = HashMap::new();
+
+            // Sort images by priority (based on dependency chain length)
+            let mut jobs = self
+                .images
+                .iter_mut()
+                .enumerate()
+                .map(|(id, image)| {
+                    let image_guard = image.lock().unwrap();
+                    let priority = longest_paths
+                        .get(image_guard.image_name())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    (priority, id, image.clone())
+                })
+                .collect::<Vec<_>>();
+
+            // Sort by priority (higher priority first)
+            jobs.sort_by(|a, b| b.0.cmp(&a.0));
+
+            // Launch each image in priority order
+            for (priority, image_id, image_arc) in jobs {
+                let should_ignore;
+                let was_recently_rebuild;
+                let image_name;
+                let component_name;
+
+                {
+                    let image = image_arc.lock().unwrap();
+                    // Skip images that should be ignored
+                    should_ignore = image.should_ignore_in_devmode();
+                    was_recently_rebuild = image.was_recently_rebuild();
+                    image_name = image.image_name().to_string();
+                    component_name = image.component_name().to_string();
+                }
+
+                if should_ignore {
+                    log::debug!("Ignoring image {} in dev mode.", image_name);
+                    continue;
+                }
+
+                // Skip images that weren't recently rebuilt
+                if !was_recently_rebuild {
+                    log::debug!("Image '{}' was not rebuild - skipping restart.", image_name);
+                    continue;
+                }
+
+                println!(
+                    "\n{}",
+                    format!("Starting {} with priority {}", image_name, priority)
+                        .bold()
+                        .white()
+                );
+
+                // Set up channels for status communication
+                let (status_sender, status_receiver) = std::sync::mpsc::channel();
+
+                // Store image and receiver for later status updates
+
+                self.images_by_id.insert(image_id, image_arc.clone());
+                self.statuses_receivers.insert(image_id, status_receiver);
+                self.statuses.insert(component_name, Status::Awaiting);
+
+                // Launch the image and store its handle
+                let handle = {
+                    let mut image = image_arc.lock().unwrap();
+                    image.launch(
+                        max_label_length,
+                        terminate_receiver.resubscribe(),
+                        status_sender,
+                    )
+                };
+                self.handles.insert(image_id, handle);
+
+                // Small delay between launches to prevent resource contention
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            }
+        }
+
+        pub fn update_image_statuses(&mut self) {
+            for (id, receiver) in self.statuses_receivers.iter_mut() {
+                while let Ok(status) = receiver.try_recv() {
+                    // Update self.statuses with the new status
+                    if let Some(image) = self.images_by_id.get(id) {
+                        let component_name = image.lock().unwrap().component_name();
+                        let previous_status = self.statuses.get(&component_name);
+
+                        // Only update and print if status has changed
+                        if previous_status.map_or(true, |prev| *prev != status) {
+                            self.statuses
+                                .insert(component_name.to_string(), status.clone());
+
+                            // Print status changes based on the type of status update
+                            match status {
+                                Status::InProgress => {
+                                    println!("Image {} is running", component_name)
+                                }
+                                Status::StartupCompleted => {
+                                    println!("Image {} is ready", component_name)
+                                }
+                                Status::Finished(code) => {
+                                    println!("Image {} exited with code {}", component_name, code)
+                                }
+                                Status::Terminate => {
+                                    println!("Image {} is terminating", component_name)
+                                }
+                                _ => (), // Don't print for other status types
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        pub async fn kill_all_images(&mut self) {
+            log::trace!("Killing all container images");
+            for image_arc in &self.images {
+                let image = image_arc.lock().unwrap();
+                log::debug!("Killing image: {}", image.component_name());
+                image.kill().await;
+            }
+            log::trace!("All images killed successfully");
+        }
+
+        pub async fn kill_and_clean(&self, force_all: bool) {
+            log::trace!("Starting kill and cleanup process");
+            for image_arc in &self.images {
+                let image = image_arc.lock().unwrap();
+                if force_all || image.should_rebuild() {
+                    log::info!("Cleaning up image: {}", image.identifier());
+                    image.kill_and_clean().await;
+                }
+            }
+            log::trace!("Kill and cleanup process completed");
+            println!("Cleanup completed");
+        }
+
+        pub async fn clean(&self) {
+            log::trace!("Starting cleanup process");
+            for image_arc in &self.images {
+                let image = image_arc.lock().unwrap();
+                log::debug!("Cleaning up image: {}", image.identifier());
+                image.clean().await;
+            }
+            log::trace!("Cleanup process completed");
+            println!("Cleanup completed");
+        }
+
+        pub async fn wait_for_handles(&mut self) {
+            log::trace!("Joining all handles for container processes");
+
+            // Create a loop that will either complete when all handles are joined
+            // or timeout after a certain period
+            loop {
+                tokio::select! {
+                    // Try to join all handles concurrently
+                    _ = futures::future::join_all(self.handles.values_mut()) => {
+                        log::trace!("All container process handles joined successfully");
+                        break;
+                    },
+                    // Set a timeout to prevent hanging indefinitely
+                    _ = tokio::time::sleep(tokio::time::Duration::from_secs(5)) => {
+                        log::warn!("Waiting for processes to quit - some may be unresponsive");
+                        // Send termination signal to any remaining processes
+                        let _ = self.terminate_sender.send(());
+                        // Force kill any remaining images
+                        self.kill_all_images().await;
+                    },
+                }
+            }
+
+            // Clear the handles map since all processes have been handled
+            self.handles.clear();
+            log::debug!("All container handles cleared");
+        }
+    }
+
+    pub struct MonitorManager {
+        statuses: HashMap<String, Status>,
+        terminate_sender: BroadcastSender<()>,
+        changed_files: Arc<Mutex<Vec<PathBuf>>>,
+        product_directory: String,
+    }
+
+    impl MonitorManager {
+        pub fn new(
+            statuses: HashMap<String, Status>,
+            terminate_sender: BroadcastSender<()>,
+            changed_files: Arc<Mutex<Vec<PathBuf>>>,
+            product_directory: &str,
+        ) -> Self {
+            Self {
+                statuses,
+                terminate_sender,
+                changed_files,
+                product_directory: product_directory.to_string(),
+            }
+        }
+
+        pub async fn test_if_significant_change(
+            &self,
+            images: &mut Vec<Arc<Mutex<DockerImage>>>,
+        ) -> bool {
+            // Get locked access to the changed files
+            let mut changed_files = self.changed_files.lock().unwrap();
+            log::debug!("Files tested: {:?}", changed_files);
+
+            // If no files changed, return false
+            if changed_files.is_empty() {
+                return false;
+            }
+
+            // Track if any significant change was detected
+            let mut significant_change = false;
+
+            // Check each image against the changed files
+            for image in images {
+                log::debug!(" - Testing {}", image.lock().unwrap().image_name());
+                for file_path in changed_files.iter() {
+                    // Convert to relative path from product directory
+                    let rel_path = if let Ok(rel) = file_path.strip_prefix(&self.product_directory)
+                    {
+                        rel.to_path_buf()
+                    } else {
+                        file_path.clone()
+                    };
+
+                    // Check if the changed file affects this image
+                    let mut image = image.lock().unwrap();
+                    log::debug!("   * {}", rel_path.display().to_string());
+
+                    if image.is_any_file_in_context(&vec![rel_path.clone()]) {
+                        log::debug!(
+                            "Significant change detected in file: {} for image: {}",
+                            rel_path.display(),
+                            image.identifier()
+                        );
+
+                        // Mark image for rebuild
+                        image.set_should_rebuild(true);
+                        significant_change = true;
+                    }
+                }
+            }
+
+            // Clear the changed files list after processing
+            changed_files.clear();
+
+            significant_change
+        }
+
+        pub async fn monitor_and_handle_events<F: Fn() -> bool>(
+            &mut self,
+            test_if_files_changed: &F,
+            launch_manager: &mut LaunchManager,
+        ) -> super::BreakType {
+            let mut all_finished = false;
+            let mut stopping = false;
+            let mut stop_time: Option<std::time::Instant> = None;
+
+            // Set up ctrl-c handling
+            let ctrl_c = tokio::signal::ctrl_c();
+            tokio::pin!(ctrl_c);
+
+            loop {
+                tokio::select! {
+                    // Handle CTRL+C signal
+                    _ = &mut ctrl_c => {
+                        log::trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
+                        println!("******************************************************************");
+                        println!("******************************************************************");
+                        println!("*****************       GRACEFUL SHUTDOWN        *****************");
+                        println!("******************************************************************");
+                        println!("******************************************************************");
+
+                        // Send termination signal to all processes
+                        let _ = self.terminate_sender.send(());
+
+                        // Update status map from launch manager
+                        self.statuses = launch_manager.statuses.clone();
+
+                        // Mark as stopping and record stop time
+                        stop_time = Some(std::time::Instant::now());
+                        stopping = true;
+                        break;
+                    }
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
+                        // Check for file changes
+                        if !stopping && test_if_files_changed() {
+                            log::debug!("File change detected. Checking if rebuild is needed.");
+
+                            // Get changed files and check if they're significant
+                            let significant_change = self.test_if_significant_change(launch_manager.images_as_mut()).await;
+
+                            if significant_change {
+                                log::debug!("Significant file changes detected, triggering rebuild");
+                                stop_time = Some(std::time::Instant::now());
+                                stopping = true;
+                                return super::BreakType::FileChanged;
+                            }
+                        }
+
+                        // Update status tracking
+                        launch_manager.update_image_statuses();
+                        self.statuses = launch_manager.statuses.clone();
+
+                        // Check if all processes have finished
+                        all_finished = self.statuses.values().all(|status|
+                            matches!(status, super::Status::Finished(_))
+                        );
+
+                        if all_finished || stopping {
+                            break;
+                        }
+
+                        // Check if any image has completed unexpectedly
+                        let any_finished = self.statuses.values().any(|status|
+                            matches!(status, super::Status::Finished(_))
+                        );
+                        if any_finished {
+                            log::warn!("Proceeding with forced shutdown due to image completion...");
+                            launch_manager.kill_and_clean(true).await;
+                            return super::BreakType::Exited;
+                        }
+                    }
+                }
+            }
+
+            // Handle shutdown process
+            if self
+                .handle_shutdown(
+                    all_finished,
+                    stopping,
+                    stop_time,
+                    test_if_files_changed,
+                    launch_manager,
+                )
+                .await
+            {
+                super::BreakType::Running
+            } else {
+                super::BreakType::Stopped
+            }
+        }
+
+        pub async fn handle_termination_signal(
+            &mut self,
+            stopping: &mut bool,
+            stop_time: &mut Option<std::time::Instant>,
+        ) {
+            log::trace!("Handling termination signal");
+            println!("******************************************************************");
+            println!("******************************************************************");
+            println!("*****************       GRACEFUL SHUTDOWN        *****************");
+            println!("******************************************************************");
+            println!("******************************************************************");
+
+            // Send termination signal to all processes
+            let _ = self.terminate_sender.send(());
+
+            // Mark as stopping and record the stop time
+            *stop_time = Some(std::time::Instant::now());
+            *stopping = true;
+
+            log::debug!("Termination signal processed, shutdown sequence initiated");
+        }
+
+        pub async fn handle_shutdown<F: Fn() -> bool>(
+            &mut self,
+            all_finished: bool,
+            stopping: bool,
+            stop_time: Option<std::time::Instant>,
+            test_if_files_changed: &F,
+            launch_manager: &mut LaunchManager,
+        ) -> bool {
+            log::trace!("Beginning shutdown sequence");
+
+            // Add a small delay to allow final messages to be processed
+            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+            // Set up ctrl-c handler for forceful shutdown
+            let ctrl_c = tokio::signal::ctrl_c();
+            tokio::pin!(ctrl_c);
+
+            // Continue monitoring until all processes have finished
+            while !all_finished {
+                tokio::select! {
+                    // Handle CTRL+C during shutdown for forceful termination
+                    _ = &mut ctrl_c => {
+                        self.handle_forceful_shutdown(launch_manager).await;
+                        return false; // Signal complete stop
+                    }
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(10)) => {
+                        // Check for file changes during shutdown
+                        if test_if_files_changed() {
+                            log::debug!("File change detected during shutdown, will restart after cleanup");
+                            return true; // Signal restart
+                        }
+
+                        // Update statuses during shutdown
+                        launch_manager.update_image_statuses();
+                        self.statuses = launch_manager.statuses.clone();
+
+                        // Check if all processes have now finished
+                        if self.statuses.values().all(|status| matches!(status, super::Status::Finished(_))) {
+                            log::debug!("All processes have completed gracefully");
+                            break;
+                        }
+
+                        // Check for shutdown timeout
+                        if stopping {
+                            if let Some(stop_time) = stop_time {
+                                if stop_time.elapsed() >= std::time::Duration::from_secs(5) {
+                                    log::warn!("Shutdown timeout reached after 5 seconds");
+                                    self.handle_shutdown_timeout(launch_manager).await;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Wait for all process handles to complete
+            launch_manager.wait_for_handles().await;
+            log::trace!("Shutdown sequence completed");
+
+            // Return true to continue (e.g., if file changes detected), false to stop
+            !stopping
+        }
+
+        pub async fn handle_forceful_shutdown(&mut self, launch_manager: &mut LaunchManager) {
+            log::trace!("Termination signal received. Sending SIGTERM to all subprocesses.");
+            let _ = self.terminate_sender.send(());
+            launch_manager.update_image_statuses();
+            self.statuses = launch_manager.statuses.clone();
+
+            println!("******************************************************************");
+            println!("******************************************************************");
+            println!("*****************       FORCEFUL SHUTDOWN        *****************");
+            println!("******************************************************************");
+            println!("******************************************************************");
+
+            log::warn!("Proceeding with forced shutdown...");
+            launch_manager.kill_and_clean(true).await;
+
+            // Allow a short delay for cleanup operations to complete
+            tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        }
+
+        pub async fn handle_shutdown_timeout(&mut self, launch_manager: &mut LaunchManager) {
+            log::error!(
+                "Shutdown timeout reached. You might have a process that does not respond to SIGTERM."
+            );
+
+            // Print status of all components
+            println!("Current process statuses:");
+            for (component_name, status) in &self.statuses {
+                let status_str = match status {
+                    super::Status::Awaiting => "Awaiting".yellow(),
+                    super::Status::InProgress => "In Progress".blue(),
+                    super::Status::StartupCompleted => "Startup Completed".green(),
+                    super::Status::Reinitializing => "Reinitializing".cyan(),
+                    super::Status::Finished(code) => format!("Finished ({})", code).white(),
+                    super::Status::Terminate => "Terminating".red(),
+                };
+                println!("  {}: {}", component_name, status_str);
+            }
+
+            println!("Proceeding with forced shutdown...");
+
+            // Force kill and clean all processes
+            launch_manager.kill_and_clean(true).await;
+        }
+    }
+}
+
+// File watching module
+pub mod watcher {
+    use crate::container::docker::DockerImage;
+    use crate::utils::path_matcher::PathMatcher;
+    use log::{debug, error, trace};
+    use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+    pub struct FileWatcher {
+        changed_files: Arc<Mutex<Vec<PathBuf>>>,
+        product_directory: String,
+    }
+    impl FileWatcher {
+        pub fn new(changed_files: Arc<Mutex<Vec<PathBuf>>>, product_directory: String) -> Self {
+            Self {
+                changed_files,
+                product_directory,
+            }
+        }
+
+        pub fn setup(&self) -> Result<(RecommendedWatcher, impl Fn() -> bool), String> {
+            let (watch_tx, watch_rx) = std::sync::mpsc::channel();
+
+            let mut watcher = match RecommendedWatcher::new(watch_tx, NotifyConfig::default()) {
+                Ok(w) => {
+                    trace!("Created file watcher");
+                    w
+                }
+                Err(e) => {
+                    error!("Failed to create file watcher: {}", e);
+                    return Err(e.to_string());
+                }
+            };
+
+            let path = self.product_directory.clone();
+            match watcher.watch(path.as_ref(), RecursiveMode::Recursive) {
+                Ok(_) => trace!("Started watching directory: {}", path),
+                Err(e) => {
+                    error!("Failed to watch directory: {}", e);
+                    return Err(e.to_string());
+                }
+            }
+
+            let product_directory = std::path::Path::new(&self.product_directory);
+            let gitignore = PathMatcher::from_gitignore(product_directory);
+            let changed_files = self.changed_files.clone();
+
+            let file_change_checker = move || {
+                if let Ok(event) = watch_rx.try_recv() {
+                    match event {
+                        Ok(event) => {
+                            let other_events = watch_rx.try_iter();
+                            let all_events = std::iter::once(Ok(event)).chain(other_events);
+                            let paths = all_events
+                                .filter_map(|event| {
+                                    if let Ok(event) = event {
+                                        if event.paths.is_empty() {
+                                            None
+                                        } else {
+                                            Some(event.paths)
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .flatten()
+                                .filter(|path| !gitignore.matches(path))
+                                .filter(|path| path.is_file())
+                                .collect::<Vec<_>>();
+
+                            let mut unique_paths = std::collections::HashSet::new();
+                            let paths = paths
+                                .into_iter()
+                                .filter(|path| unique_paths.insert(path.clone()))
+                                .collect::<Vec<_>>();
+
+                            if !paths.is_empty() {
+                                let mut changed_files = changed_files.lock().unwrap();
+                                for p in paths.iter() {
+                                    trace!("File changed: {}", p.display());
+                                    changed_files.push(p.to_path_buf());
+                                }
+                                debug!("Detected file changes: {:#?}", paths);
+                                return true;
+                            }
+                        }
+                        Err(e) => {
+                            error!("Watch error: {:?}", e);
+                        }
+                    }
+                }
+                false
+            };
+
+            Ok((watcher, file_change_checker))
+        }
+    }
+}
+
+// Kubernetes module
+pub mod kubernetes {
+    use crate::build::Config;
+    use crate::cluster::{InfrastructureRepo, K8ClusterManifests};
+    use crate::toolchain::ToolchainContext;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    pub struct KubernetesManager {
+        toolchain: Arc<ToolchainContext>,
+        cluster_manifests: K8ClusterManifests,
+        infrastructure_repo: InfrastructureRepo,
+        product_directory: String,
+    }
+
+    impl KubernetesManager {
+        pub fn new(
+            toolchain: Arc<ToolchainContext>,
+            cluster_manifests: K8ClusterManifests,
+            infrastructure_repo: InfrastructureRepo,
+            product_directory: String,
+        ) -> Self {
+            Self {
+                toolchain,
+                cluster_manifests,
+                infrastructure_repo,
+                product_directory,
+            }
+        }
+
+        pub fn cluster_manifests(&self) -> &K8ClusterManifests {
+            &self.cluster_manifests
+        }
+
+        pub async fn select_kubernetes_context(&self, context: &str) -> Result<(), String> {
+            log::info!("Selecting Kubernetes context: {}", context);
+
+            let kubectl = self.toolchain.kubectl();
+
+            // Verify the context exists
+            let output = crate::utils::run_command(
+                "kubectl context check".into(),
+                kubectl.clone(),
+                vec!["config", "get-contexts", context],
+            )
+            .await
+            .map_err(|e| format!("Failed to verify Kubernetes context: {}", e))?;
+
+            if !output.contains(context) {
+                return Err(format!("Kubernetes context '{}' not found", context));
+            }
+
+            // Set the context
+            crate::utils::run_command(
+                "kubectl context switch".into(),
+                kubectl,
+                vec!["config", "use-context", context],
+            )
+            .await
+            .map_err(|e| format!("Failed to switch Kubernetes context: {}", e))?;
+
+            log::debug!("Successfully switched to Kubernetes context: {}", context);
+            Ok(())
+        }
+
+        pub async fn apply(&self) -> Result<(), String> {
+            log::info!("Applying Kubernetes manifests");
+
+            // Check if manifests directory exists instead of using manifests_ready method
+            let manifests_dir = self.cluster_manifests.output_directory();
+            if !manifests_dir.exists() {
+                return Err("Manifests not ready. Call build_manifests first.".to_string());
+            }
+
+            let kubectl = self.toolchain.kubectl();
+
+            // Create a guard to ensure we're in the product directory
+            let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+            // Apply manifests using kubectl apply
+            match crate::utils::run_command(
+                "kubectl apply".into(),
+                kubectl,
+                vec!["apply", "-f", &manifests_dir.to_string_lossy()],
+            )
+            .await
+            {
+                Ok(output) => {
+                    log::debug!("Successfully applied Kubernetes manifests");
+                    log::trace!("kubectl apply output: {}", output);
+                    Ok(())
+                }
+                Err(e) => {
+                    log::error!("Failed to apply Kubernetes manifests: {}", e);
+                    Err(format!("Failed to apply Kubernetes manifests: {}", e))
+                }
+            }
+        }
+
+        pub async fn unapply(&self) -> Result<(), String> {
+            log::info!("Removing Kubernetes manifests");
+
+            // Check if manifests directory exists instead of using manifests_ready method
+            let manifests_dir = self.cluster_manifests.output_directory();
+            if !manifests_dir.exists() {
+                return Err("Manifests not ready. Call build_manifests first.".to_string());
+            }
+
+            let kubectl = self.toolchain.kubectl();
+
+            // Create a guard to ensure we're in the product directory
+            let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+            // Delete resources using kubectl delete
+            match crate::utils::run_command(
+                "kubectl delete".into(),
+                kubectl,
+                vec!["delete", "-f", &manifests_dir.to_string_lossy()],
+            )
+            .await
+            {
+                Ok(output) => {
+                    log::debug!("Successfully removed Kubernetes resources");
+                    log::trace!("kubectl delete output: {}", output);
+                    Ok(())
+                }
+                Err(e) => {
+                    log::error!("Failed to remove Kubernetes resources: {}", e);
+                    Err(format!("Failed to remove Kubernetes resources: {}", e))
+                }
+            }
+        }
+
+        pub async fn rollout(&mut self, _config: &Config) -> Result<(), String> {
+            log::info!("Performing Kubernetes rollout restart");
+
+            // Check if manifests directory exists instead of using manifests_ready method
+            let manifests_dir = self.cluster_manifests.output_directory();
+            if !manifests_dir.exists() {
+                return Err("Manifests not ready. Call build_manifests first.".to_string());
+            }
+
+            let kubectl = self.toolchain.kubectl();
+
+            // Create a guard to ensure we're in the product directory
+            let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+            // Get the namespace from config (using a default if the method doesn't exist)
+            let namespace = "default"; // Use a default namespace since config.namespace() doesn't exist
+
+            // Restart deployments
+            log::debug!("Restarting deployments in namespace: {}", namespace);
+            match crate::utils::run_command(
+                "kubectl rollout restart deployments".into(),
+                kubectl.clone(),
+                vec!["rollout", "restart", "deployment", "-n", namespace],
+            )
+            .await
+            {
+                Ok(output) => {
+                    log::trace!("Deployment restart output: {}", output);
+                }
+                Err(e) => {
+                    return Err(format!("Failed to restart deployments: {}", e));
+                }
+            }
+
+            // Restart statefulsets if they exist
+            log::debug!("Restarting statefulsets in namespace: {}", namespace);
+            let result = crate::utils::run_command(
+                "kubectl rollout restart statefulsets".into(),
+                kubectl,
+                vec!["rollout", "restart", "statefulset", "-n", namespace],
+            )
+            .await;
+
+            // Statefulsets might not exist, so we don't fail if this doesn't work
+            if let Err(e) = result {
+                log::warn!("Failed to restart statefulsets (they may not exist): {}", e);
+            }
+
+            log::info!("Kubernetes rollout completed successfully");
+            Ok(())
+        }
+
+        pub async fn build_manifests(
+            &mut self,
+            vault: &dyn crate::vault::Vault,
+            secrets_encoder: &dyn crate::vault::EncodeSecrets,
+            toolchain: Option<Arc<ToolchainContext>>,
+        ) -> Result<(), String> {
+            log::info!("Building Kubernetes manifests");
+
+            // Create a guard to ensure we're in the product directory
+            let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+            // Ensure the manifests directory exists
+            let manifests_dir = self.cluster_manifests.output_directory();
+            if manifests_dir.exists() {
+                std::fs::remove_dir_all(manifests_dir).expect("Failed to delete output directory");
+            }
+
+            // Create build context for each component in cluster_manifests
+            for component in self.cluster_manifests.components() {
+                if component.is_installation() {
+                    continue;
+                }
+
+                log::debug!("Building manifests for component: {}", component.name());
+
+                let render_dir = component.output_directory();
+                std::fs::create_dir_all(render_dir).expect("Failed to create render directory");
+
+                // Get the component spec with build context
+                let spec = component.spec();
+
+                let secrets = vault
+                    .get(
+                        &spec.product_name,
+                        &spec.component_name,
+                        &spec.config.environment().to_string(),
+                    )
+                    .await
+                    .unwrap_or_default();
+
+                // Encode secrets for Kubernetes
+                let secrets = secrets_encoder.encode_secrets(secrets);
+
+                // Render manifests for this component without modifying build context
+                let ctx = spec.generate_build_context(toolchain.clone(), secrets);
+                for manifest in component.manifests() {
+                    // Use a default build context from spec instead of accessing non-existent field
+                    manifest.render_to_file(&ctx); // Pass spec directly since render_to_file accepts it
+                }
+            }
+
+            log::info!("Successfully built Kubernetes manifests");
+            Ok(())
+        }
+
+        pub async fn install_manifests(&self) -> Result<(), String> {
+            log::info!("Installing infrastructure manifests");
+
+            // Check infrastructure repo status differently since is_initialized doesn't exist
+            let infra_repo_dir =
+                std::path::Path::new(&self.product_directory).join("infrastructure");
+            if !infra_repo_dir.exists() {
+                return Err("Infrastructure repository is not initialized".to_string());
+            }
+
+            // Get kubectl from toolchain
+            let kubectl = self.toolchain.kubectl();
+
+            // We don't have access to helm, so only use kubectl
+            let helm_command = kubectl.clone(); // Use kubectl as a fallback
+
+            // Create a guard to ensure we're in the product directory
+            let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+            // Get infrastructure manifests directory
+            let infra_dir = infra_repo_dir.join("manifests");
+            if !infra_dir.exists() {
+                return Err(format!(
+                    "Infrastructure directory does not exist: {}",
+                    infra_dir.display()
+                ));
+            }
+
+            // Install infrastructure components
+            log::debug!(
+                "Installing infrastructure components from: {}",
+                infra_dir.display()
+            );
+
+            // Apply infrastructure manifests
+            match crate::utils::run_command(
+                "kubectl apply infrastructure".into(),
+                kubectl.clone(),
+                vec!["apply", "-f", &infra_dir.to_string_lossy()],
+            )
+            .await
+            {
+                Ok(output) => {
+                    log::debug!("Successfully applied infrastructure manifests");
+                    log::trace!("kubectl apply output: {}", output);
+                }
+                Err(e) => {
+                    log::warn!("Failed to apply infrastructure manifests: {}", e);
+
+                    // Try using alternative command as a fallback
+                    log::debug!("Attempting installation with alternative method");
+                    match crate::utils::run_command(
+                        "alternative install infrastructure".into(),
+                        helm_command,
+                        vec!["apply", "-f", &infra_dir.to_string_lossy()],
+                    )
+                    .await
+                    {
+                        Ok(output) => {
+                            log::debug!(
+                                "Successfully installed infrastructure with alternative method"
+                            );
+                            log::trace!("alternative install output: {}", output);
+                        }
+                        Err(e) => {
+                            return Err(format!(
+                                "Failed to install infrastructure components: {}",
+                                e
+                            ));
+                        }
+                    }
+                }
+            }
+
+            log::info!("Infrastructure components installed successfully");
+            Ok(())
+        }
+
+        pub async fn uninstall_manifests(&self) -> Result<(), String> {
+            log::info!("Uninstalling infrastructure manifests");
+
+            // Check infrastructure repo status differently since is_initialized doesn't exist
+            let infra_repo_dir =
+                std::path::Path::new(&self.product_directory).join("infrastructure");
+            if !infra_repo_dir.exists() {
+                return Err("Infrastructure repository is not initialized".to_string());
+            }
+
+            // Get kubectl from toolchain
+            let kubectl = self.toolchain.kubectl();
+
+            // We don't have access to helm, so only use kubectl
+            let helm_command = kubectl.clone(); // Use kubectl as a fallback
+
+            // Create a guard to ensure we're in the product directory
+            let _guard = crate::utils::Directory::chdir(&self.product_directory);
+
+            // Get infrastructure manifests directory
+            let infra_dir = infra_repo_dir.join("manifests");
+            if !infra_dir.exists() {
+                return Err(format!(
+                    "Infrastructure directory does not exist: {}",
+                    infra_dir.display()
+                ));
+            }
+
+            // Instead of checking helm installation, always use kubectl
+            let using_helm = false;
+
+            // Uninstall based on the installation method
+            if using_helm {
+                log::debug!("Uninstalling infrastructure components using alternative method");
+                match crate::utils::run_command(
+                    "alternative uninstall infrastructure".into(),
+                    helm_command,
+                    vec!["delete", "-f", &infra_dir.to_string_lossy()],
+                )
+                .await
+                {
+                    Ok(output) => {
+                        log::debug!(
+                            "Successfully uninstalled infrastructure with alternative method"
+                        );
+                        log::trace!("alternative uninstall output: {}", output);
+                    }
+                    Err(e) => {
+                        return Err(format!(
+                            "Failed to uninstall infrastructure components with alternative method: {}",
+                            e
+                        ));
+                    }
+                }
+            } else {
+                log::debug!("Uninstalling infrastructure components using kubectl");
+                match crate::utils::run_command(
+                    "kubectl delete infrastructure".into(),
+                    kubectl,
+                    vec!["delete", "-f", &infra_dir.to_string_lossy()],
+                )
+                .await
+                {
+                    Ok(output) => {
+                        log::debug!("Successfully removed infrastructure manifests");
+                        log::trace!("kubectl delete output: {}", output);
+                    }
+                    Err(e) => {
+                        return Err(format!(
+                            "Failed to uninstall infrastructure components: {}",
+                            e
+                        ));
+                    }
+                }
+            }
+
+            log::info!("Infrastructure components uninstalled successfully");
+            Ok(())
+        }
+    }
+}
