@@ -75,7 +75,7 @@ pub fn setup_file_watcher(config: WatcherConfig) -> Result<(RecommendedWatcher, 
                 ))
             })?;
 
-        debug!("Watching root directory: {}", config.root_dir.display());
+        info!("Watching root directory: {}", config.root_dir.display());
     } else {
         // Watch specific paths
         for path in &config.watch_paths {
@@ -132,7 +132,7 @@ fn process_file_event(event: Event, processor: &ChangeProcessor) {
     match event.kind {
         EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
             for path in event.paths {
-                trace!("Processing change to path: {}", path.display());
+                info!("File system event detected: {} (kind: {:?})", path.display(), event.kind);
                 processor.add_change(path);
             }
         }

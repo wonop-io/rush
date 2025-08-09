@@ -11,6 +11,7 @@ use crate::container::{
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
     BuildProcessor, ContainerService, ServiceCollection,
 };
+use notify::RecommendedWatcher;
 use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::security::{FileVault, SecretsEncoder, Vault};
@@ -37,6 +38,9 @@ pub struct ContainerReactor {
 
     /// File change processor for detecting code changes
     change_processor: Arc<ChangeProcessor>,
+    
+    /// File watcher (must be kept alive)
+    _file_watcher: RecommendedWatcher,
 
     /// Docker client for container operations
     docker_client: Arc<dyn DockerClient>,
@@ -133,7 +137,7 @@ impl ContainerReactor {
         secrets_encoder: Arc<dyn SecretsEncoder>,
     ) -> Result<Self> {
         let config = Arc::new(config);
-        let (_, change_processor) = setup_file_watcher(config.watch_config.clone())?;
+        let (watcher, change_processor) = setup_file_watcher(config.watch_config.clone())?;
 
         let (shutdown_sender, _) = broadcast::channel(8);
 
@@ -141,6 +145,7 @@ impl ContainerReactor {
             config,
             services: HashMap::new(),
             change_processor: Arc::new(change_processor),
+            _file_watcher: watcher,
             docker_client,
             build_processor: BuildProcessor::new(false),
             vault,
@@ -908,6 +913,110 @@ impl ContainerReactor {
         Ok(())
     }
 
+    /// Tests if the changed files affect any component that needs rebuilding
+    ///
+    /// # Returns
+    ///
+    /// Boolean indicating whether any component needs to be rebuilt
+    async fn test_if_significant_change(&mut self) -> bool {
+        // Get the list of changed files and clear the buffer
+        let changed_files = {
+            let changed_files_arc = self.change_processor.changed_files();
+            let mut files = changed_files_arc.lock().unwrap();
+            let ret = files.clone();
+            files.clear();
+            ret
+        };
+
+        if changed_files.is_empty() {
+            return false;
+        }
+
+        let mut significant_change = false;
+
+        // Check each component to see if it's affected by the changes
+        for spec in &self.component_specs {
+            // Skip redirected components (they're not built locally)
+            if self.config.redirected_components.contains_key(&spec.component_name) {
+                continue;
+            }
+
+            // Check if any changed file is in this component's context
+            if self.is_any_file_in_component_context(&spec, &changed_files) {
+                info!("Component '{}' was affected by file changes", spec.component_name);
+                significant_change = true;
+            }
+        }
+
+        significant_change
+    }
+
+    /// Checks if any of the changed files affect a specific component
+    ///
+    /// # Arguments
+    ///
+    /// * `spec` - The component specification
+    /// * `file_paths` - List of changed file paths
+    ///
+    /// # Returns
+    ///
+    /// Boolean indicating whether the component is affected
+    fn is_any_file_in_component_context(&self, spec: &ComponentBuildSpec, file_paths: &[PathBuf]) -> bool {
+        // Check if component has watch patterns defined
+        if let Some(watch_matcher) = &spec.watch {
+            for file in file_paths {
+                if watch_matcher.matches(file) {
+                    debug!("File {} matches watch pattern for component {}", 
+                           file.display(), spec.component_name);
+                    return true;
+                }
+            }
+        }
+
+        // Get the component's context directory
+        let context_dir = match &spec.build_type {
+            BuildType::TrunkWasm { context_dir, location, .. } => {
+                context_dir.clone().unwrap_or_else(|| {
+                    if let Some(parent) = std::path::Path::new(location).parent() {
+                        parent.to_string_lossy().to_string()
+                    } else {
+                        ".".to_string()
+                    }
+                })
+            }
+            BuildType::RustBinary { context_dir, .. }
+            | BuildType::DixiousWasm { context_dir, .. }
+            | BuildType::Script { context_dir, .. }
+            | BuildType::Zola { context_dir, .. }
+            | BuildType::Book { context_dir, .. }
+            | BuildType::Ingress { context_dir, .. } => {
+                context_dir.clone().unwrap_or_else(|| ".".to_string())
+            }
+            BuildType::PureDockerImage { .. } 
+            | BuildType::PureKubernetes
+            | BuildType::KubernetesInstallation { .. } => {
+                // These types don't have a build context for file watching
+                return false;
+            }
+        };
+
+        // Check if any changed file is within the component's context directory
+        let context_path = self.config.product_dir.join(&context_dir);
+        
+        file_paths.iter().any(|file_path| {
+            // Try to get absolute paths for comparison
+            if let (Ok(abs_file), Ok(abs_context)) = (
+                std::fs::canonicalize(file_path),
+                std::fs::canonicalize(&context_path)
+            ) {
+                abs_file.starts_with(&abs_context)
+            } else {
+                // Fallback to simple path comparison
+                file_path.starts_with(&context_path)
+            }
+        })
+    }
+
     /// Monitors running containers and handles events like file changes or termination signals
     ///
     /// # Returns
@@ -929,9 +1038,16 @@ impl ContainerReactor {
                 }
 
                 _ = file_check_interval.tick() => {
+                    // Check if we have pending changes to process
                     if self.change_processor.process_pending_changes().await? {
-                        info!("Detected file changes, triggering rebuild");
-                        return Ok(true);
+                        info!("Processing file changes...");
+                        // Test if the changes are significant (affect any component)
+                        if self.test_if_significant_change().await {
+                            info!("Detected significant file changes, triggering rebuild");
+                            return Ok(true);
+                        } else {
+                            info!("File changes detected but no components affected");
+                        }
                     }
                 }
 

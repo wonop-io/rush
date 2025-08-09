@@ -48,13 +48,14 @@ impl ChangeProcessor {
     /// * `path` - Path to the file that changed
     pub fn add_change(&self, path: PathBuf) {
         if self.should_ignore(&path) {
-            trace!("Ignoring change to file: {}", path.display());
+            info!("Ignoring change to file: {} (matched gitignore)", path.display());
             return;
         }
 
-        trace!("Recording change to file: {}", path.display());
+        info!("Recording change to file: {}", path.display());
         let mut files = self.changed_files.lock().unwrap();
         files.push(path);
+        info!("Total recorded changes: {}", files.len());
     }
 
     /// Determines if a file should be ignored based on .gitignore rules
@@ -82,6 +83,16 @@ impl ChangeProcessor {
     ///
     /// Returns true if there were significant changes that require rebuilding
     pub async fn process_pending_changes(&self) -> Result<bool> {
+        // Check if we have any pending changes first
+        let has_changes = {
+            let files = self.changed_files.lock().unwrap();
+            !files.is_empty()
+        };
+        
+        if !has_changes {
+            return Ok(false);
+        }
+        
         // Wait for the debounce period to collect multiple rapid changes
         time::sleep(self.debounce_delay).await;
 
@@ -104,9 +115,7 @@ impl ChangeProcessor {
             info!("Detected change to file: {}", path.display());
         }
 
-        // For now, return true if we have any changes
-        // In a more sophisticated version this would check config files or patterns
-        // to determine if rebuilding is needed
+        // Return true if we have any changes
         Ok(!changed_files.is_empty())
     }
 
