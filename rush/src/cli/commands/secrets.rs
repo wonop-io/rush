@@ -1,7 +1,10 @@
-use super::*;
+use crate::cli::context::CliContext;
+use crate::error::Result;
+use clap::ArgMatches;
+use log::{error, trace};
 use std::process;
 
-pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<(), std::io::Error> {
+pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     trace!("Executing 'secrets' subcommand");
 
     if matches.subcommand_matches("init").is_some() {
@@ -11,7 +14,7 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<(), s
     }
 }
 
-async fn initialize_secrets(ctx: &mut CliContext) -> Result<(), std::io::Error> {
+async fn initialize_secrets(ctx: &mut CliContext) -> Result<()> {
     // First create the vault if needed
     match ctx
         .vault

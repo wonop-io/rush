@@ -1,6 +1,12 @@
-// File: src/core/environment/mod.rs
-mod generator;
-mod loader;
-mod types;
+//! Environment setup and variable management
+//!
+//! This module provides functionality for setting up the environment for Rush CLI
+//! and managing environment variables across different deployment environments.
 
-pub use types::{ComponentEnvironment, GenerationMethod, PublicEnvironmentDefinitions};
+mod generator;
+mod setup;
+mod variables;
+
+pub use generator::EnvironmentGenerator;
+pub use setup::{load_environment_variables, setup_environment};
+pub use variables::{Variables, VariablesFile};

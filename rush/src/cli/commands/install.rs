@@ -1,6 +1,9 @@
-use super::*;
+use crate::cli::context::CliContext;
+use crate::error::Result;
+use log::{error, trace};
+use std::process;
 
-pub async fn execute(ctx: &mut CliContext) -> Result<(), std::io::Error> {
+pub async fn execute(ctx: &mut CliContext) -> Result<()> {
     ensure_kubectl(ctx).await?;
 
     trace!("Installing manifests");
@@ -17,7 +20,7 @@ pub async fn execute(ctx: &mut CliContext) -> Result<(), std::io::Error> {
     }
 }
 
-pub async fn uninstall(ctx: &mut CliContext) -> Result<(), std::io::Error> {
+pub async fn uninstall(ctx: &mut CliContext) -> Result<()> {
     ensure_kubectl(ctx).await?;
 
     trace!("Uninstalling manifests");
@@ -34,7 +37,7 @@ pub async fn uninstall(ctx: &mut CliContext) -> Result<(), std::io::Error> {
     }
 }
 
-async fn ensure_kubectl(ctx: &mut CliContext) -> Result<(), std::io::Error> {
+async fn ensure_kubectl(ctx: &mut CliContext) -> Result<()> {
     if !ctx.toolchain.has_kubectl() {
         error!("kubectl not found");
         eprintln!("kubectl not found");

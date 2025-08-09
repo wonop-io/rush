@@ -1,28 +1,42 @@
-use super::*;
+use crate::cli::context::CliContext;
+use crate::container::ContainerReactor;
+use crate::core::config::Config;
+use crate::core::environment::setup_environment;
+use crate::error::Error;
+use crate::error::Result;
+use colored::Colorize;
+use log::{error, trace};
+use std::process;
+use std::sync::Arc;
 
-pub async fn execute(ctx: &mut CliContext) -> Result<(), std::io::Error> {
-    // First check for kubectl
-    if !ctx.toolchain.has_kubectl() {
-        error!("kubectl not found");
-        eprintln!("kubectl not found");
-        process::exit(1);
-    }
+pub struct RolloutCommand;
 
-    // Select kubernetes context
-    match ctx
-        .reactor
-        .select_kubernetes_context(ctx.config.kube_context())
-        .await
-    {
-        Ok(_) => (),
-        Err(e) => {
-            error!("Failed to select kubernetes context: {}", e);
-            eprintln!("{}", e);
-            process::exit(1);
+impl RolloutCommand {
+    pub async fn execute(
+        config: Arc<Config>,
+        container_reactor: &mut ContainerReactor,
+    ) -> Result<()> {
+        println!("{}", "Rolling out product".bold().white());
+
+        // Ensure environment is properly set up
+        setup_environment();
+
+        match container_reactor.rollout().await {
+            Ok(_) => {
+                println!("{}", "Rollout completed successfully".green().bold());
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("{}: {}", "Rollout failed".red().bold(), e);
+                Err(Error::Deploy(format!("Failed to rollout: {}", e)))
+            }
         }
     }
+}
 
-    trace!("Rolling out to kubernetes");
+/// Execute rollout command using CLI context
+pub async fn execute(ctx: &mut CliContext) -> Result<()> {
+    trace!("Executing rollout");
     match ctx.reactor.rollout().await {
         Ok(_) => {
             trace!("Rollout completed successfully");

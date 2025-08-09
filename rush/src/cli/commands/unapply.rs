@@ -1,0 +1,59 @@
+use crate::cli::CommonCliArgs;
+use crate::container::ContainerReactor;
+use crate::core::config::Config;
+use crate::error::{Error, Result};
+use crate::k8s::ContextManager;
+use std::sync::Arc;
+use std::sync::Mutex;
+
+/// Execute the unapply command
+///
+/// The unapply command removes the Kubernetes resources from the cluster
+pub async fn execute(args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
+    // Create a container reactor to handle the unapply operation
+    let mut reactor = ContainerReactor::new_with_config(config.clone())
+        .map_err(|e| Error::Setup(format!("Failed to create container reactor: {}", e)))?;
+
+    // Create and set up the Kubernetes context manager
+    let context_manager = Arc::new(Mutex::new(ContextManager::new("kubectl".to_string(), None)));
+
+    // Set the Kubernetes context based on the environment
+    if let Err(e) = context_manager
+        .lock()
+        .unwrap()
+        .set_context(config.kube_context())
+        .await
+    {
+        return Err(Error::Kubernetes(format!(
+            "Failed to set Kubernetes context: {}",
+            e
+        )));
+    }
+
+    // Get the kubectl path from the context manager
+    let kubectl_path = {
+        let cm = context_manager.lock().unwrap();
+        cm.kubectl_path().to_string()
+    };
+
+    // Perform the unapply operation using kubectl directly
+    let manifest_path = config.output_path().join("k8s");
+    let output_dir = manifest_path.display().to_string();
+
+    match crate::utils::run_command(
+        "kubectl delete",
+        &kubectl_path,
+        vec!["delete", "-R", "-f", &output_dir],
+    )
+    .await
+    {
+        Ok(_) => {
+            println!("Successfully unapplied Kubernetes resources");
+            Ok(())
+        }
+        Err(e) => Err(Error::Kubernetes(format!(
+            "Failed to unapply Kubernetes resources: {}",
+            e
+        ))),
+    }
+}
