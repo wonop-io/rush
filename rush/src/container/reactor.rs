@@ -15,6 +15,7 @@ use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::security::{FileVault, SecretsEncoder, Vault};
 
+use colored::Colorize;
 use log::{debug, error, info, trace, warn};
 use serde_yaml;
 use std::collections::{HashMap, HashSet};
@@ -879,7 +880,23 @@ impl ContainerReactor {
                 .await?;
 
             // Create service object
-            let service = DockerService::new(container_id, config, self.docker_client.clone());
+            let service = DockerService::new(container_id.clone(), config.clone(), self.docker_client.clone());
+
+            // Start following logs for this container with formatted output
+            let docker_client = self.docker_client.clone();
+            let container_name = config.name.clone();
+            let color = self.get_color_for_component(&container_name);
+            
+            tokio::spawn(async move {
+                // Follow the logs with formatted output
+                if let Err(e) = docker_client.follow_container_logs(
+                    &container_id, 
+                    container_name.clone(), 
+                    color
+                ).await {
+                    error!("Error following logs for {}: {}", container_name, e);
+                }
+            });
 
             self.running_services.push(service);
         }
@@ -1097,6 +1114,27 @@ impl ContainerReactor {
         }
 
         Ok(())
+    }
+
+    /// Get color for component based on spec
+    fn get_color_for_component(&self, component_name: &str) -> &'static str {
+        // Find the component spec to get its color
+        for spec in &self.component_specs {
+            if spec.component_name == component_name {
+                // Return the color from the spec, or a default
+                return match spec.color.as_str() {
+                    "red" => "red",
+                    "green" => "green",
+                    "yellow" => "yellow",
+                    "blue" => "blue",
+                    "magenta" => "magenta",
+                    "cyan" => "cyan",
+                    "white" => "white",
+                    _ => "white"
+                };
+            }
+        }
+        "white" // default color
     }
 
     /// Waits for file changes or a termination signal

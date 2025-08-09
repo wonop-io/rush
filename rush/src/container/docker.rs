@@ -55,6 +55,9 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
     /// Gets the logs from a container
     async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String>;
 
+    /// Follows the logs from a container with formatted output
+    async fn follow_container_logs(&self, container_id: &str, label: String, color: &str) -> Result<()>;
+
     /// Sends a signal to a container
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()>;
 }
@@ -432,6 +435,76 @@ impl DockerClient for DockerCliClient {
         Ok(logs)
     }
 
+    async fn follow_container_logs(&self, container_id: &str, label: String, color: &str) -> Result<()> {
+        trace!("Following logs for Docker container: {}", container_id);
+
+        use colored::Colorize;
+
+        // Format label with padding (similar to old implementation)
+        let formatted_label = format!("{:15}", label).color(color).bold();
+
+        // Use docker logs -f to follow the container logs
+        let mut child = Command::new(&self.docker_path)
+            .args(["logs", "-f", "--tail", "10", container_id])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| Error::Docker(format!("Failed to follow container logs: {}", e)))?;
+
+        // Get the streams
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Spawn tasks to handle stdout and stderr
+        if let Some(stdout) = stdout {
+            let label_clone = formatted_label.clone();
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut reader = BufReader::new(stdout);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break,  // EOF
+                        Ok(_) => {
+                            // Print with formatted label prefix
+                            print!("{} | {}", label_clone, line);
+                        }
+                        Err(e) => {
+                            error!("Error reading stdout: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        if let Some(stderr) = stderr {
+            let label_clone = formatted_label;
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break,  // EOF
+                        Ok(_) => {
+                            // Print with formatted label prefix to stderr
+                            eprint!("{} | {}", label_clone, line);
+                        }
+                        Err(e) => {
+                            error!("Error reading stderr: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        Ok(())
+    }
+
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {
         trace!(
             "Sending signal {} to Docker container: {}",
@@ -638,6 +711,9 @@ mod tests {
             async fn container_logs(&self, _container_id: &str, _lines: usize) -> Result<String> {
                 unimplemented!()
             }
+            async fn follow_container_logs(&self, _container_id: &str, _label: String, _color: &str) -> Result<()> {
+                unimplemented!()
+            }
             async fn send_signal_to_container(
                 &self,
                 _container_id: &str,
@@ -733,6 +809,9 @@ mod tests {
                 unimplemented!()
             }
             async fn container_logs(&self, _container_id: &str, _lines: usize) -> Result<String> {
+                unimplemented!()
+            }
+            async fn follow_container_logs(&self, _container_id: &str, _label: String, _color: &str) -> Result<()> {
                 unimplemented!()
             }
             async fn send_signal_to_container(

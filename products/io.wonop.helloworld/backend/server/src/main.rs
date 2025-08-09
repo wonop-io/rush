@@ -1,6 +1,4 @@
-use api_types::{
-    ExampleApiType, ApiResponse
-};
+use api_types::{ApiResponse, ExampleApiType};
 use axum::extract::Request;
 use axum::extract::State;
 use axum::middleware::from_fn;
@@ -14,11 +12,11 @@ use axum::{
     Json, Router,
 };
 use dotenv::dotenv;
-use log::{info, error};
+use log::{error, info};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tower_http::cors::CorsLayer;
 use tokio::signal;
+use tower_http::cors::CorsLayer;
 
 pub struct TestState {
     pub counter: i32,
@@ -31,7 +29,7 @@ async fn healthcheck() -> Html<&'static str> {
 async fn hello_world() -> Result<Response, StatusCode> {
     let api_response = ApiResponse {
         status: "success".to_string(),
-        data: Some(ExampleApiType::new("Hello from the backend"))
+        data: Some(ExampleApiType::new("Hello from the backend")),
     };
     Ok(Json(api_response).into_response())
 }
