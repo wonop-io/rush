@@ -38,8 +38,17 @@ pub async fn execute_command(
         commands::secrets::execute(secrets_matches, ctx).await
     } else if matches.subcommand_matches("dev").is_some() {
         trace!("Executing dev command");
-        // TODO: Implement dev with context
-        Ok(())
+        match ctx.reactor.launch().await {
+            Ok(_) => {
+                trace!("Development environment launched successfully");
+                Ok(())
+            }
+            Err(e) => {
+                error!("Failed to launch development environment: {}", e);
+                eprintln!("{}", e);
+                process::exit(1);
+            }
+        }
     } else if matches.subcommand_matches("build").is_some() {
         trace!("Executing build command");
         commands::build::execute_with_context(ctx).await

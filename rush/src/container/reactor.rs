@@ -12,7 +12,7 @@ use crate::container::{
     BuildProcessor, ContainerService, ServiceCollection,
 };
 use crate::core::config::Config;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::security::{FileVault, SecretsEncoder, Vault};
 
 use log::{debug, error, info, trace, warn};
@@ -20,8 +20,10 @@ use serde_yaml;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc};
 
 /// Manages the container lifecycle and coordinates rebuilds based on file changes
@@ -348,10 +350,30 @@ impl ContainerReactor {
             // Create service entry with docker_host
             let docker_host = format!("{}-{}", self.config.product_name, component_name);
 
+            // Determine the image name based on build type
+            let tagged_image_name = match &spec.build_type {
+                BuildType::PureDockerImage { image_name_with_tag, .. } => {
+                    // Use the pre-existing image directly (e.g., "postgres:latest")
+                    image_name_with_tag.clone()
+                }
+                _ => {
+                    // Create custom image name for components we build
+                    let image_name = if self.config.docker_registry.is_empty() {
+                        format!("{}-{}", self.config.product_name, component_name)
+                    } else {
+                        format!("{}/{}-{}", 
+                            self.config.docker_registry, 
+                            self.config.product_name, 
+                            component_name)
+                    };
+                    format!("{}:{}", image_name, self.config.git_hash)
+                }
+            };
+            
             let service = Arc::new(ContainerService {
                 id: "TODO".to_string(),
                 name: component_name.clone(),
-                image: component_name.clone(),
+                image: tagged_image_name,
                 host: component_name.clone(),
                 port,
                 target_port,
@@ -764,18 +786,72 @@ impl ContainerReactor {
                     .contains_key(&service.name);
 
                 if !should_redirect {
-                    // Create Docker service config
-                    let env_vars = HashMap::new();
-                    // Add environment variables and secrets here
+                    // Load secrets for this component from vault
+                    let vault_guard = self.vault.lock().unwrap();
+                    let secrets = vault_guard
+                        .get(
+                            &self.config.product_name,
+                            &service.name,
+                            &self.config.environment,
+                        )
+                        .await
+                        .unwrap_or_default();
+
+                    // Load environment variables for this component
+                    let component_spec = self
+                        .component_specs
+                        .iter()
+                        .find(|spec| spec.component_name == service.name);
+
+                    let mut env_vars = HashMap::new();
+                    
+                    // Add environment variables from component spec
+                    if let Some(spec) = component_spec {
+                        // Add dotenv variables (from .env files)
+                        for (key, value) in &spec.dotenv {
+                            env_vars.insert(key.clone(), value.clone());
+                        }
+                        
+                        // Add env variables (from YAML spec)
+                        if let Some(env) = &spec.env {
+                            for (key, value) in env {
+                                env_vars.insert(key.clone(), value.clone());
+                            }
+                        }
+                    }
+                    
+                    // Add encoded secrets as environment variables
+                    let encoded_secrets = self.secrets_encoder.encode_secrets(secrets);
+                    for (key, value) in encoded_secrets {
+                        env_vars.insert(key, value);
+                    }
+
+                    // Collect volumes from component spec
+                    let mut volumes = Vec::new();
+                    if let Some(spec) = component_spec {
+                        if let Some(spec_volumes) = &spec.volumes {
+                            for (host_path, container_path) in spec_volumes {
+                                // Convert relative paths to absolute paths based on product directory
+                                let abs_host_path = if Path::new(host_path).is_absolute() {
+                                    host_path.clone()
+                                } else {
+                                    self.config.product_dir
+                                        .join(host_path)
+                                        .to_string_lossy()
+                                        .to_string()
+                                };
+                                volumes.push(format!("{}:{}", abs_host_path, container_path));
+                            }
+                        }
+                    }
 
                     let config = DockerServiceConfig {
                         name: service.name.clone(),
-                        // Use docker_host and git_hash for image name
                         image: service.image.clone(),
                         network: self.config.network_name.clone(),
                         env_vars,
                         ports: vec![format!("{}:{}", service.port, service.target_port)],
-                        volumes: Vec::new(), // Add volumes as needed
+                        volumes,
                     };
 
                     service_configs.push(config);
@@ -883,7 +959,7 @@ impl ContainerReactor {
         // Broadcast shutdown signal to all services
         let _ = self.shutdown_sender.send(());
 
-        // Stop and remove each service
+        // Stop and remove each service in the tracking list
         for service in &self.running_services {
             // Try to stop gracefully first
             if let Err(e) = service.stop().await {
@@ -898,6 +974,127 @@ impl ContainerReactor {
 
         // Clear the list of running services
         self.running_services.clear();
+
+        // Also clean up any containers that might exist from previous failed attempts
+        // This mirrors the old implementation's kill_and_clean behavior
+        self.cleanup_containers_by_name().await?;
+
+        Ok(())
+    }
+
+    /// Clean up containers by name pattern (like old implementation)
+    /// This handles containers that might exist from previous failed attempts
+    async fn cleanup_containers_by_name(&self) -> Result<()> {
+        trace!("Cleaning up containers by name pattern");
+
+        for spec in &self.component_specs {
+            // Use just the component name, not the full product-component name
+            // This matches what's used in launch_containers
+            let container_name = &spec.component_name;
+            
+            // Check if the container is running and kill it
+            if let Err(e) = self.kill_container_by_name(container_name).await {
+                warn!("Error killing container {}: {}", container_name, e);
+            }
+            
+            // Clean up any stopped containers with this name
+            if let Err(e) = self.remove_container_by_name(container_name).await {
+                warn!("Error removing container {}: {}", container_name, e);
+            }
+        }
+
+        trace!("Container cleanup by name completed");
+        Ok(())
+    }
+
+    /// Kill a running container by name
+    async fn kill_container_by_name(&self, container_name: &str) -> Result<()> {
+        // Check if the container is running
+        let check_output = Command::new("docker")
+            .args(["ps", "-q", "-f", &format!("name={}", container_name)])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        match check_output {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let container_ids: Vec<&str> = stdout.trim().lines().collect();
+                    
+                    if !container_ids.is_empty() {
+                        // Container is running, kill it
+                        info!("Killing running container: {}", container_name);
+                        let kill_output = Command::new("docker")
+                            .args(["kill", container_name])
+                            .stdout(Stdio::piped())
+                            .stderr(Stdio::piped())
+                            .output()
+                            .await
+                            .map_err(|e| Error::Container(format!("Failed to execute kill command for {}: {}", container_name, e)))?;
+
+                        if !kill_output.status.success() {
+                            let stderr = String::from_utf8_lossy(&kill_output.stderr);
+                            return Err(Error::Container(format!("Failed to kill container {}: {}", container_name, stderr)));
+                        }
+                    } else {
+                        trace!("No running container found for {}", container_name);
+                    }
+                } else {
+                    trace!("Error checking for running container {}", container_name);
+                }
+            }
+            Err(e) => {
+                trace!("Error executing docker ps command for {}: {}", container_name, e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Remove a container by name (handles both running and stopped containers)
+    async fn remove_container_by_name(&self, container_name: &str) -> Result<()> {
+        // Check for any containers (running or stopped) with this name
+        let check_output = Command::new("docker")
+            .args(["ps", "-a", "-q", "-f", &format!("name={}", container_name)])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        match check_output {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let container_ids: Vec<&str> = stdout.trim().lines().collect();
+                    
+                    if !container_ids.is_empty() {
+                        // Container exists, remove it
+                        info!("Removing container: {}", container_name);
+                        let rm_output = Command::new("docker")
+                            .args(["rm", "-f", container_name])
+                            .stdout(Stdio::piped())
+                            .stderr(Stdio::piped())
+                            .output()
+                            .await
+                            .map_err(|e| Error::Container(format!("Failed to execute rm command for {}: {}", container_name, e)))?;
+
+                        if !rm_output.status.success() {
+                            let stderr = String::from_utf8_lossy(&rm_output.stderr);
+                            return Err(Error::Container(format!("Failed to remove container {}: {}", container_name, stderr)));
+                        }
+                    } else {
+                        trace!("No container found for {}", container_name);
+                    }
+                } else {
+                    trace!("Error checking for containers with name {}", container_name);
+                }
+            }
+            Err(e) => {
+                trace!("Error executing docker ps command for {}: {}", container_name, e);
+            }
+        }
 
         Ok(())
     }
