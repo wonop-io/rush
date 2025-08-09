@@ -81,8 +81,8 @@ impl ChangeProcessor {
 
     /// Processes any pending file changes after the debounce period
     ///
-    /// Returns true if there were significant changes that require rebuilding
-    pub async fn process_pending_changes(&self) -> Result<bool> {
+    /// Returns the list of changed files if any
+    pub async fn process_pending_changes(&self) -> Result<Vec<PathBuf>> {
         // Check if we have any pending changes first
         let has_changes = {
             let files = self.changed_files.lock().unwrap();
@@ -90,7 +90,7 @@ impl ChangeProcessor {
         };
         
         if !has_changes {
-            return Ok(false);
+            return Ok(Vec::new());
         }
         
         // Wait for the debounce period to collect multiple rapid changes
@@ -98,7 +98,7 @@ impl ChangeProcessor {
 
         let mut files = self.changed_files.lock().unwrap();
         if files.is_empty() {
-            return Ok(false);
+            return Ok(Vec::new());
         }
 
         // Get unique paths
@@ -115,8 +115,8 @@ impl ChangeProcessor {
             info!("Detected change to file: {}", path.display());
         }
 
-        // Return true if we have any changes
-        Ok(!changed_files.is_empty())
+        // Return the list of changed files
+        Ok(changed_files)
     }
 
     /// Checks if any of the changed files affects a specific component

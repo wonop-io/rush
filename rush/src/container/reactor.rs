@@ -915,39 +915,47 @@ impl ContainerReactor {
 
     /// Tests if the changed files affect any component that needs rebuilding
     ///
+    /// # Arguments
+    ///
+    /// * `changed_files` - List of files that have changed
+    ///
     /// # Returns
     ///
     /// Boolean indicating whether any component needs to be rebuilt
-    async fn test_if_significant_change(&mut self) -> bool {
-        // Get the list of changed files and clear the buffer
-        let changed_files = {
-            let changed_files_arc = self.change_processor.changed_files();
-            let mut files = changed_files_arc.lock().unwrap();
-            let ret = files.clone();
-            files.clear();
-            ret
-        };
-
+    async fn test_if_significant_change(&mut self, changed_files: &[PathBuf]) -> bool {
         if changed_files.is_empty() {
+            info!("No changed files to process");
             return false;
+        }
+
+        info!("Testing {} changed files for significance", changed_files.len());
+        for file in changed_files {
+            info!("  - {}", file.display());
         }
 
         let mut significant_change = false;
 
         // Check each component to see if it's affected by the changes
+        info!("Checking {} components", self.component_specs.len());
         for spec in &self.component_specs {
+            info!("Checking component: {}", spec.component_name);
+            
             // Skip redirected components (they're not built locally)
             if self.config.redirected_components.contains_key(&spec.component_name) {
+                info!("  Skipping redirected component");
                 continue;
             }
 
             // Check if any changed file is in this component's context
-            if self.is_any_file_in_component_context(&spec, &changed_files) {
-                info!("Component '{}' was affected by file changes", spec.component_name);
+            if self.is_any_file_in_component_context(&spec, changed_files) {
+                info!("  ✓ Component '{}' was affected by file changes", spec.component_name);
                 significant_change = true;
+            } else {
+                info!("  ✗ Component '{}' not affected", spec.component_name);
             }
         }
 
+        info!("Significant change result: {}", significant_change);
         significant_change
     }
 
@@ -962,15 +970,19 @@ impl ContainerReactor {
     ///
     /// Boolean indicating whether the component is affected
     fn is_any_file_in_component_context(&self, spec: &ComponentBuildSpec, file_paths: &[PathBuf]) -> bool {
+        info!("    Checking context for component: {}", spec.component_name);
+        
         // Check if component has watch patterns defined
         if let Some(watch_matcher) = &spec.watch {
+            info!("    Component has watch patterns");
             for file in file_paths {
                 if watch_matcher.matches(file) {
-                    debug!("File {} matches watch pattern for component {}", 
-                           file.display(), spec.component_name);
+                    info!("    File {} matches watch pattern", file.display());
                     return true;
                 }
             }
+        } else {
+            info!("    No watch patterns defined");
         }
 
         // Get the component's context directory
@@ -1002,19 +1014,31 @@ impl ContainerReactor {
 
         // Check if any changed file is within the component's context directory
         let context_path = self.config.product_dir.join(&context_dir);
+        info!("    Context directory: {}", context_path.display());
         
-        file_paths.iter().any(|file_path| {
+        let result = file_paths.iter().any(|file_path| {
+            info!("    Checking if {} is in context", file_path.display());
+            
             // Try to get absolute paths for comparison
             if let (Ok(abs_file), Ok(abs_context)) = (
                 std::fs::canonicalize(file_path),
                 std::fs::canonicalize(&context_path)
             ) {
-                abs_file.starts_with(&abs_context)
+                let is_match = abs_file.starts_with(&abs_context);
+                info!("      Absolute comparison: {} starts_with {} = {}", 
+                     abs_file.display(), abs_context.display(), is_match);
+                is_match
             } else {
                 // Fallback to simple path comparison
-                file_path.starts_with(&context_path)
+                let is_match = file_path.starts_with(&context_path);
+                info!("      Simple comparison: {} starts_with {} = {}", 
+                     file_path.display(), context_path.display(), is_match);
+                is_match
             }
-        })
+        });
+        
+        info!("    Component context check result: {}", result);
+        result
     }
 
     /// Monitors running containers and handles events like file changes or termination signals
@@ -1039,10 +1063,11 @@ impl ContainerReactor {
 
                 _ = file_check_interval.tick() => {
                     // Check if we have pending changes to process
-                    if self.change_processor.process_pending_changes().await? {
+                    let changed_files = self.change_processor.process_pending_changes().await?;
+                    if !changed_files.is_empty() {
                         info!("Processing file changes...");
                         // Test if the changes are significant (affect any component)
-                        if self.test_if_significant_change().await {
+                        if self.test_if_significant_change(&changed_files).await {
                             info!("Detected significant file changes, triggering rebuild");
                             return Ok(true);
                         } else {
@@ -1275,7 +1300,8 @@ impl ContainerReactor {
                 }
 
                 _ = file_check_interval.tick() => {
-                    if self.change_processor.process_pending_changes().await.unwrap_or(false) {
+                    let changed_files = self.change_processor.process_pending_changes().await.unwrap_or_else(|_| Vec::new());
+                    if !changed_files.is_empty() {
                         info!("File changes detected, resuming build");
                         return WaitResult::FileChanged;
                     }
