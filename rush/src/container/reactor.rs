@@ -841,6 +841,7 @@ impl ContainerReactor {
                                 let abs_host_path = if Path::new(host_path).is_absolute() {
                                     host_path.clone()
                                 } else {
+                                    // Always resolve relative paths from the product directory
                                     self.config.product_dir
                                         .join(host_path)
                                         .to_string_lossy()
@@ -854,28 +855,16 @@ impl ContainerReactor {
                     // All containers should use the product directory as working directory
                     let working_dir = format!("/app/{}", self.config.product_name.replace('.', "/"));
                     
-                    // Fix volume mounts to be relative to product directory
-                    let fixed_volumes: Vec<String> = volumes.iter().map(|v| {
-                        if let Some((host, container)) = v.split_once(':') {
-                            // If host path is relative, make it absolute from product_dir
-                            let host_path = if Path::new(host).is_relative() {
-                                self.config.product_dir.join(host).to_string_lossy().to_string()
-                            } else {
-                                host.to_string()
-                            };
-                            format!("{}:{}", host_path, container)
-                        } else {
-                            v.clone()
-                        }
-                    }).collect();
+                    // Container name should be product_name-component_name (to match old implementation)
+                    let container_name = format!("{}-{}", self.config.product_name, service.name);
                     
                     let config = DockerServiceConfig {
-                        name: service.name.clone(),
+                        name: container_name,
                         image: service.image.clone(),
                         network: self.config.network_name.clone(),
                         env_vars,
                         ports: vec![format!("{}:{}", service.port, service.target_port)],
-                        volumes: fixed_volumes,
+                        volumes,  // Use the already fixed volumes
                         working_dir: Some(working_dir),
                     };
 
@@ -1179,12 +1168,11 @@ impl ContainerReactor {
         trace!("Cleaning up containers by name pattern");
 
         for spec in &self.component_specs {
-            // Use just the component name, not the full product-component name
-            // This matches what's used in launch_containers
-            let container_name = &spec.component_name;
+            // Use product_name-component_name to match the container naming convention
+            let container_name = format!("{}-{}", self.config.product_name, spec.component_name);
             
             // Try to kill and remove with retries
-            self.kill_and_remove_container_with_retry(container_name, 3).await?;
+            self.kill_and_remove_container_with_retry(&container_name, 3).await?;
         }
 
         trace!("Container cleanup by name completed");
