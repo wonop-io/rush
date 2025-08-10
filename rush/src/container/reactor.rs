@@ -851,13 +851,32 @@ impl ContainerReactor {
                         }
                     }
 
+                    // All containers should use the product directory as working directory
+                    let working_dir = format!("/app/{}", self.config.product_name.replace('.', "/"));
+                    
+                    // Fix volume mounts to be relative to product directory
+                    let fixed_volumes: Vec<String> = volumes.iter().map(|v| {
+                        if let Some((host, container)) = v.split_once(':') {
+                            // If host path is relative, make it absolute from product_dir
+                            let host_path = if Path::new(host).is_relative() {
+                                self.config.product_dir.join(host).to_string_lossy().to_string()
+                            } else {
+                                host.to_string()
+                            };
+                            format!("{}:{}", host_path, container)
+                        } else {
+                            v.clone()
+                        }
+                    }).collect();
+                    
                     let config = DockerServiceConfig {
                         name: service.name.clone(),
                         image: service.image.clone(),
                         network: self.config.network_name.clone(),
                         env_vars,
                         ports: vec![format!("{}:{}", service.port, service.target_port)],
-                        volumes,
+                        volumes: fixed_volumes,
+                        working_dir: Some(working_dir),
                     };
 
                     service_configs.push(config);
@@ -881,6 +900,7 @@ impl ContainerReactor {
                         .collect::<Vec<_>>(),
                     &config.ports,
                     &config.volumes,
+                    config.working_dir.as_deref(),
                 )
                 .await?;
 
@@ -1687,6 +1707,9 @@ impl ContainerReactor {
         let tag = format!("{}:{}", image_name, image_tag);
 
         // Create an ImageBuilder with the right configuration
+        // Set working directory to product directory
+        let working_dir = format!("/app/{}", self.config.product_name.replace('.', "/"));
+        
         let service_config = DockerServiceConfig {
             name: image_name.to_string(),
             image: tag.clone(),
@@ -1694,6 +1717,7 @@ impl ContainerReactor {
             env_vars: HashMap::new(),
             ports: Vec::new(),
             volumes: Vec::new(),
+            working_dir: Some(working_dir),
         };
 
         let service = DockerService::new(

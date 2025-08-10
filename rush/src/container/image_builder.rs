@@ -304,6 +304,9 @@ impl ImageBuilder {
         };
 
         // Create DockerServiceConfig from spec
+        // Set working directory to product directory (reverse domain notation as path)
+        let working_dir = format!("/app/{}", spec_guard.product_name.replace('.', "/"));
+        
         let service_config = DockerServiceConfig {
             name: spec_guard.docker_local_name(),
             image: format!("{}-{}", spec_guard.product_name, spec_guard.component_name),
@@ -326,6 +329,7 @@ impl ImageBuilder {
             } else {
                 vec![]
             },
+            working_dir: Some(working_dir),
         };
 
         // Create the DockerService
@@ -447,6 +451,7 @@ mod tests {
             env_vars: HashMap::new(),
             ports: vec![],
             volumes: vec![],
+            working_dir: None,
         };
 
         let service = DockerService::new("test-id".to_string(), config, mock_client);

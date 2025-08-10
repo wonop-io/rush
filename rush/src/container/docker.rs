@@ -38,6 +38,7 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
         env_vars: &[String],
         ports: &[String],
         volumes: &[String],
+        working_dir: Option<&str>,
     ) -> Result<String>; // Returns container ID
 
     /// Stops a running container
@@ -235,10 +236,17 @@ impl DockerClient for DockerCliClient {
         env_vars: &[String],
         ports: &[String],
         volumes: &[String],
+        working_dir: Option<&str>,
     ) -> Result<String> {
         trace!("Running Docker container {} from image {}", name, image);
 
         let mut args = vec!["run", "-d", "--name", name, "--network", network];
+
+        // Set working directory if provided
+        if let Some(workdir) = working_dir {
+            args.push("-w");
+            args.push(workdir);
+        }
 
         // Add environment variables
         for env in env_vars {
@@ -557,6 +565,8 @@ pub struct DockerServiceConfig {
     pub ports: Vec<String>,
     /// Volume mappings (host:container)
     pub volumes: Vec<String>,
+    /// Working directory inside the container
+    pub working_dir: Option<String>,
 }
 
 /// Represents a running Docker service
@@ -690,6 +700,7 @@ mod tests {
                 _env_vars: &[String],
                 _ports: &[String],
                 _volumes: &[String],
+                _working_dir: Option<&str>,
             ) -> Result<String> {
                 unimplemented!()
             }
@@ -734,6 +745,7 @@ mod tests {
             env_vars: HashMap::new(),
             ports: vec![],
             volumes: vec![],
+            working_dir: None,
         };
 
         let service = DockerService {
@@ -790,6 +802,7 @@ mod tests {
                 _env_vars: &[String],
                 _ports: &[String],
                 _volumes: &[String],
+                _working_dir: Option<&str>,
             ) -> Result<String> {
                 unimplemented!()
             }
@@ -834,6 +847,7 @@ mod tests {
             env_vars: HashMap::new(),
             ports: vec![],
             volumes: vec![],
+            working_dir: None,
         };
 
         let service = DockerService {
