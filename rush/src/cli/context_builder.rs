@@ -20,16 +20,11 @@ pub async fn create_context(matches: &ArgMatches) -> Result<CliContext> {
     let redirected_components = parse_redirected_components(matches);
     let silence_components = parse_silence_components(matches);
 
-    setup_logging(matches);
-
     let target_arch = get_target_arch(matches);
     let target_os = get_target_os(matches);
     let environment = get_environment(matches);
     let docker_registry = get_docker_registry(matches);
-    let product_name = matches
-        .get_one::<String>("product_name")
-        .unwrap()
-        .clone();
+    let product_name = matches.get_one::<String>("product_name").unwrap().clone();
 
     info!("Product name: {}", product_name);
 
@@ -108,7 +103,7 @@ fn parse_silence_components(matches: &ArgMatches) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn setup_logging(matches: &ArgMatches) {
+pub fn setup_logging(matches: &ArgMatches) {
     if let Some(log_level) = matches.get_one::<String>("log_level") {
         env::set_var("RUST_LOG", log_level);
         env_logger::builder().parse_env("RUST_LOG").init();
@@ -161,12 +156,11 @@ fn get_docker_registry(matches: &ArgMatches) -> String {
         info!("Docker registry: {}", registry);
         registry
     } else {
-        let registry = env::var("DOCKER_REGISTRY")
-            .unwrap_or_else(|_| {
-                warn!("DOCKER_REGISTRY environment variable not found, using empty registry");
-                "".to_string()
-            });
-        
+        let registry = env::var("DOCKER_REGISTRY").unwrap_or_else(|_| {
+            warn!("DOCKER_REGISTRY environment variable not found, using empty registry");
+            "".to_string()
+        });
+
         // If registry is "not_set", treat it as empty for local development
         let registry = if registry == "not_set" {
             debug!("DOCKER_REGISTRY is 'not_set', using empty registry for local development");
@@ -174,8 +168,15 @@ fn get_docker_registry(matches: &ArgMatches) -> String {
         } else {
             registry
         };
-        
-        info!("Docker registry: {}", if registry.is_empty() { "(local)" } else { &registry });
+
+        info!(
+            "Docker registry: {}",
+            if registry.is_empty() {
+                "(local)"
+            } else {
+                &registry
+            }
+        );
         registry
     }
 }
@@ -248,15 +249,15 @@ fn create_vault(
     }
 }
 
-fn setup_environment_files(
-    config: &Config,
-    product_name: &str,
-    environment: &str,
-) -> Result<()> {
+fn setup_environment_files(config: &Config, product_name: &str, environment: &str) -> Result<()> {
     let public_environment = EnvironmentGenerator::new(
         product_name.to_string(),
         &format!("{}/stack.env.base.yaml", config.product_path().display()),
-        &format!("{}/stack.env.{}.yaml", config.product_path().display(), environment),
+        &format!(
+            "{}/stack.env.{}.yaml",
+            config.product_path().display(),
+            environment
+        ),
     );
 
     match public_environment.generate_dotenv_files() {

@@ -2,6 +2,12 @@ use rush_cli::cli;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
+    // Parse command line arguments
+    let matches = cli::parse_args();
+
+    // Set up logging based on command line arguments
+    cli::setup_logging(&matches);
+
     // Initialize the application
     match cli::init_application().await {
         Ok(_) => (),
@@ -10,9 +16,6 @@ async fn main() -> Result<(), std::io::Error> {
             std::process::exit(1);
         }
     }
-
-    // Parse command line arguments
-    let matches = cli::parse_args();
 
     // Initialize CLI context with common resources
     let mut ctx = match cli::create_context(&matches).await {

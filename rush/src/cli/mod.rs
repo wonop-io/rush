@@ -19,5 +19,6 @@ pub use commands::{
     VaultCommand,
 };
 pub use context_builder::create_context;
+pub use context_builder::setup_logging;
 pub use execute::execute_command;
 pub use init::init_application;

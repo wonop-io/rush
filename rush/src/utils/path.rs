@@ -107,13 +107,17 @@ pub fn canonical_path<P: AsRef<Path>>(path: P) -> std::io::Result<PathBuf> {
 /// # Returns
 ///
 /// The first matching directory, or None if no match is found
-pub fn find_parent_dir<P, F>(start_path: P, predicate: F) -> Option<PathBuf>
+pub fn find_dir_recursively<P, F>(start_path: P, predicate: F) -> Option<PathBuf>
 where
     P: AsRef<Path>,
     F: Fn(&Path) -> bool,
 {
     let path = absolute_path(start_path).ok()?;
     let mut current = path.as_path();
+
+    if predicate(current) {
+        return Some(current.to_path_buf());
+    }
 
     while let Some(parent) = current.parent() {
         if predicate(parent) {
@@ -136,7 +140,7 @@ where
 ///
 /// The project root directory, or None if not found
 pub fn find_project_root<P: AsRef<Path>>(start_path: P) -> Option<PathBuf> {
-    find_parent_dir(start_path, |path| {
+    find_dir_recursively(start_path, |path| {
         path.join(".git").exists()
             || path.join("Cargo.toml").exists()
             || path.join("package.json").exists()
