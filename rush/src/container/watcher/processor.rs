@@ -48,14 +48,14 @@ impl ChangeProcessor {
     /// * `path` - Path to the file that changed
     pub fn add_change(&self, path: PathBuf) {
         if self.should_ignore(&path) {
-            info!("Ignoring change to file: {} (matched gitignore)", path.display());
+            debug!("Ignoring change to file: {} (matched gitignore)", path.display());
             return;
         }
 
-        info!("Recording change to file: {}", path.display());
+        debug!("Recording change to file: {}", path.display());
         let mut files = self.changed_files.lock().unwrap();
         files.push(path);
-        info!("Total recorded changes: {}", files.len());
+        debug!("Total recorded changes: {}", files.len());
     }
 
     /// Determines if a file should be ignored based on .gitignore rules

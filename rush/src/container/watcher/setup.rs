@@ -132,7 +132,7 @@ fn process_file_event(event: Event, processor: &ChangeProcessor) {
     match event.kind {
         EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
             for path in event.paths {
-                info!("File system event detected: {} (kind: {:?})", path.display(), event.kind);
+                debug!("File system event detected: {} (kind: {:?})", path.display(), event.kind);
                 processor.add_change(path);
             }
         }

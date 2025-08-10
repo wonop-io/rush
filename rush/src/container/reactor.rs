@@ -928,34 +928,34 @@ impl ContainerReactor {
             return false;
         }
 
-        info!("Testing {} changed files for significance", changed_files.len());
+        debug!("Testing {} changed files for significance", changed_files.len());
         for file in changed_files {
-            info!("  - {}", file.display());
+            debug!("  - {}", file.display());
         }
 
         let mut significant_change = false;
 
         // Check each component to see if it's affected by the changes
-        info!("Checking {} components", self.component_specs.len());
+        debug!("Checking {} components", self.component_specs.len());
         for spec in &self.component_specs {
-            info!("Checking component: {}", spec.component_name);
+            debug!("Checking component: {}", spec.component_name);
             
             // Skip redirected components (they're not built locally)
             if self.config.redirected_components.contains_key(&spec.component_name) {
-                info!("  Skipping redirected component");
+                debug!("  Skipping redirected component");
                 continue;
             }
 
             // Check if any changed file is in this component's context
             if self.is_any_file_in_component_context(&spec, changed_files) {
-                info!("  ✓ Component '{}' was affected by file changes", spec.component_name);
+                debug!("  ✓ Component '{}' was affected by file changes", spec.component_name);
                 significant_change = true;
             } else {
-                info!("  ✗ Component '{}' not affected", spec.component_name);
+                debug!("  ✗ Component '{}' not affected", spec.component_name);
             }
         }
 
-        info!("Significant change result: {}", significant_change);
+        debug!("Significant change result: {}", significant_change);
         significant_change
     }
 
@@ -970,19 +970,19 @@ impl ContainerReactor {
     ///
     /// Boolean indicating whether the component is affected
     fn is_any_file_in_component_context(&self, spec: &ComponentBuildSpec, file_paths: &[PathBuf]) -> bool {
-        info!("    Checking context for component: {}", spec.component_name);
+        debug!("    Checking context for component: {}", spec.component_name);
         
         // Check if component has watch patterns defined
         if let Some(watch_matcher) = &spec.watch {
-            info!("    Component has watch patterns");
+            debug!("    Component has watch patterns");
             for file in file_paths {
                 if watch_matcher.matches(file) {
-                    info!("    File {} matches watch pattern", file.display());
+                    debug!("    File {} matches watch pattern", file.display());
                     return true;
                 }
             }
         } else {
-            info!("    No watch patterns defined");
+            debug!("    No watch patterns defined");
         }
 
         // Get the component's context directory
@@ -1014,10 +1014,10 @@ impl ContainerReactor {
 
         // Check if any changed file is within the component's context directory
         let context_path = self.config.product_dir.join(&context_dir);
-        info!("    Context directory: {}", context_path.display());
+        debug!("    Context directory: {}", context_path.display());
         
         let result = file_paths.iter().any(|file_path| {
-            info!("    Checking if {} is in context", file_path.display());
+            debug!("    Checking if {} is in context", file_path.display());
             
             // Try to get absolute paths for comparison
             if let (Ok(abs_file), Ok(abs_context)) = (
@@ -1025,19 +1025,19 @@ impl ContainerReactor {
                 std::fs::canonicalize(&context_path)
             ) {
                 let is_match = abs_file.starts_with(&abs_context);
-                info!("      Absolute comparison: {} starts_with {} = {}", 
+                debug!("      Absolute comparison: {} starts_with {} = {}", 
                      abs_file.display(), abs_context.display(), is_match);
                 is_match
             } else {
                 // Fallback to simple path comparison
                 let is_match = file_path.starts_with(&context_path);
-                info!("      Simple comparison: {} starts_with {} = {}", 
+                debug!("      Simple comparison: {} starts_with {} = {}", 
                      file_path.display(), context_path.display(), is_match);
                 is_match
             }
         });
         
-        info!("    Component context check result: {}", result);
+        debug!("    Component context check result: {}", result);
         result
     }
 
@@ -1071,7 +1071,7 @@ impl ContainerReactor {
                             info!("Detected significant file changes, triggering rebuild");
                             return Ok(true);
                         } else {
-                            info!("File changes detected but no components affected");
+                            debug!("File changes detected but no components affected");
                         }
                     }
                 }
@@ -1117,16 +1117,29 @@ impl ContainerReactor {
         // Broadcast shutdown signal to all services
         let _ = self.shutdown_sender.send(());
 
-        // Stop and remove each service in the tracking list
+        // Stop and remove each service in the tracking list with retry logic
         for service in &self.running_services {
-            // Try to stop gracefully first
-            if let Err(e) = service.stop().await {
-                warn!("Error stopping container {}: {}", service.id(), e);
-            }
-
-            // Force remove container
-            if let Err(e) = service.remove().await {
-                warn!("Error removing container {}: {}", service.id(), e);
+            let mut retries = 0;
+            let max_retries = 3;
+            
+            while retries < max_retries {
+                // Try to stop gracefully first
+                let stop_result = service.stop().await;
+                let remove_result = service.remove().await;
+                
+                if stop_result.is_ok() && remove_result.is_ok() {
+                    break;
+                }
+                
+                retries += 1;
+                if retries < max_retries {
+                    warn!("Failed to clean up container {} (attempt {}/{}), retrying...", 
+                          service.id(), retries, max_retries);
+                    tokio::time::sleep(Duration::from_millis(500 * retries as u64)).await;
+                } else {
+                    warn!("Failed to clean up container {} after {} retries", 
+                          service.id(), max_retries);
+                }
             }
         }
 
@@ -1150,18 +1163,53 @@ impl ContainerReactor {
             // This matches what's used in launch_containers
             let container_name = &spec.component_name;
             
-            // Check if the container is running and kill it
-            if let Err(e) = self.kill_container_by_name(container_name).await {
-                warn!("Error killing container {}: {}", container_name, e);
-            }
-            
-            // Clean up any stopped containers with this name
-            if let Err(e) = self.remove_container_by_name(container_name).await {
-                warn!("Error removing container {}: {}", container_name, e);
-            }
+            // Try to kill and remove with retries
+            self.kill_and_remove_container_with_retry(container_name, 3).await?;
         }
 
         trace!("Container cleanup by name completed");
+        Ok(())
+    }
+
+    /// Kill and remove a container with retry logic
+    async fn kill_and_remove_container_with_retry(&self, container_name: &str, max_retries: u32) -> Result<()> {
+        let mut retries = 0;
+        
+        while retries < max_retries {
+            // First try to kill if running
+            match self.kill_container_by_name(container_name).await {
+                Ok(_) => debug!("Successfully killed container: {}", container_name),
+                Err(e) => {
+                    if retries == max_retries - 1 {
+                        warn!("Failed to kill container {} after {} retries: {}", 
+                              container_name, max_retries, e);
+                    }
+                }
+            }
+            
+            // Then try to remove
+            match self.remove_container_by_name(container_name).await {
+                Ok(_) => {
+                    debug!("Successfully removed container: {}", container_name);
+                    return Ok(());
+                }
+                Err(e) => {
+                    retries += 1;
+                    if retries < max_retries {
+                        warn!("Failed to remove container {} (attempt {}/{}): {}, retrying...", 
+                              container_name, retries, max_retries, e);
+                        // Wait a bit before retrying
+                        tokio::time::sleep(Duration::from_millis(500 * retries as u64)).await;
+                    } else {
+                        warn!("Failed to remove container {} after {} retries: {}", 
+                              container_name, max_retries, e);
+                        // Don't fail completely, just warn
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        
         Ok(())
     }
 
