@@ -1,7 +1,11 @@
 use rush_cli::cli;
+use rush_cli::shutdown;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
+    // Set up signal handlers for graceful shutdown
+    shutdown::setup_signal_handlers();
+
     // Parse command line arguments
     let matches = cli::parse_args();
 

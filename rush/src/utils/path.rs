@@ -141,12 +141,7 @@ where
 ///
 /// The project root directory, or None if not found
 pub fn find_project_root<P: AsRef<Path>>(start_path: P) -> Option<PathBuf> {
-    find_dir_recursively(start_path, |path| {
-        path.join(GIT_DIR).exists()
-            || path.join(CARGO_TOML_FILE).exists()
-            || path.join(PACKAGE_JSON_FILE).exists()
-            || path.join(RUSH_CONFIG_FILE).exists()
-    })
+    find_dir_recursively(start_path, |path| path.join(RUSHD_CONFIG_FILE).exists())
 }
 
 /// Gets a path relative to the project root.

@@ -7,5 +7,6 @@ pub mod error;
 pub mod k8s;
 pub mod output;
 pub mod security;
+pub mod shutdown;
 pub mod toolchain;
 pub mod utils;

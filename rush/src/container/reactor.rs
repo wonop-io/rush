@@ -15,6 +15,7 @@ use notify::RecommendedWatcher;
 use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::security::{FileVault, SecretsEncoder, Vault};
+use crate::shutdown;
 
 use colored::Colorize;
 use log::{debug, error, info, trace, warn};
@@ -593,15 +594,44 @@ impl ContainerReactor {
     /// 3. Monitoring for file changes
     /// 4. Handling shutdowns and rebuilds
     async fn launch_loop(&mut self) -> Result<()> {
+        let shutdown_token = shutdown::global_shutdown().cancellation_token();
         let mut should_continue = true;
 
         while should_continue {
-            // Clean up any existing containers
-            self.cleanup_containers().await?;
+            // Check for shutdown before each iteration
+            if shutdown_token.is_cancelled() {
+                info!("Launch loop cancelled due to shutdown signal");
+                break;
+            }
 
-            // Build all containers
-            if let Err(e) = self.build_all().await {
+            // Clean up any existing containers
+            tokio::select! {
+                result = self.cleanup_containers() => {
+                    result?;
+                }
+                _ = shutdown_token.cancelled() => {
+                    info!("Container cleanup cancelled due to shutdown signal");
+                    break;
+                }
+            }
+
+            // Build all containers with shutdown handling
+            let build_result = tokio::select! {
+                result = self.build_all() => result,
+                _ = shutdown_token.cancelled() => {
+                    info!("Container build cancelled due to shutdown signal");
+                    break;
+                }
+            };
+
+            if let Err(e) = build_result {
                 error!("Build failed: {}", e);
+
+                // If shutdown was signalled during build error, exit immediately
+                if shutdown_token.is_cancelled() {
+                    info!("Exiting due to shutdown signal during build error");
+                    break;
+                }
 
                 // Wait for file changes or manual termination
                 match self.wait_for_changes_or_termination().await {
@@ -611,15 +641,50 @@ impl ContainerReactor {
                 }
             }
 
-            // Launch all containers
-            self.launch_containers().await?;
+            // Check for shutdown before launching containers
+            if shutdown_token.is_cancelled() {
+                info!("Skipping container launch due to shutdown signal");
+                break;
+            }
+
+            // Launch all containers with shutdown handling
+            tokio::select! {
+                result = self.launch_containers() => {
+                    if let Err(e) = result {
+                        error!("Failed to launch containers: {}", e);
+                        return Err(e);
+                    }
+                }
+                _ = shutdown_token.cancelled() => {
+                    info!("Container launch cancelled due to shutdown signal");
+                    break;
+                }
+            }
 
             // Monitor containers and wait for changes
-            should_continue = self.monitor_and_handle_events().await?;
+            should_continue = tokio::select! {
+                result = self.monitor_and_handle_events() => result?,
+                _ = shutdown_token.cancelled() => {
+                    info!("Container monitoring cancelled due to shutdown signal");
+                    false
+                }
+            };
         }
 
         info!("Container reactor shutting down");
-        self.cleanup_containers().await?;
+        
+        // Cleanup containers on shutdown (with timeout to prevent hanging)
+        let cleanup_result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            self.cleanup_containers()
+        ).await;
+        
+        match cleanup_result {
+            Ok(Ok(())) => info!("Container cleanup completed successfully"),
+            Ok(Err(e)) => warn!("Container cleanup failed: {}", e),
+            Err(_) => warn!("Container cleanup timed out"),
+        }
+        
         Ok(())
     }
 
@@ -629,11 +694,24 @@ impl ContainerReactor {
     ///
     /// Result indicating success or failure
     async fn build_all(&mut self) -> Result<()> {
+        let shutdown_token = shutdown::global_shutdown().cancellation_token();
+        
+        // Check for shutdown before starting build
+        if shutdown_token.is_cancelled() {
+            info!("Build cancelled due to shutdown signal");
+            return Err(Error::Terminated("Build cancelled due to shutdown".into()));
+        }
+
         info!("Building container images");
         self.rebuild_in_progress = true;
 
         // Process all component specs to build their images
         for spec in &self.component_specs {
+            // Check for shutdown before each component build
+            if shutdown_token.is_cancelled() {
+                info!("Component build loop cancelled due to shutdown signal");
+                return Err(Error::Terminated("Build cancelled due to shutdown".into()));
+            }
             // Skip components that don't need Docker builds
             if !spec.build_type.requires_docker_build() {
                 continue;
@@ -1077,16 +1155,15 @@ impl ContainerReactor {
     ///
     /// Boolean indicating whether to continue running (true) or shut down (false)
     async fn monitor_and_handle_events(&mut self) -> Result<bool> {
+        let shutdown_token = shutdown::global_shutdown().cancellation_token();
         info!("Monitoring containers and watching for file changes");
 
-        let ctrl_c = tokio::signal::ctrl_c();
-        tokio::pin!(ctrl_c);
         let mut file_check_interval = tokio::time::interval(Duration::from_millis(100));
         let mut status_check_interval = tokio::time::interval(Duration::from_secs(2));
 
         loop {
             tokio::select! {
-                _ = &mut ctrl_c => {
+                _ = shutdown_token.cancelled() => {
                     info!("Received termination signal");
                     return Ok(false);
                 }
@@ -1361,17 +1438,16 @@ impl ContainerReactor {
     ///
     /// WaitResult indicating what happened
     async fn wait_for_changes_or_termination(&self) -> WaitResult {
+        let shutdown_token = shutdown::global_shutdown().cancellation_token();
         info!("Waiting for file changes or termination signal");
 
-        let ctrl_c = tokio::signal::ctrl_c();
-        tokio::pin!(ctrl_c);
         let mut file_check_interval = tokio::time::interval(Duration::from_millis(100));
         let wait_timeout = tokio::time::sleep(Duration::from_secs(300)); // 5 minute timeout
         tokio::pin!(wait_timeout);
 
         loop {
             tokio::select! {
-                _ = &mut ctrl_c => {
+                _ = shutdown_token.cancelled() => {
                     info!("Received termination signal while waiting");
                     return WaitResult::Terminated;
                 }

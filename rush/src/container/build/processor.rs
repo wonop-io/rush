@@ -1,12 +1,14 @@
 use colored::Colorize;
 use log::{debug, error, info, warn};
 use std::path::Path;
+use tokio_util::sync::CancellationToken;
 
 use crate::build::BuildContext;
 use crate::build::BuildScript;
 use crate::build::BuildType;
 use crate::container::ImageBuilder;
 use crate::error::{Error, Result};
+use crate::shutdown;
 use crate::utils::{run_command_in_window, Directory};
 
 /// Manages the build process for containers
@@ -31,6 +33,14 @@ impl BuildProcessor {
     ///
     /// Result indicating success or failure
     pub async fn build_image(&self, image: &ImageBuilder) -> Result<()> {
+        let shutdown_token = shutdown::global_shutdown().cancellation_token();
+        
+        // Check for shutdown before starting build
+        if shutdown_token.is_cancelled() {
+            info!("Build cancelled due to shutdown signal");
+            return Err(Error::Terminated("Build cancelled due to shutdown".into()));
+        }
+        
         debug!("Building image: {}", image.component_name());
 
         if !image.should_rebuild() {
@@ -42,20 +52,45 @@ impl BuildProcessor {
 
         info!("Building {}", component_name);
 
-        // Generate build context
-        let _build_context = match image.generate_build_context().await {
-            Ok(context) => context,
-            Err(e) => return Err(format!("Failed to generate build context: {}", e).into()),
-        };
-
-        // Execute build
-        if let Err(e) = image.build().await {
-            error!("Build failed for {}: {}", component_name, e);
-            return Err(e);
+        // Check for shutdown again before expensive operations
+        if shutdown_token.is_cancelled() {
+            info!("Build cancelled for {} due to shutdown signal", component_name);
+            return Err(Error::Terminated("Build cancelled due to shutdown".into()));
         }
 
-        info!("Successfully built {}", component_name);
-        Ok(())
+        // Generate build context
+        let _build_context = tokio::select! {
+            result = image.generate_build_context() => {
+                match result {
+                    Ok(context) => context,
+                    Err(e) => return Err(format!("Failed to generate build context: {}", e).into()),
+                }
+            }
+            _ = shutdown_token.cancelled() => {
+                info!("Build context generation cancelled for {} due to shutdown", component_name);
+                return Err(Error::Terminated("Build cancelled due to shutdown".into()));
+            }
+        };
+
+        // Execute build with cancellation
+        let build_result = tokio::select! {
+            result = image.build() => result,
+            _ = shutdown_token.cancelled() => {
+                info!("Build cancelled for {} due to shutdown signal", component_name);
+                return Err(Error::Terminated("Build cancelled due to shutdown".into()));
+            }
+        };
+
+        match build_result {
+            Ok(_) => {
+                info!("Successfully built {}", component_name);
+                Ok(())
+            }
+            Err(e) => {
+                error!("Build failed for {}: {}", component_name, e);
+                Err(e)
+            }
+        }
     }
 
     /// Gets the build script for a component if needed
@@ -187,6 +222,14 @@ impl BuildProcessor {
     where
         F: Fn() -> bool,
     {
+        let shutdown_token = shutdown::global_shutdown().cancellation_token();
+        
+        // Check if shutdown was initiated before handling the error
+        if shutdown_token.is_cancelled() {
+            info!("Build error recovery cancelled for {} due to shutdown", component_name);
+            return Err(Error::Terminated("Build error recovery cancelled due to shutdown".into()));
+        }
+
         // Colorize error messages for better visibility
         let colorized_error = error
             .replace("error:", &format!("{}:", "error".red().bold()))
@@ -194,6 +237,7 @@ impl BuildProcessor {
             .replace("warning:", &format!("{}:", "warning".yellow().bold()));
 
         error!("Build failed for {}: {}", component_name, colorized_error);
+        info!("Waiting for file changes or termination signal to retry build for {}", component_name);
 
         // Check for file changes while waiting
         let mut check_interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
@@ -214,8 +258,8 @@ impl BuildProcessor {
                     warn!("Build error recovery timeout reached for {}", component_name);
                     return Err(format!("Build failed for {} and recovery timeout reached", component_name).into());
                 }
-                _ = tokio::signal::ctrl_c() => {
-                    info!("Termination signal received during build error recovery");
+                _ = shutdown_token.cancelled() => {
+                    info!("Build error recovery terminated for {} due to shutdown signal", component_name);
                     return Err(Error::Terminated("Build process terminated by user".into()));
                 }
             }
