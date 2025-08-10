@@ -33,6 +33,7 @@ database:
 ingress:
   build_type: "Ingress"
   port: 9000
+  target_port: 80
   location: "./ingress"
   context_dir: ../target
   dockerfile: "./ingress/Dockerfile"
