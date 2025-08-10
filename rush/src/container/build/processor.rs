@@ -27,12 +27,12 @@ impl BuildProcessor {
     ///
     /// # Arguments
     ///
-    /// * `image` - The Docker image to build
+    /// * `image` - The Docker image to build (mutable to update cache state)
     ///
     /// # Returns
     ///
     /// Result indicating success or failure
-    pub async fn build_image(&self, image: &ImageBuilder) -> Result<()> {
+    pub async fn build_image(&self, image: &mut ImageBuilder) -> Result<()> {
         let shutdown_token = shutdown::global_shutdown().cancellation_token();
         
         // Check for shutdown before starting build
@@ -43,12 +43,21 @@ impl BuildProcessor {
         
         debug!("Building image: {}", image.component_name());
 
-        if !image.should_rebuild() {
-            debug!("Image {} doesn't need rebuilding", image.component_name());
+        // Check if rebuild is needed based on cache
+        let needs_rebuild = match image.evaluate_rebuild_needed().await {
+            Ok(needed) => needed,
+            Err(e) => {
+                warn!("Failed to evaluate cache status: {}, proceeding with build", e);
+                true
+            }
+        };
+
+        if !needs_rebuild {
+            info!("Image {} already exists in cache with clean git tag, skipping build", image.component_name());
             return Ok(());
         }
 
-        let component_name = image.component_name();
+        let component_name = image.component_name().to_string();
 
         info!("Building {}", component_name);
 
@@ -84,6 +93,8 @@ impl BuildProcessor {
         match build_result {
             Ok(_) => {
                 info!("Successfully built {}", component_name);
+                // Mark that the image was recently rebuilt
+                image.set_was_recently_rebuilt(true);
                 Ok(())
             }
             Err(e) => {

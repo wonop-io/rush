@@ -51,6 +51,9 @@ pub struct ContainerReactor {
 
     /// Vault for accessing secrets
     vault: Arc<Mutex<dyn Vault + Send>>,
+    
+    /// Toolchain for build operations
+    toolchain: Option<Arc<crate::toolchain::ToolchainContext>>,
 
     /// Running container services
     running_services: Vec<DockerService>,
@@ -72,6 +75,9 @@ pub struct ContainerReactor {
     
     /// Output director for handling container logs
     output_director: Option<crate::output::SharedOutputDirector>,
+    
+    /// Mapping of component names to their actual built image names (with git tags)
+    built_images: HashMap<String, String>,
 }
 
 /// Configuration for the ContainerReactor
@@ -150,6 +156,9 @@ impl ContainerReactor {
         let (watcher, change_processor) = setup_file_watcher(config.watch_config.clone())?;
 
         let (shutdown_sender, _) = broadcast::channel(8);
+        
+        // Create the toolchain for build operations
+        let toolchain = Some(Arc::new(crate::toolchain::ToolchainContext::default()));
 
         Ok(Self {
             config,
@@ -159,6 +168,7 @@ impl ContainerReactor {
             docker_client,
             build_processor: BuildProcessor::new(false),
             vault,
+            toolchain,
             running_services: Vec::new(),
             shutdown_sender,
             rebuild_in_progress: false,
@@ -166,6 +176,7 @@ impl ContainerReactor {
             component_specs: Vec::new(),
             secrets_encoder,
             output_director: None,
+            built_images: HashMap::new(),
         })
     }
 
@@ -374,16 +385,21 @@ impl ContainerReactor {
                     image_name_with_tag.clone()
                 }
                 _ => {
-                    // Create custom image name for components we build
-                    let image_name = if self.config.docker_registry.is_empty() {
-                        format!("{}-{}", self.config.product_name, component_name)
+                    // Check if we have a built image with git tag for this component
+                    if let Some(built_image) = self.built_images.get(component_name) {
+                        built_image.clone()
                     } else {
-                        format!("{}/{}-{}", 
-                            self.config.docker_registry, 
-                            self.config.product_name, 
-                            component_name)
-                    };
-                    format!("{}:{}", image_name, self.config.git_hash)
+                        // Fallback to default naming (this happens before build)
+                        let image_name = if self.config.docker_registry.is_empty() {
+                            format!("{}-{}", self.config.product_name, component_name)
+                        } else {
+                            format!("{}/{}-{}", 
+                                self.config.docker_registry, 
+                                self.config.product_name, 
+                                component_name)
+                        };
+                        format!("{}:{}", image_name, self.config.git_hash)
+                    }
                 }
             };
             
@@ -839,19 +855,24 @@ impl ContainerReactor {
             let target_platform = "linux/amd64"; // TODO: Should be configurable based on target
             let _docker_guard = crate::utils::DockerCrossCompileGuard::new(target_platform);
 
-            if let Err(e) = self
+            match self
                 .build_image(&image_name, image_tag, &context, &dockerfile)
                 .await
             {
-                error!("Failed to build image for {}: {}", component_name, e);
-                self.rebuild_in_progress = false;
-                return Err(e);
+                Ok(actual_image_name) => {
+                    // Store the actual built image name for use during launch
+                    self.built_images.insert(component_name.clone(), actual_image_name.clone());
+                    info!(
+                        "Successfully built/cached image for {}: {}",
+                        component_name, actual_image_name
+                    );
+                }
+                Err(e) => {
+                    error!("Failed to build image for {}: {}", component_name, e);
+                    self.rebuild_in_progress = false;
+                    return Err(e);
+                }
             }
-
-            info!(
-                "Successfully built image for {}: {}",
-                component_name, tagged_image_name
-            );
         }
 
         info!("All container images built successfully");
@@ -1818,10 +1839,15 @@ impl ContainerReactor {
         image_tag: &str,
         context_dir: &PathBuf,
         dockerfile: &PathBuf,
-    ) -> Result<()> {
-        info!("Building image {}", image_name);
+    ) -> Result<String> {
+        info!("Evaluating if image {} needs to be built", image_name);
 
-        let tag = format!("{}:{}", image_name, image_tag);
+        // Extract component name from the image name (format: product-component)
+        let component_name = if let Some(dash_pos) = image_name.rfind('-') {
+            &image_name[dash_pos + 1..]
+        } else {
+            image_name
+        };
 
         // Create an ImageBuilder with the right configuration
         // Set working directory to product directory
@@ -1829,7 +1855,7 @@ impl ContainerReactor {
         
         let service_config = DockerServiceConfig {
             name: image_name.to_string(),
-            image: tag.clone(),
+            image: format!("{}:{}", image_name, image_tag),
             network: self.config.network_name.clone(),
             env_vars: HashMap::new(),
             ports: Vec::new(),
@@ -1859,16 +1885,39 @@ impl ContainerReactor {
             mount_point: None,
         };
 
-        let image_builder = crate::container::ImageBuilder::new(
+        let mut image_builder = crate::container::ImageBuilder::new(
             service,
             self.docker_client.clone(),
-            image_name.to_string(),
+            component_name.to_string(),
             self.config.product_name.clone(),
         )
         .with_build_config(build_config);
+        
+        // Set up toolchain if available
+        if let Some(toolchain) = &self.toolchain {
+            image_builder = image_builder.with_toolchain(toolchain.clone());
+        }
 
+        // Evaluate if rebuild is needed based on cache
+        let needs_rebuild = match image_builder.evaluate_rebuild_needed().await {
+            Ok(needed) => needed,
+            Err(e) => {
+                warn!("Failed to evaluate cache status: {}, proceeding with build", e);
+                true
+            }
+        };
+
+        if !needs_rebuild {
+            info!("Image {} already exists in cache with clean git tag, skipping build", image_name);
+            return Ok(image_builder.tagged_image_name());
+        }
+
+        info!("Building image {} with git-based tag", image_name);
         // Build the image
-        image_builder.build().await
+        image_builder.build().await?;
+        
+        // Return the actual tagged image name that was built
+        Ok(image_builder.tagged_image_name())
     }
 }
 
