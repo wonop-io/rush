@@ -1036,35 +1036,41 @@ impl ContainerReactor {
             return false;
         }
 
-        debug!("Testing {} changed files for significance", changed_files.len());
+        info!("Testing {} changed files for significance", changed_files.len());
         for file in changed_files {
-            debug!("  - {}", file.display());
+            debug!("  Changed file: {}", file.display());
         }
 
-        let mut significant_change = false;
+        let mut affected_components = Vec::new();
 
         // Check each component to see if it's affected by the changes
-        debug!("Checking {} components", self.component_specs.len());
+        debug!("Checking {} components for changes", self.component_specs.len());
         for spec in &self.component_specs {
-            debug!("Checking component: {}", spec.component_name);
+            debug!("Evaluating component: {}", spec.component_name);
             
             // Skip redirected components (they're not built locally)
             if self.config.redirected_components.contains_key(&spec.component_name) {
-                debug!("  Skipping redirected component");
+                debug!("  Skipping redirected component: {}", spec.component_name);
                 continue;
             }
 
-            // Check if any changed file is in this component's context
+            // Check if any changed file is in this component's context or matches its watch patterns
             if self.is_any_file_in_component_context(&spec, changed_files) {
-                debug!("  ✓ Component '{}' was affected by file changes", spec.component_name);
-                significant_change = true;
+                info!("  ✓ Component '{}' is affected by file changes", spec.component_name);
+                affected_components.push(spec.component_name.clone());
             } else {
                 debug!("  ✗ Component '{}' not affected", spec.component_name);
             }
         }
 
-        debug!("Significant change result: {}", significant_change);
-        significant_change
+        if !affected_components.is_empty() {
+            info!("Rebuild triggered for components: {:?}", affected_components);
+            true
+        } else {
+            info!("No components affected by file changes - rebuild skipped");
+            info!("  (Check watch patterns in stack.spec.yaml or component context directories)");
+            false
+        }
     }
 
     /// Checks if any of the changed files affect a specific component
@@ -1080,23 +1086,32 @@ impl ContainerReactor {
     fn is_any_file_in_component_context(&self, spec: &ComponentBuildSpec, file_paths: &[PathBuf]) -> bool {
         debug!("    Checking context for component: {}", spec.component_name);
         
-        // Check if component has watch patterns defined
+        // First check if component has watch patterns defined
         if let Some(watch_matcher) = &spec.watch {
-            debug!("    Component has watch patterns");
-            for file in file_paths {
-                if watch_matcher.matches(file) {
-                    debug!("    File {} matches watch pattern", file.display());
-                    return true;
+            debug!("    Component has watch patterns defined");
+            let matched = file_paths.iter().any(|file| {
+                let matches = watch_matcher.matches(file);
+                if matches {
+                    debug!("      ✓ File {} matches watch pattern", file.display());
+                } else {
+                    debug!("      ✗ File {} does not match watch patterns", file.display());
                 }
-            }
-        } else {
-            debug!("    No watch patterns defined");
+                matches
+            });
+            
+            // When watch patterns are defined, ONLY rebuild if a file matches the patterns
+            debug!("    Watch pattern result: {}", matched);
+            return matched;
         }
+        
+        // If no watch patterns are defined, fall back to checking the context directory
+        debug!("    No watch patterns defined, checking context directory");
 
-        // Get the component's context directory
+        // Get the component's context directory based on build type
         let context_dir = match &spec.build_type {
             BuildType::TrunkWasm { context_dir, location, .. } => {
                 context_dir.clone().unwrap_or_else(|| {
+                    // For TrunkWasm, derive context from the parent directory of location
                     if let Some(parent) = std::path::Path::new(location).parent() {
                         parent.to_string_lossy().to_string()
                     } else {
@@ -1104,18 +1119,35 @@ impl ContainerReactor {
                     }
                 })
             }
-            BuildType::RustBinary { context_dir, .. }
-            | BuildType::DixiousWasm { context_dir, .. }
-            | BuildType::Script { context_dir, .. }
-            | BuildType::Zola { context_dir, .. }
-            | BuildType::Book { context_dir, .. }
-            | BuildType::Ingress { context_dir, .. } => {
+            BuildType::RustBinary { context_dir, location, .. } => {
+                // For RustBinary, use context_dir if specified, otherwise use location
+                context_dir.clone().unwrap_or_else(|| location.clone())
+            }
+            BuildType::DixiousWasm { context_dir, location, .. } => {
+                // For DixiousWasm, use context_dir if specified, otherwise use location  
+                context_dir.clone().unwrap_or_else(|| location.clone())
+            }
+            BuildType::Script { context_dir, location, .. } => {
+                // For Script, use context_dir if specified, otherwise use location
+                context_dir.clone().unwrap_or_else(|| location.clone())
+            }
+            BuildType::Zola { context_dir, location, .. } => {
+                // For Zola, use context_dir if specified, otherwise use location
+                context_dir.clone().unwrap_or_else(|| location.clone())
+            }
+            BuildType::Book { context_dir, location, .. } => {
+                // For Book, use context_dir if specified, otherwise use location
+                context_dir.clone().unwrap_or_else(|| location.clone())
+            }
+            BuildType::Ingress { context_dir, .. } => {
+                // For Ingress, use context_dir if specified, otherwise current directory
                 context_dir.clone().unwrap_or_else(|| ".".to_string())
             }
             BuildType::PureDockerImage { .. } 
             | BuildType::PureKubernetes
             | BuildType::KubernetesInstallation { .. } => {
                 // These types don't have a build context for file watching
+                debug!("    Build type doesn't support file watching");
                 return false;
             }
         };
@@ -1125,7 +1157,7 @@ impl ContainerReactor {
         debug!("    Context directory: {}", context_path.display());
         
         let result = file_paths.iter().any(|file_path| {
-            debug!("    Checking if {} is in context", file_path.display());
+            debug!("      Checking if {} is in context {}", file_path.display(), context_path.display());
             
             // Try to get absolute paths for comparison
             if let (Ok(abs_file), Ok(abs_context)) = (
@@ -1133,19 +1165,19 @@ impl ContainerReactor {
                 std::fs::canonicalize(&context_path)
             ) {
                 let is_match = abs_file.starts_with(&abs_context);
-                debug!("      Absolute comparison: {} starts_with {} = {}", 
+                debug!("        Absolute comparison: {} starts_with {} = {}", 
                      abs_file.display(), abs_context.display(), is_match);
                 is_match
             } else {
                 // Fallback to simple path comparison
                 let is_match = file_path.starts_with(&context_path);
-                debug!("      Simple comparison: {} starts_with {} = {}", 
+                debug!("        Simple comparison: {} starts_with {} = {}", 
                      file_path.display(), context_path.display(), is_match);
                 is_match
             }
         });
         
-        debug!("    Component context check result: {}", result);
+        debug!("    Context directory check result: {}", result);
         result
     }
 
