@@ -388,6 +388,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // This test requires git to be installed and available
     fn test_get_git_wip() {
         // Create a temporary directory for git testing
         let temp_dir = TempDir::new().unwrap();

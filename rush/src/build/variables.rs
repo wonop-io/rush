@@ -161,6 +161,7 @@ mod tests {
         writeln!(file, "  TEST_VAR: \"prod_value\"").unwrap();
         writeln!(file, "local:").unwrap();
         writeln!(file, "  TEST_VAR: \"local_value\"").unwrap();
+        file.flush().unwrap();
 
         // Test loading for different environments
         let dev_vars = Variables::new(file.path(), "dev");
@@ -220,6 +221,10 @@ mod tests {
         writeln!(file, "dev:").unwrap();
         writeln!(file, "  VAR1: \"value1\"").unwrap();
         writeln!(file, "  VAR2: \"value2\"").unwrap();
+        writeln!(file, "staging: {{}}").unwrap();
+        writeln!(file, "prod: {{}}").unwrap();
+        writeln!(file, "local: {{}}").unwrap();
+        file.flush().unwrap();
 
         // Test getting all variables
         let vars = Variables::new(file.path(), "dev");

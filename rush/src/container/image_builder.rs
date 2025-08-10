@@ -402,6 +402,8 @@ impl ImageBuilder {
     }
 }
 
+/// Converts old DockerImage-style code to use ImageBuilder
+///
 /// # Migration Guide
 ///
 /// If you were previously using `DockerImage`, you should now use `ImageBuilder`
@@ -409,15 +411,15 @@ impl ImageBuilder {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// // Old code:
 /// let image = DockerImage::from_docker_spec(spec.clone())?;
 /// image.set_toolchain(toolchain.clone());
 ///
 /// // New code:
-/// let image = ImageBuilder::from_build_spec(spec.clone(), docker_client.clone())?
-///     .with_toolchain(toolchain.clone());
-/// Converts old DockerImage-style code to use ImageBuilder
+/// let image = ImageBuilder::from_build_spec(spec.clone(), docker_client.clone())?;
+/// // Note: toolchain is now set internally by ImageBuilder
+/// ```
 pub fn convert_to_new_architecture(
     component_specs: Vec<Arc<Mutex<ComponentBuildSpec>>>,
     docker_client: Arc<dyn DockerClient>,

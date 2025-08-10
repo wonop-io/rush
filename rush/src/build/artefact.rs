@@ -175,9 +175,10 @@ mod tests {
         let mut temp_file = NamedTempFile::new().unwrap();
         write!(
             temp_file,
-            "Hello {{ component }}! Environment: {{ environment }}"
+            "Hello {{{{ component }}}}! Environment: {{{{ environment }}}}"
         )
         .unwrap();
+        temp_file.flush().unwrap();
 
         let artefact = Artefact::new(
             temp_file.path().to_string_lossy().to_string(),
@@ -193,7 +194,8 @@ mod tests {
     #[test]
     fn test_artefact_render_with_env_vars() {
         let mut temp_file = NamedTempFile::new().unwrap();
-        write!(temp_file, "Environment variable: {{ env.TEST_VAR }}").unwrap();
+        write!(temp_file, "Environment variable: {{{{ env.TEST_VAR }}}}").unwrap();
+        temp_file.flush().unwrap();
 
         let artefact = Artefact::new(
             temp_file.path().to_string_lossy().to_string(),
