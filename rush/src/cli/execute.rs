@@ -1,6 +1,7 @@
 use crate::cli::commands;
 use crate::cli::context::CliContext;
 use crate::error::Result;
+use crate::output::{OutputDirectorConfig, OutputDirectorFactory};
 use clap::ArgMatches;
 use log::{error, trace};
 use std::process;
@@ -36,8 +37,33 @@ pub async fn execute_command(
     } else if let Some(secrets_matches) = matches.subcommand_matches("secrets") {
         trace!("Executing secrets command");
         commands::secrets::execute(secrets_matches, ctx).await
-    } else if matches.subcommand_matches("dev").is_some() {
+    } else if let Some(dev_matches) = matches.subcommand_matches("dev") {
         trace!("Executing dev command");
+        
+        // Parse output director configuration from command line arguments
+        let output_config = OutputDirectorFactory::parse_from_args(
+            dev_matches.get_one::<String>("output").map(|s| s.as_str()),
+            dev_matches.get_one::<String>("output-dir").map(|s| s.as_str()),
+            dev_matches.get_flag("no-color"),
+            dev_matches.get_flag("no-timestamps"),
+            dev_matches.get_flag("no-source-names"),
+            dev_matches.get_flag("no-buffering"),
+        );
+
+        // Create output director
+        let output_director = OutputDirectorFactory::create(output_config.clone()).await
+            .map_err(|e| {
+                error!("Failed to create output director: {}", e);
+                e
+            })?;
+
+        // Debug: Log the output configuration
+        eprintln!("DEBUG: Output configuration: {:?}", output_config);
+        eprintln!("DEBUG: Setting output director on reactor");
+
+        // Set the output director on the reactor
+        ctx.reactor.set_output_director(output_director);
+
         match ctx.reactor.launch().await {
             Ok(_) => {
                 trace!("Development environment launched successfully");

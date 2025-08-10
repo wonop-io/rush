@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn test_image_builder_creation() {
-        let mock_client = Arc::new(MockDockerClient::new());
+        let mock_client = Arc::new(crate::container::docker::DockerCliClient::new("docker".to_string()));
         let config = DockerServiceConfig {
             name: "test".to_string(),
             image: "test:latest".to_string(),
@@ -454,9 +454,10 @@ mod tests {
             working_dir: None,
         };
 
-        let service = DockerService::new("test-id".to_string(), config, mock_client);
+        let service = DockerService::new("test-id".to_string(), config, mock_client.clone());
         let builder = ImageBuilder::new(
             service,
+            mock_client,
             "test-component".to_string(),
             "test-product".to_string(),
         );

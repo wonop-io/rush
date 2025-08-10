@@ -139,7 +139,7 @@ mod tests {
         std::env::set_var("INFRASTRUCTURE_REPOSITORY", "git@github.com:test/repo.git");
 
         // Create a valid config
-        let config = Config::new(root_path, "test-product", "dev", "test-registry", 8080);
+        let config = Config::new(root_path, "test-product", "dev", "test-registry", 8080).unwrap();
 
         // Validation should pass
         let result = validate_config(&config);
@@ -162,7 +162,7 @@ mod tests {
         std::env::set_var("INFRASTRUCTURE_REPOSITORY", "git@github.com:test/repo.git");
 
         // Create a config with invalid environment
-        let config = Config::new(root_path, "test-product", "invalid", "test-registry", 8080);
+        let config = Config::new(root_path, "test-product", "invalid", "test-registry", 8080).unwrap();
 
         // Validation should fail
         let result = validate_config(&config);

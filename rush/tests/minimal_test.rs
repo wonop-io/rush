@@ -2,9 +2,10 @@
 mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
+    use std::path::PathBuf;
     
-    use rush_cli::builder::Config;
-    use rush_cli::builder::Variables;
+    use rush_cli::core::Config;
+    use rush_cli::build::Variables;
     
     #[test]
     fn test_minimal_config() {
@@ -13,7 +14,7 @@ mod tests {
             product_name: "test-product".to_string(),
             product_uri: "test.app".to_string(),
             product_dirname: "test_app".to_string(),
-            product_path: "/tmp/test_product".to_string(),
+            product_path: PathBuf::from("/tmp/test_product"),
             network_name: "test-network".to_string(),
             environment: "dev".to_string(),
             domain_template: "{{subdomain}}.{{product_uri}}".to_string(),

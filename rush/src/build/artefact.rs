@@ -127,6 +127,7 @@ mod tests {
     use super::*;
     use crate::build::build_type::BuildType;
     use crate::core::types::ResourceRequirements;
+    use std::sync::Arc;
     use crate::toolchain::Platform;
     use std::collections::HashMap;
     use std::io::Write;
@@ -151,7 +152,10 @@ mod tests {
             target: Platform::new("linux", "x86_64"),
             host: Platform::new("linux", "x86_64"),
             rust_target: "x86_64-unknown-linux-gnu".to_string(),
-            toolchain: Default::default(),
+            toolchain: crate::toolchain::ToolchainContext::new(
+                Platform::new("linux", "x86_64"),
+                Platform::new("linux", "x86_64")
+            ),
             services: HashMap::new(),
             environment: "dev".to_string(),
             domain: "test.example.com".to_string(),

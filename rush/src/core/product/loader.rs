@@ -155,16 +155,14 @@ component2:
         fs::create_dir_all(product_path.join("src/component2")).unwrap();
 
         // Create a mock config
-        let config = Arc::new(
-            Config::new(
-                product_path.to_str().unwrap(),
-                "test-product",
-                "dev",
-                "test-registry",
-                8080,
-            )
-            .unwrap(),
-        );
+        let config = Config::new(
+            product_path.to_str().unwrap(),
+            "test-product",
+            "dev",
+            "test-registry",
+            8080,
+        )
+        .unwrap();
 
         // Use the ProductLoader
         let loader = ProductLoader::new(product_path);
@@ -189,16 +187,14 @@ component2:
         let temp_dir = TempDir::new().unwrap();
         let product_path = temp_dir.path();
 
-        let config = Arc::new(
-            Config::new(
-                product_path.to_str().unwrap(),
-                "test-product",
-                "dev",
-                "test-registry",
-                8080,
-            )
-            .unwrap(),
-        );
+        let config = Config::new(
+            product_path.to_str().unwrap(),
+            "test-product",
+            "dev",
+            "test-registry",
+            8080,
+        )
+        .unwrap();
 
         let loader = ProductLoader::new(product_path);
         let result = loader.load_product(config);

@@ -68,6 +68,9 @@ pub struct ContainerReactor {
 
     /// Secrets encoder
     secrets_encoder: Arc<dyn SecretsEncoder>,
+    
+    /// Output director for handling container logs
+    output_director: Option<crate::output::SharedOutputDirector>,
 }
 
 /// Configuration for the ContainerReactor
@@ -118,6 +121,12 @@ enum WaitResult {
 }
 
 impl ContainerReactor {
+    /// Sets the output director for handling container logs
+    pub fn set_output_director(&mut self, director: Box<dyn crate::output::OutputDirector>) {
+        eprintln!("DEBUG: ContainerReactor::set_output_director called");
+        self.output_director = Some(crate::output::SharedOutputDirector::new(director));
+        eprintln!("DEBUG: Output director has been set");
+    }
     /// Creates a new ContainerReactor
     ///
     /// # Arguments
@@ -155,6 +164,7 @@ impl ContainerReactor {
             available_components: Vec::new(),
             component_specs: Vec::new(),
             secrets_encoder,
+            output_director: None,
         })
     }
 
@@ -886,21 +896,42 @@ impl ContainerReactor {
             // Create service object
             let service = DockerService::new(container_id.clone(), config.clone(), self.docker_client.clone());
 
-            // Start following logs for this container with formatted output
+            // Start following logs for this container
             let docker_client = self.docker_client.clone();
             let container_name = config.name.clone();
             let color = self.get_color_for_component(&container_name);
             
-            tokio::spawn(async move {
-                // Follow the logs with formatted output
-                if let Err(e) = docker_client.follow_container_logs(
-                    &container_id, 
-                    container_name.clone(), 
-                    color
-                ).await {
-                    error!("Error following logs for {}: {}", container_name, e);
-                }
-            });
+            // Use output director if available, otherwise use standard output
+            if let Some(ref output_director) = self.output_director {
+                eprintln!("DEBUG: Using output director for container {}", container_name);
+                let director = output_director.clone();
+                let source = crate::output::OutputSource::with_color(&container_name, "container", color);
+                
+                tokio::spawn(async move {
+                    eprintln!("DEBUG: Starting log follower for {}", container_name);
+                    // Create a simple log follower that uses the shared director
+                    if let Err(e) = follow_container_logs_with_shared_director(
+                        docker_client,
+                        &container_id,
+                        source,
+                        director
+                    ).await {
+                        error!("Error following logs for {}: {}", container_name, e);
+                    }
+                });
+            } else {
+                eprintln!("DEBUG: No output director, using standard output for {}", container_name);
+                // Fall back to standard output
+                tokio::spawn(async move {
+                    if let Err(e) = docker_client.follow_container_logs(
+                        &container_id, 
+                        container_name.clone(), 
+                        color
+                    ).await {
+                        error!("Error following logs for {}: {}", container_name, e);
+                    }
+                });
+            }
 
             self.running_services.push(service);
         }
@@ -1753,4 +1784,125 @@ fn get_git_folder_hash(subdirectory_path: &str) -> Result<String> {
     }
 
     Ok(hash)
+}
+
+/// Helper function to follow container logs with a shared output director
+async fn follow_container_logs_with_shared_director(
+    _docker_client: Arc<dyn DockerClient>,
+    container_id: &str,
+    source: crate::output::OutputSource,
+    director: crate::output::SharedOutputDirector,
+) -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    
+    eprintln!("DEBUG: Starting docker logs command for container {}", container_id);
+    
+    // Use docker logs command to follow the container logs
+    let mut child = Command::new("docker")
+        .args(["logs", "-f", "--tail", "100", container_id])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| Error::Docker(format!("Failed to follow container logs: {}", e)))?;
+    
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    
+    let mut handles = vec![];
+    
+    // Handle stdout
+    if let Some(stdout) = stdout {
+        let source_clone = source.clone();
+        let director_clone = director.clone();
+        let handle = tokio::spawn(async move {
+            eprintln!("DEBUG: Starting stdout reader for container");
+            let mut reader = BufReader::new(stdout);
+            let mut line = String::new();
+            let mut line_count = 0;
+            
+            loop {
+                line.clear();
+                match reader.read_line(&mut line).await {
+                    Ok(0) => {
+                        eprintln!("DEBUG: EOF reached on stdout after {} lines", line_count);
+                        break;  // EOF
+                    }
+                    Ok(_) => {
+                        line_count += 1;
+                        if line_count <= 5 {
+                            eprintln!("DEBUG: stdout line {}: {}", line_count, line.trim());
+                        }
+                        let output_data = line.as_bytes().to_vec();
+                        let stream = crate::output::OutputStream::stdout(output_data);
+                        if let Err(e) = director_clone.write_output(&source_clone, &stream).await {
+                            error!("Failed to write stdout output: {}", e);
+                            break;
+                        }
+                        // Flush periodically
+                        if line_count % 10 == 0 {
+                            let _ = director_clone.flush().await;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Error reading stdout: {}", e);
+                        break;
+                    }
+                }
+            }
+            eprintln!("DEBUG: stdout reader finished with {} lines", line_count);
+        });
+        handles.push(handle);
+    }
+    
+    // Handle stderr
+    if let Some(stderr) = stderr {
+        let source_clone = source.clone();
+        let director_clone = director.clone();
+        let handle = tokio::spawn(async move {
+            eprintln!("DEBUG: Starting stderr reader for container");
+            let mut reader = BufReader::new(stderr);
+            let mut line = String::new();
+            let mut line_count = 0;
+            
+            loop {
+                line.clear();
+                match reader.read_line(&mut line).await {
+                    Ok(0) => {
+                        eprintln!("DEBUG: EOF reached on stderr after {} lines", line_count);
+                        break;  // EOF
+                    }
+                    Ok(_) => {
+                        line_count += 1;
+                        if line_count <= 5 {
+                            eprintln!("DEBUG: stderr line {}: {}", line_count, line.trim());
+                        }
+                        let output_data = line.as_bytes().to_vec();
+                        let stream = crate::output::OutputStream::stderr(output_data);
+                        if let Err(e) = director_clone.write_output(&source_clone, &stream).await {
+                            error!("Failed to write stderr output: {}", e);
+                            break;
+                        }
+                        // Flush periodically
+                        if line_count % 10 == 0 {
+                            let _ = director_clone.flush().await;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Error reading stderr: {}", e);
+                        break;
+                    }
+                }
+            }
+            eprintln!("DEBUG: stderr reader finished with {} lines", line_count);
+        });
+        handles.push(handle);
+    }
+    
+    // This function should run indefinitely following logs
+    // The spawned tasks will continue running
+    // We don't wait for them to complete since logs should stream continuously
+    
+    eprintln!("DEBUG: Log following tasks spawned for container {}", container_id);
+    
+    Ok(())
 }

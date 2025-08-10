@@ -123,8 +123,8 @@ mod tests {
         }
 
         // Check that environment was restored
-        if let Some(val) = orig_opts {
-            assert_eq!(env::var("CROSS_CONTAINER_OPTS").unwrap(), val);
+        if let Some(ref val) = orig_opts {
+            assert_eq!(env::var("CROSS_CONTAINER_OPTS").unwrap(), *val);
         } else {
             assert!(env::var("CROSS_CONTAINER_OPTS").is_err());
         }

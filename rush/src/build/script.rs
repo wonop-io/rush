@@ -100,7 +100,7 @@ mod tests {
     use super::*;
     use crate::build::build_type::BuildType;
     use crate::build::context::BuildContext;
-    use crate::toolchain::platform::Platform;
+    use crate::toolchain::Platform;
     use crate::toolchain::ToolchainContext;
     use std::collections::HashMap;
 
