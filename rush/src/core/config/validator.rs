@@ -136,8 +136,7 @@ mod tests {
         std::fs::create_dir(&product_dir).unwrap();
         
         // Change to the temp directory so Config::new can find the products dir
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&temp_dir).unwrap();
+        let _dir_guard = crate::utils::Directory::chpath(&temp_dir);
 
         // Set required environment variables for the test
         std::env::set_var("DEV_CTX", "test-context");
@@ -151,8 +150,7 @@ mod tests {
         // Create a valid config
         let config = Config::new(root_path, "test-product", "dev", "test-registry", 8080).unwrap();
         
-        // Restore original directory
-        std::env::set_current_dir(original_dir).unwrap();
+        // Directory is automatically restored when _dir_guard is dropped
 
         // Validation should pass
         let result = validate_config(&config);
@@ -172,8 +170,7 @@ mod tests {
         std::fs::create_dir(&product_dir).unwrap();
         
         // Change to the temp directory so Config::new can find the products dir
-        let _original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&temp_dir).unwrap();
+        let _dir_guard = crate::utils::Directory::chpath(&temp_dir);
 
         // Set required environment variables
         std::env::set_var("INVALID_CTX", "test-context");

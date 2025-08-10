@@ -230,7 +230,11 @@ impl ImageBuilder {
                     context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
             },
-            BuildType::Ingress { context_dir, .. } => context_dir.clone().unwrap_or_else(|| ".".to_string()),
+            BuildType::Ingress { context_dir, .. } => {
+                // For Ingress build type, just use the context_dir as-is
+                // since it's already defined in the YAML relative to the product directory
+                context_dir.clone().unwrap_or_else(|| ".".to_string())
+            },
             _ => {
                 // Fall back to build_config's context_dir if available
                 self.build_config.context_dir.clone().unwrap_or_else(|| ".".to_string())
@@ -430,7 +434,7 @@ impl ImageBuilder {
         
         // Use the docker client to build the image
         self.docker_client
-            .build_image(&image_tag, dockerfile_path, context_path)
+            .build_image(&image_tag, dockerfile_path, &context_path)
             .await?;
         
         info!("Successfully built Docker image: {}", image_tag);

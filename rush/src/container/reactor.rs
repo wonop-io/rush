@@ -657,7 +657,9 @@ impl ContainerReactor {
                         msg.contains("Dockerfile or build context not found") ||
                         msg.contains("Permission denied") ||
                         msg.contains("No space left on device") ||
-                        msg.contains("Docker build failed")
+                        msg.contains("Docker build failed") ||
+                        msg.contains("No such file or directory") ||
+                        msg.contains("Failed to execute docker build")
                     }
                     _ => false,
                 };
@@ -1894,22 +1896,15 @@ impl ContainerReactor {
         fs::set_permissions(&script_path, permissions)
             .map_err(|e| Error::Build(format!("Failed to set script permissions: {}", e)))?;
         
-        // Change to build directory and execute the script
-        let original_dir = env::current_dir()
-            .map_err(|e| Error::Build(format!("Failed to get current directory: {}", e)))?;
-        
-        env::set_current_dir(&build_dir)
-            .map_err(|e| Error::Build(format!("Failed to change to build directory: {}", e)))?;
-        
-        // Execute the script
-        let output = run_command(
-            "Build script",
-            "bash",
-            vec!["./build_script.sh"],
-        ).await;
-        
-        // Change back to original directory
-        let _ = env::set_current_dir(original_dir);
+        // Use Directory guard to change to build directory and execute the script
+        let output = {
+            let _dir_guard = crate::utils::Directory::chpath(&build_dir);
+            run_command(
+                "Build script",
+                "bash",
+                vec!["./build_script.sh"],
+            ).await
+        };
         
         // Clean up the script file
         let _ = fs::remove_file(&script_path);

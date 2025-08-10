@@ -234,12 +234,14 @@ impl DockerClient for DockerCliClient {
         let dockerfile_arg = dockerfile_relative.to_string_lossy();
         
         info!("Docker build: Running from directory '{}'", context);
-        info!("Docker build command: cd {} && docker build --tag {} --file {} .", 
-              context, tag, dockerfile_arg);
+        info!("Docker build command: docker build --tag {} --file {} .", 
+              tag, dockerfile_arg);
 
+        // Use the Directory guard to change to the build context directory
+        let _dir_guard = crate::utils::Directory::chdir(context);
+        
         let output = Command::new(&self.docker_path)
             .args(["build", "--tag", tag, "--file", &dockerfile_arg.to_string(), "."])
-            .current_dir(context)  // Set the working directory to the context
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()

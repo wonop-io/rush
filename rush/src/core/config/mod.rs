@@ -32,8 +32,7 @@ mod tests {
         std::fs::create_dir(&product_dir).unwrap();
         
         // Change to the temp directory so Config::new can find the products dir
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&temp_dir).unwrap();
+        let _dir_guard = crate::utils::Directory::chpath(&temp_dir);
 
         // Set required environment variables for testing
         std::env::set_var("DEV_CTX", "test-context");
@@ -52,8 +51,7 @@ mod tests {
             .load_config("test-product", "dev", "test-registry.io", 8080)
             .expect("Failed to load configuration");
         
-        // Restore original directory
-        std::env::set_current_dir(original_dir).unwrap();
+        // Directory is automatically restored when _dir_guard is dropped
 
         // Validate the configuration
         assert_eq!(config.product_name(), "test-product");
