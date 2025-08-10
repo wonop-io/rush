@@ -806,12 +806,15 @@ impl ContainerReactor {
             };
 
             // Get context directory
+            // If no context_dir is specified, use the parent directory of the Dockerfile
             let context_dir = match &spec.build_type {
                 BuildType::TrunkWasm { context_dir, location, .. } => {
                     context_dir.clone().unwrap_or_else(|| {
-                        // For TrunkWasm, derive context from the parent directory of location
-                        // e.g., if location is "frontend/webui", context should be "frontend"
-                        if let Some(parent) = std::path::Path::new(location).parent() {
+                        // If no context specified, use parent of Dockerfile location
+                        if let Some(parent) = std::path::Path::new(dockerfile_path).parent() {
+                            parent.to_string_lossy().to_string()
+                        } else if let Some(parent) = std::path::Path::new(location).parent() {
+                            // Fallback: derive context from the parent directory of location
                             parent.to_string_lossy().to_string()
                         } else {
                             ".".to_string()
@@ -824,10 +827,20 @@ impl ContainerReactor {
                 | BuildType::Zola { context_dir, .. }
                 | BuildType::Book { context_dir, .. }
                 | BuildType::Ingress { context_dir, .. } => {
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
+                    context_dir.clone().unwrap_or_else(|| {
+                        // If no context specified, use parent directory of Dockerfile
+                        if let Some(parent) = std::path::Path::new(dockerfile_path).parent() {
+                            parent.to_string_lossy().to_string()
+                        } else {
+                            ".".to_string()
+                        }
+                    })
                 }
                 _ => continue,
             };
+            
+            debug!("Component: {}, Dockerfile: {}, Context dir: {}", 
+                   component_name, dockerfile_path, context_dir);
 
             // Create image name and tag
             let image_name = if self.config.docker_registry.is_empty() {
@@ -900,6 +913,9 @@ impl ContainerReactor {
             } else {
                 self.config.product_dir.join(&context_dir)
             };
+            
+            info!("Build paths for {}: Dockerfile={}, Context={}", 
+                  component_name, dockerfile.display(), context.display());
 
             // Set up Docker cross-compilation environment
             let target_platform = "linux/amd64"; // TODO: Should be configurable based on target

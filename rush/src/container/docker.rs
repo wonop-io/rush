@@ -210,11 +210,36 @@ impl DockerClient for DockerCliClient {
     }
 
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
+        use std::path::{Path, PathBuf};
+        
         trace!("Building Docker image: {}", tag);
-        info!("Docker build command: docker build --tag {} --file {} {}", tag, dockerfile, context);
+        
+        // Convert paths to PathBuf for manipulation
+        let context_path = Path::new(context);
+        let dockerfile_path = Path::new(dockerfile);
+        
+        // Calculate relative path from context to Dockerfile
+        let dockerfile_relative = if dockerfile_path.is_absolute() && context_path.is_absolute() {
+            // Try to make dockerfile relative to context
+            dockerfile_path.strip_prefix(context_path)
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|_| {
+                    // If not a child of context, use absolute path
+                    dockerfile_path.to_path_buf()
+                })
+        } else {
+            dockerfile_path.to_path_buf()
+        };
+        
+        let dockerfile_arg = dockerfile_relative.to_string_lossy();
+        
+        info!("Docker build: Running from directory '{}'", context);
+        info!("Docker build command: cd {} && docker build --tag {} --file {} .", 
+              context, tag, dockerfile_arg);
 
         let output = Command::new(&self.docker_path)
-            .args(["build", "--tag", tag, "--file", dockerfile, context])
+            .args(["build", "--tag", tag, "--file", &dockerfile_arg.to_string(), "."])
+            .current_dir(context)  // Set the working directory to the context
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -227,8 +252,9 @@ impl DockerClient for DockerCliClient {
             
             error!("\n=== Docker Build Failed ===");
             error!("Image tag: {}", tag);
-            error!("Dockerfile: {}", dockerfile);
-            error!("Context: {}", context);
+            error!("Working directory: {}", context);
+            error!("Dockerfile (relative): {}", dockerfile_arg);
+            error!("Dockerfile (absolute): {}", dockerfile);
             error!("Exit code: {:?}", output.status.code());
             
             if !stdout.is_empty() {
@@ -250,7 +276,8 @@ impl DockerClient for DockerCliClient {
             error!("2. Verify the build context directory: {}", context);
             error!("3. Ensure Docker daemon is running: docker ps");
             error!("4. Check Docker disk space: docker system df");
-            error!("5. Try building manually: docker build --tag {} --file {} {}", tag, dockerfile, context);
+            error!("5. Try building manually: cd {} && docker build --tag {} --file {} .", 
+                   context, tag, dockerfile_arg);
             
             // Create a more informative error message
             let error_summary = if stderr.contains("no such file or directory") {
