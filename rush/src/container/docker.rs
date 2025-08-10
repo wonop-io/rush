@@ -4,6 +4,7 @@
 //! manage, and monitor containers.
 
 use crate::error::{Error, Result};
+use crate::output::{OutputDirector, OutputSource, OutputStream, OutputStreamType};
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::fmt;
@@ -58,6 +59,7 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
 
     /// Follows the logs from a container with formatted output
     async fn follow_container_logs(&self, container_id: &str, label: String, color: &str) -> Result<()>;
+
 
     /// Sends a signal to a container
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()>;
@@ -546,6 +548,110 @@ impl DockerClient for DockerCliClient {
             "Successfully sent signal {} to Docker container: {}",
             signal, container_id
         );
+        Ok(())
+    }
+}
+
+impl DockerCliClient {
+    /// Follows the logs from a container using an OutputDirector (specific to DockerCliClient)
+    pub async fn follow_logs_with_director<T: OutputDirector>(
+        &self,
+        container_id: &str,
+        source: OutputSource,
+        director: &mut T,
+    ) -> Result<()> {
+        trace!("Following logs for Docker container with director: {}", container_id);
+
+        // Use docker logs -f to follow the container logs
+        let mut child = Command::new(&self.docker_path)
+            .args(["logs", "-f", "--tail", "10", container_id])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| Error::Docker(format!("Failed to follow container logs: {}", e)))?;
+
+        // Get the streams
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Create channels to communicate with the director
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(OutputSource, OutputStream)>(100);
+
+        // Handle stdout
+        if let Some(stdout) = stdout {
+            let source_clone = source.clone();
+            let tx_stdout = tx.clone();
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut reader = BufReader::new(stdout);
+                let mut line = String::new();
+                
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break,  // EOF
+                        Ok(_) => {
+                            let output_data = line.as_bytes().to_vec();
+                            let stream = OutputStream::stdout(output_data);
+                            if let Err(_) = tx_stdout.send((source_clone.clone(), stream)).await {
+                                break; // Receiver dropped
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error reading stdout: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Handle stderr
+        if let Some(stderr) = stderr {
+            let source_clone = source.clone();
+            let tx_stderr = tx.clone();
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break,  // EOF
+                        Ok(_) => {
+                            let output_data = line.as_bytes().to_vec();
+                            let stream = OutputStream::stderr(output_data);
+                            if let Err(_) = tx_stderr.send((source_clone.clone(), stream)).await {
+                                break; // Receiver dropped
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error reading stderr: {}", e);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Drop the original sender so the receiver will eventually close
+        drop(tx);
+
+        // Process messages from the streams and send them to the director
+        while let Some((msg_source, stream)) = rx.recv().await {
+            if let Err(e) = director.write_output(&msg_source, &stream).await {
+                error!("Error writing to output director: {}", e);
+                break;
+            }
+        }
+
+        // Wait for child process to complete
+        let _ = child.wait().await;
+        
+        // Flush any remaining output
+        director.flush().await?;
+        
         Ok(())
     }
 }
