@@ -38,8 +38,9 @@ pub fn first_which(candidates: Vec<&str>) -> Option<String> {
 
 /// Locates an executable in PATH
 pub fn which(tool: &str) -> Option<String> {
+    let home_var = crate::constants::HOME_VAR;
     let expanded_tool = if tool.starts_with("$HOME/") || tool.starts_with("~/") {
-        let home = std::env::var("HOME").ok()?;
+        let home = std::env::var(home_var).ok()?;
         let path = if tool.starts_with("$HOME/") {
             tool.replacen("$HOME/", &format!("{}/", home), 1)
         } else {

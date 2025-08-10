@@ -1,3 +1,4 @@
+use crate::constants::*;
 use log::{debug, error, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -45,11 +46,10 @@ impl ConfigLoader {
         );
 
         // Validate environment
-        let valid_environments = ["local", "dev", "prod", "staging"];
-        if !valid_environments.contains(&environment) {
+        if !VALID_ENVIRONMENTS.contains(&environment) {
             let err_msg = format!("Invalid environment: {}", environment);
             error!("{}", err_msg);
-            error!("Valid environments: {:?}", valid_environments);
+            error!("Valid environments: {:?}", VALID_ENVIRONMENTS);
             return Err(err_msg);
         }
 
@@ -67,7 +67,7 @@ impl ConfigLoader {
 
     /// Loads the rushd.yaml configuration file
     pub fn load_rushd_config(&self) -> Result<RushdConfig, String> {
-        let config_path = self.root_path.join("rushd.yaml");
+        let config_path = self.root_path.join(RUSHD_CONFIG_FILE);
         trace!("Loading rushd config from: {}", config_path.display());
 
         let content = read_to_string(&config_path)

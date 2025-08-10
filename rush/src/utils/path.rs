@@ -1,3 +1,4 @@
+use crate::constants::*;
 use std::env;
 use std::path::{Path, PathBuf};
 
@@ -141,10 +142,10 @@ where
 /// The project root directory, or None if not found
 pub fn find_project_root<P: AsRef<Path>>(start_path: P) -> Option<PathBuf> {
     find_dir_recursively(start_path, |path| {
-        path.join(".git").exists()
-            || path.join("Cargo.toml").exists()
-            || path.join("package.json").exists()
-            || path.join("rush.yaml").exists()
+        path.join(GIT_DIR).exists()
+            || path.join(CARGO_TOML_FILE).exists()
+            || path.join(PACKAGE_JSON_FILE).exists()
+            || path.join(RUSH_CONFIG_FILE).exists()
     })
 }
 

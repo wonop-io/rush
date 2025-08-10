@@ -1,3 +1,4 @@
+use crate::constants::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,7 +27,7 @@ impl ProductLoader {
     pub fn load_product(&self, config: Arc<Config>) -> Result<Product, String> {
         trace!("Loading product from {}", self.product_path.display());
 
-        let stack_spec_path = self.product_path.join("stack.spec.yaml");
+        let stack_spec_path = self.product_path.join(STACK_SPEC_FILE);
         if !stack_spec_path.exists() {
             let err_msg = format!(
                 "Stack specification file not found at {}",
@@ -101,14 +102,14 @@ impl ProductLoader {
                             .to_str()
                             .unwrap()
                             .to_string(),
-                        build_type: "RustBinary".to_string(),
+                        build_type: BUILD_TYPE_RUST_BINARY.to_string(),
                         dockerfile_path: None,
                         port: None,
                         target_port: None,
                         depends_on: Vec::new(),
                         env: None,
                         k8s_path: None,
-                        priority: 100,
+                        priority: DEFAULT_COMPONENT_PRIORITY,
                     };
 
                     components.insert(name.to_string(), component);
@@ -147,7 +148,7 @@ component2:
   build_type: "TrunkWasm"
 "#;
 
-        let spec_path = product_path.join("stack.spec.yaml");
+        let spec_path = product_path.join(STACK_SPEC_FILE);
         let mut file = File::create(&spec_path).unwrap();
         file.write_all(spec_content.as_bytes()).unwrap();
 

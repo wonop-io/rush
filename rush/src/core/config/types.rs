@@ -1,3 +1,4 @@
+use crate::constants::*;
 use log::trace;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -68,7 +69,7 @@ impl Config {
     }
 
     pub fn output_path(&self) -> PathBuf {
-        self.product_path.join("target")
+        self.product_path.join(TARGET_DIR)
     }
 
     pub fn network_name(&self) -> &str {
@@ -131,7 +132,7 @@ impl Config {
         let environment = environment.to_string();
         let docker_registry = docker_registry.to_string();
 
-        let valid_environments = ["local", "dev", "prod", "staging"]
+        let valid_environments = VALID_ENVIRONMENTS
             .iter()
             .map(|e| e.to_string())
             .collect::<Vec<_>>();
@@ -144,81 +145,81 @@ impl Config {
         }
 
         let kube_context = match environment.as_str() {
-            "dev" => std::env::var("DEV_CTX").expect("DEV_CTX environment variable not found"),
-            "prod" => std::env::var("PROD_CTX").expect("PROD_CTX environment variable not found"),
-            "staging" => {
-                std::env::var("STAGING_CTX").expect("STAGING_CTX environment variable not found")
+            ENV_DEV => std::env::var(DEV_CTX_VAR).expect("DEV_CTX environment variable not found"),
+            ENV_PROD => std::env::var(PROD_CTX_VAR).expect("PROD_CTX environment variable not found"),
+            ENV_STAGING => {
+                std::env::var(STAGING_CTX_VAR).expect("STAGING_CTX environment variable not found")
             }
-            "local" => {
-                std::env::var("LOCAL_CTX").expect("LOCAL_CTX environment variable not found")
+            ENV_LOCAL => {
+                std::env::var(LOCAL_CTX_VAR).expect("LOCAL_CTX environment variable not found")
             }
             _ => panic!("Invalid environment"),
         };
 
         let vault_name = match environment.as_str() {
-            "dev" => std::env::var("DEV_VAULT").expect("DEV_VAULT environment variable not found"),
-            "prod" => {
-                std::env::var("PROD_VAULT").expect("PROD_VAULT environment variable not found")
+            ENV_DEV => std::env::var(DEV_VAULT_VAR).expect("DEV_VAULT environment variable not found"),
+            ENV_PROD => {
+                std::env::var(PROD_VAULT_VAR).expect("PROD_VAULT environment variable not found")
             }
-            "staging" => std::env::var("STAGING_VAULT")
+            ENV_STAGING => std::env::var(STAGING_VAULT_VAR)
                 .expect("STAGING_VAULT environment variable not found"),
-            "local" => {
-                std::env::var("LOCAL_VAULT").expect("LOCAL_VAULT environment variable not found")
+            ENV_LOCAL => {
+                std::env::var(LOCAL_VAULT_VAR).expect("LOCAL_VAULT environment variable not found")
             }
             _ => panic!("Invalid environment"),
         };
 
         let k8s_encoder = match environment.as_str() {
-            "dev" => std::env::var("K8S_ENCODER_DEV")
+            ENV_DEV => std::env::var(K8S_ENCODER_DEV_VAR)
                 .expect("K8S_ENCODER_DEV environment variable not found"),
-            "prod" => std::env::var("K8S_ENCODER_PROD")
+            ENV_PROD => std::env::var(K8S_ENCODER_PROD_VAR)
                 .expect("K8S_ENCODER_PROD environment variable not found"),
-            "staging" => std::env::var("K8S_ENCODER_STAGING")
+            ENV_STAGING => std::env::var(K8S_ENCODER_STAGING_VAR)
                 .expect("K8S_ENCODER_STAGING environment variable not found"),
-            "local" => std::env::var("K8S_ENCODER_LOCAL")
+            ENV_LOCAL => std::env::var(K8S_ENCODER_LOCAL_VAR)
                 .expect("K8S_ENCODER_LOCAL environment variable not found"),
             _ => panic!("Invalid environment"),
         };
 
         let k8s_validator = match environment.as_str() {
-            "dev" => std::env::var("K8S_VALIDATOR_DEV")
+            ENV_DEV => std::env::var(K8S_VALIDATOR_DEV_VAR)
                 .expect("K8S_VALIDATOR_DEV environment variable not found"),
-            "prod" => std::env::var("K8S_VALIDATOR_PROD")
+            ENV_PROD => std::env::var(K8S_VALIDATOR_PROD_VAR)
                 .expect("K8S_VALIDATOR_PROD environment variable not found"),
-            "staging" => std::env::var("K8S_VALIDATOR_STAGING")
+            ENV_STAGING => std::env::var(K8S_VALIDATOR_STAGING_VAR)
                 .expect("K8S_VALIDATOR_STAGING environment variable not found"),
-            "local" => std::env::var("K8S_VALIDATOR_LOCAL")
+            ENV_LOCAL => std::env::var(K8S_VALIDATOR_LOCAL_VAR)
                 .expect("K8S_VALIDATOR_LOCAL environment variable not found"),
             _ => panic!("Invalid environment"),
         };
 
         let k8s_version = match environment.as_str() {
-            "dev" => std::env::var("K8S_VERSION_DEV")
+            ENV_DEV => std::env::var(K8S_VERSION_DEV_VAR)
                 .expect("K8S_VERSION_DEV environment variable not found"),
-            "prod" => std::env::var("K8S_VERSION_PROD")
+            ENV_PROD => std::env::var(K8S_VERSION_PROD_VAR)
                 .expect("K8S_VERSION_PROD environment variable not found"),
-            "staging" => std::env::var("K8S_VERSION_STAGING")
+            ENV_STAGING => std::env::var(K8S_VERSION_STAGING_VAR)
                 .expect("K8S_VERSION_STAGING environment variable not found"),
-            "local" => std::env::var("K8S_VERSION_LOCAL")
+            ENV_LOCAL => std::env::var(K8S_VERSION_LOCAL_VAR)
                 .expect("K8S_VERSION_LOCAL environment variable not found"),
             _ => panic!("Invalid environment"),
         };
 
         let domain_template =
             match environment.as_str() {
-                "dev" => {
-                    std::env::var("DEV_DOMAIN").expect("DEV_DOMAIN environment variable not found")
+                ENV_DEV => {
+                    std::env::var(DEV_DOMAIN_VAR).expect("DEV_DOMAIN environment variable not found")
                 }
-                "prod" => std::env::var("PROD_DOMAIN")
+                ENV_PROD => std::env::var(PROD_DOMAIN_VAR)
                     .expect("PROD_DOMAIN environment variable not found"),
-                "staging" => std::env::var("STAGING_DOMAIN")
+                ENV_STAGING => std::env::var(STAGING_DOMAIN_VAR)
                     .expect("STAGING_DOMAIN environment variable not found"),
-                "local" => std::env::var("LOCAL_DOMAIN")
+                ENV_LOCAL => std::env::var(LOCAL_DOMAIN_VAR)
                     .expect("LOCAL_DOMAIN environment variable not found"),
                 _ => panic!("Invalid environment"),
             };
 
-        let infrastructure_repository = std::env::var("INFRASTRUCTURE_REPOSITORY")
+        let infrastructure_repository = std::env::var(INFRASTRUCTURE_REPOSITORY_VAR)
             .expect("INFRASTRUCTURE_REPOSITORY environment variable not found");
 
         // We assume in the rest of the code that the product path does not end with /
@@ -227,7 +228,7 @@ impl Config {
             .rev()
             .collect::<Vec<&str>>()
             .join(".");
-        let products_dir = std::env::current_dir().unwrap().join("products");
+        let products_dir = std::env::current_dir().unwrap().join(PRODUCTS_DIR);
         trace!("Products directory: {:?}", products_dir);
 
         // To support the Apple quirk that ".app" is an "App", we allow for using _ in the product name
@@ -271,11 +272,11 @@ impl Config {
             );
         }
 
-        let network_name = format!("net-{}", product_uri);
+        let network_name = format!("{}{}", NETWORK_PREFIX, product_uri);
         trace!("Product dirname: {}", product_dirname);
 
-        let one_password_account = std::env::var("ONE_PASSWORD_ACCOUNT").ok();
-        let json_vault_dir = std::env::var("JSON_VAULT_DIR").ok();
+        let one_password_account = std::env::var(ONE_PASSWORD_ACCOUNT_VAR).ok();
+        let json_vault_dir = std::env::var(JSON_VAULT_DIR_VAR).ok();
 
         let ret = Self {
             root_path: root_path.to_string(),

@@ -1,5 +1,6 @@
 use crate::build::ComponentBuildSpec;
 use crate::build::{BuildContext, BuildType};
+use crate::constants::*;
 use crate::container::docker::{DockerClient, DockerService, DockerServiceConfig};
 use crate::container::DockerImage;
 use crate::error::{Error, Result};
@@ -35,8 +36,8 @@ impl Default for BuildConfig {
             build_type: BuildType::PureKubernetes,
             dockerfile_path: None,
             context_dir: None,
-            docker_registry: "".to_string(),
-            environment: "dev".to_string(),
+            docker_registry: DEFAULT_DOCKER_REGISTRY.to_string(),
+            environment: ENV_DEV.to_string(),
             domain: "localhost".to_string(),
             mount_point: None,
         }

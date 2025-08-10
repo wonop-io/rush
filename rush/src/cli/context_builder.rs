@@ -1,4 +1,5 @@
 use crate::cli::context::CliContext;
+use crate::constants::*;
 use crate::container::ContainerReactor;
 use crate::core::config::{Config, ConfigLoader};
 use crate::core::environment::EnvironmentGenerator;
@@ -158,7 +159,7 @@ fn get_docker_registry(matches: &ArgMatches) -> String {
     } else {
         let registry = env::var("DOCKER_REGISTRY").unwrap_or_else(|_| {
             warn!("DOCKER_REGISTRY environment variable not found, using empty registry");
-            "".to_string()
+            DEFAULT_DOCKER_REGISTRY.to_string()
         });
 
         // If registry is "not_set", treat it as empty for local development
