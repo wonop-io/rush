@@ -913,7 +913,23 @@ impl ContainerReactor {
             let context = if Path::new(&context_dir).is_absolute() {
                 PathBuf::from(&context_dir)
             } else {
-                self.config.product_dir.join(&context_dir)
+                // For Ingress type, we need to resolve context_dir relative to the component location
+                match &spec.build_type {
+                    BuildType::Ingress { .. } => {
+                        // For ingress, the dockerfile path gives us the component location
+                        // e.g., "ingress/Dockerfile" means component is in "ingress" directory
+                        if let Some(component_dir) = std::path::Path::new(dockerfile_path).parent() {
+                            // Resolve context_dir relative to the component directory
+                            self.config.product_dir.join(component_dir).join(&context_dir)
+                        } else {
+                            self.config.product_dir.join(&context_dir)
+                        }
+                    },
+                    _ => {
+                        // For other types, context_dir is relative to product directory
+                        self.config.product_dir.join(&context_dir)
+                    }
+                }
             };
             
             info!("Build paths for {}: Dockerfile={}, Context={}", 
