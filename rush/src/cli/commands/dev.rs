@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use log::{debug, error, info, trace};
 
+use crate::constants::DOCKER_TAG_LATEST;
 use crate::container::{ContainerReactor, ContainerReactorConfig, DockerCliClient};
 use crate::core::config::Config;
 use crate::error::{Error, Result};
@@ -55,12 +56,12 @@ impl DevCommand {
         {
             Ok(hash) => {
                 if hash.is_empty() {
-                    "latest".to_string()
+                    DOCKER_TAG_LATEST.to_string()
                 } else {
                     hash[..8].to_string()
                 }
             }
-            Err(_) => "latest".to_string(),
+            Err(_) => DOCKER_TAG_LATEST.to_string(),
         };
 
         // Create vault adapter

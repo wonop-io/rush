@@ -204,29 +204,53 @@ impl ImageBuilder {
     /// Computes the git-based tag for this image
     /// Returns a tag like "abc12345" for clean commits or "abc12345-wip-def67890" for dirty state
     pub fn compute_git_tag(&mut self) -> Result<String> {
+        log::debug!("Computing git tag for component: {}", self.component_name);
+        
         let toolchain = self.toolchain.as_ref()
             .ok_or_else(|| Error::Setup("No toolchain available for computing git tag".into()))?;
         
         // Get the context directory for this component
+        // First try to use location, then fall back to context_dir from build_config
         let context_dir = match &self.build_config.build_type {
-            BuildType::TrunkWasm { location, .. } |
-            BuildType::DixiousWasm { location, .. } |
-            BuildType::RustBinary { location, .. } |
-            BuildType::Zola { location, .. } |
-            BuildType::Book { location, .. } |
-            BuildType::Script { location, .. } => location.clone(),
+            BuildType::TrunkWasm { location, context_dir, .. } => {
+                if !location.is_empty() {
+                    location.clone()
+                } else {
+                    context_dir.clone().unwrap_or_else(|| "." .to_string())
+                }
+            },
+            BuildType::DixiousWasm { location, context_dir, .. } |
+            BuildType::RustBinary { location, context_dir, .. } |
+            BuildType::Zola { location, context_dir, .. } |
+            BuildType::Book { location, context_dir, .. } |
+            BuildType::Script { location, context_dir, .. } => {
+                if !location.is_empty() {
+                    location.clone()
+                } else {
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
+                }
+            },
             BuildType::Ingress { context_dir, .. } => context_dir.clone().unwrap_or_else(|| ".".to_string()),
-            _ => ".".to_string(),
+            _ => {
+                // Fall back to build_config's context_dir if available
+                self.build_config.context_dir.clone().unwrap_or_else(|| ".".to_string())
+            },
         };
+        
+        log::debug!("Using context directory '{}' for git hash computation", context_dir);
         
         // Get the git hash for the context directory
         let git_hash = toolchain.get_git_folder_hash(&context_dir)
             .map_err(|e| Error::Setup(format!("Failed to get git hash: {}", e)))?;
         
+        log::debug!("Got git hash: {}", git_hash);
+        
         if git_hash.is_empty() || git_hash == "precommit" {
             // No git history, use a default tag
-            self.git_tag = Some("latest".to_string());
-            return Ok("latest".to_string());
+            warn!("No git history found for context '{}', using '{}' tag. This will prevent caching!", 
+                  context_dir, DOCKER_TAG_LATEST);
+            self.git_tag = Some(DOCKER_TAG_LATEST.to_string());
+            return Ok(DOCKER_TAG_LATEST.to_string());
         }
         
         // Use first 8 characters of the hash
@@ -376,6 +400,20 @@ impl ImageBuilder {
         // Ensure we have a git tag computed
         if self.git_tag.is_none() {
             self.compute_git_tag()?;
+        }
+        
+        // Validate that we're not using 'latest' tag (unless intentional)
+        if let Some(tag) = &self.git_tag {
+            if tag == DOCKER_TAG_LATEST {
+                warn!(
+                    "Building image {} with '{}' tag - caching will not work properly! \
+                     Component: {}, Context: {:?}",
+                    self.untagged_image_name(),
+                    DOCKER_TAG_LATEST,
+                    self.component_name,
+                    self.build_config.context_dir
+                );
+            }
         }
         
         // Use the tagged image name with git hash

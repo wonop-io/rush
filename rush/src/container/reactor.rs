@@ -3,6 +3,7 @@
 //! The reactor is responsible for orchestrating container lifecycle events,
 //! monitoring containers, and handling file change events that trigger rebuilds.
 use crate::build::{BuildType, ComponentBuildSpec, Variables};
+use crate::constants::DOCKER_TAG_LATEST;
 use crate::container::DockerCliClient;
 use crate::container::Status;
 use crate::container::{
@@ -209,7 +210,7 @@ impl ContainerReactor {
             silenced_components: HashSet::new(),
             verbose: false,
             watch_config: WatcherConfig::default(),
-            git_hash: "latest".to_string(),
+            git_hash: DOCKER_TAG_LATEST.to_string(),
             start_port: config.start_port(),
         };
 
@@ -242,12 +243,12 @@ impl ContainerReactor {
         let git_hash = match get_git_folder_hash(&config.product_path().display().to_string()) {
             Ok(hash) => {
                 if hash.is_empty() {
-                    "latest".to_string()
+                    DOCKER_TAG_LATEST.to_string()
                 } else {
                     hash[..8].to_string()
                 }
             }
-            Err(_) => "latest".to_string(),
+            Err(_) => DOCKER_TAG_LATEST.to_string(),
         };
 
         let product_path = config.product_path();
@@ -856,7 +857,7 @@ impl ContainerReactor {
             let _docker_guard = crate::utils::DockerCrossCompileGuard::new(target_platform);
 
             match self
-                .build_image(&image_name, image_tag, &context, &dockerfile)
+                .build_image(&image_name, image_tag, &context, &dockerfile, &spec)
                 .await
             {
                 Ok(actual_image_name) => {
@@ -1839,6 +1840,7 @@ impl ContainerReactor {
         image_tag: &str,
         context_dir: &PathBuf,
         dockerfile: &PathBuf,
+        spec: &ComponentBuildSpec,
     ) -> Result<String> {
         info!("Evaluating if image {} needs to be built", image_name);
 
@@ -1869,20 +1871,15 @@ impl ContainerReactor {
             self.docker_client.clone(),
         );
 
+        // Use the actual build type from the spec to preserve location information
         let build_config = crate::container::BuildConfig {
-            build_type: BuildType::RustBinary {
-                location: "".to_string(),
-                dockerfile_path: dockerfile.to_string_lossy().to_string(),
-                context_dir: Some(context_dir.to_string_lossy().to_string()),
-                features: None,
-                precompile_commands: None,
-            },
+            build_type: spec.build_type.clone(),
             dockerfile_path: Some(dockerfile.to_string_lossy().to_string()),
             context_dir: Some(context_dir.to_string_lossy().to_string()),
             docker_registry: self.config.docker_registry.clone(),
             environment: self.config.environment.clone(),
-            domain: "".to_string(),
-            mount_point: None,
+            domain: spec.domain.clone(),
+            mount_point: spec.mount_point.clone(),
         };
 
         let mut image_builder = crate::container::ImageBuilder::new(
@@ -1937,7 +1934,7 @@ fn get_git_folder_hash(subdirectory_path: &str) -> Result<String> {
         .to_string();
 
     if !hash_output.status.success() || hash.is_empty() {
-        return Ok("latest".to_string());
+        return Ok(DOCKER_TAG_LATEST.to_string());
     }
 
     Ok(hash)
