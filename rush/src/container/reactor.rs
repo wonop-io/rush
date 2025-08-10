@@ -837,17 +837,7 @@ impl ContainerReactor {
                     if let Some(spec) = component_spec {
                         if let Some(spec_volumes) = &spec.volumes {
                             for (host_path, container_path) in spec_volumes {
-                                // Convert relative paths to absolute paths based on product directory
-                                let abs_host_path = if Path::new(host_path).is_absolute() {
-                                    host_path.clone()
-                                } else {
-                                    // Always resolve relative paths from the product directory
-                                    self.config.product_dir
-                                        .join(host_path)
-                                        .to_string_lossy()
-                                        .to_string()
-                                };
-                                volumes.push(format!("{}:{}", abs_host_path, container_path));
+                                volumes.push(format!("{}:{}", host_path, container_path));
                             }
                         }
                     }

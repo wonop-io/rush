@@ -350,9 +350,8 @@ impl ComponentBuildSpec {
             _ => panic!("Invalid build_type"),
         };
 
-        // Get current working directory
-        let cwd = std::env::current_dir()
-            .expect("Failed to get current working directory")
+        // Use product directory as base for resolving relative paths
+        let product_dir = config.product_path()
             .to_str()
             .unwrap()
             .to_string();
@@ -369,7 +368,7 @@ impl ComponentBuildSpec {
         };
 
         let component_path = location.as_ref().map(|l| {
-            let binding = Path::new(&cwd).join(l);
+            let binding = Path::new(&product_dir).join(l);
             binding.to_str().unwrap().to_string()
         });
 
@@ -423,7 +422,7 @@ impl ComponentBuildSpec {
                 .iter()
                 .map(|item| Self::process_template_string(item.as_str().unwrap(), &variables))
                 .collect();
-            Arc::new(PathMatcher::new(Path::new(&cwd), paths))
+            Arc::new(PathMatcher::new(Path::new(&product_dir), paths))
         });
 
         ComponentBuildSpec {
@@ -500,7 +499,7 @@ impl ComponentBuildSpec {
                     .unwrap()
                     .iter()
                     .map(|(k, val)| {
-                        let absolute_path = Path::new(&cwd)
+                        let absolute_path = Path::new(&product_dir)
                             .join(Self::process_template_string(
                                 k.as_str().unwrap(),
                                 &variables,
