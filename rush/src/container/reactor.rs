@@ -649,12 +649,49 @@ impl ContainerReactor {
                     info!("Exiting due to shutdown signal during build error");
                     break;
                 }
+                
+                // Check if this is a Docker build error that likely won't be fixed by retrying
+                let is_fatal_error = match &e {
+                    Error::Docker(msg) => {
+                        // These errors typically require manual intervention
+                        msg.contains("Dockerfile or build context not found") ||
+                        msg.contains("Permission denied") ||
+                        msg.contains("No space left on device") ||
+                        msg.contains("Docker build failed")
+                    }
+                    _ => false,
+                };
+                
+                if is_fatal_error {
+                    error!("\n╔══════════════════════════════════════════════════════════════╗");
+                    error!("║                    FATAL BUILD ERROR                          ║");
+                    error!("╚══════════════════════════════════════════════════════════════╝");
+                    error!("\nThe build failed with an error that requires manual intervention.");
+                    error!("\n📋 Next Steps:");
+                    error!("   1. Review the detailed error output above");
+                    error!("   2. Fix the identified issues");
+                    error!("   3. Restart Rush with: rush dev");
+                    error!("\n💡 Common Fixes:");
+                    error!("   • Missing Dockerfile: Create or correct the Dockerfile path");
+                    error!("   • Docker not running: Start Docker Desktop/daemon");
+                    error!("   • Out of space: Run 'docker system prune -a'");
+                    error!("   • Build errors: Check Dockerfile syntax and base image availability");
+                    error!("\nExiting Rush...\n");
+                    return Err(e);
+                }
 
-                // Wait for file changes or manual termination
+                // For non-fatal errors, wait for file changes or manual termination
+                info!("Waiting for file changes to retry build...");
                 match self.wait_for_changes_or_termination().await {
-                    WaitResult::FileChanged => continue,
+                    WaitResult::FileChanged => {
+                        info!("File changes detected, retrying build...");
+                        continue;
+                    },
                     WaitResult::Terminated => break,
-                    WaitResult::Timeout => continue,
+                    WaitResult::Timeout => {
+                        warn!("Timeout waiting for changes, retrying anyway...");
+                        continue;
+                    },
                 }
             }
 
@@ -717,6 +754,18 @@ impl ContainerReactor {
         if shutdown_token.is_cancelled() {
             info!("Build cancelled due to shutdown signal");
             return Err(Error::Terminated("Build cancelled due to shutdown".into()));
+        }
+        
+        // Verify Docker is working before attempting builds
+        if let Err(e) = self.verify_docker_available().await {
+            error!("\n=== Docker Check Failed ===");
+            error!("Unable to connect to Docker daemon.");
+            error!("\nPlease ensure:");
+            error!("1. Docker Desktop is running (if on macOS/Windows)");
+            error!("2. Docker daemon is started (if on Linux)");
+            error!("3. You have permission to access Docker socket");
+            error!("\nTest with: docker ps");
+            return Err(e);
         }
 
         info!("Building container images");
@@ -869,9 +918,29 @@ impl ContainerReactor {
                     );
                 }
                 Err(e) => {
-                    error!("Failed to build image for {}: {}", component_name, e);
+                    error!("\n=== Build Failed for Component: {} ===", component_name);
+                    error!("Error: {}", e);
+                    error!("\nBuild Configuration:");
+                    error!("  Dockerfile: {}", dockerfile.display());
+                    error!("  Context: {}", context.display());
+                    error!("  Image: {}", image_name);
+                    error!("  Tag: {}", image_tag);
+                    
+                    // Check if paths exist
+                    if !dockerfile.exists() {
+                        error!("\n⚠️  Dockerfile does not exist at: {}", dockerfile.display());
+                    }
+                    if !context.exists() {
+                        error!("\n⚠️  Build context directory does not exist at: {}", context.display());
+                    }
+                    
                     self.rebuild_in_progress = false;
-                    return Err(e);
+                    
+                    // Return a more descriptive error
+                    return Err(Error::Docker(format!(
+                        "Failed to build image for component '{}'. Check the output above for details.", 
+                        component_name
+                    )));
                 }
             }
         }
@@ -1834,6 +1903,35 @@ impl ContainerReactor {
     /// # Returns
     ///
     /// Result indicating success or failure
+    async fn verify_docker_available(&self) -> Result<()> {
+        use tokio::process::Command;
+        
+        let output = Command::new("docker")
+            .args(["version", "--format", "json"])
+            .output()
+            .await
+            .map_err(|e| Error::Docker(format!("Cannot execute docker command: {}", e)))?;
+            
+        if !output.status.success() {
+            return Err(Error::Docker("Docker is not available or not running".into()));
+        }
+        
+        Ok(())
+    }
+    
+    /// Builds a Docker image with caching support
+    ///
+    /// # Arguments
+    ///
+    /// * `image_name` - Name of the image to build
+    /// * `image_tag` - Tag for the image
+    /// * `context_dir` - Build context directory
+    /// * `dockerfile` - Path to Dockerfile
+    /// * `spec` - Component build specification
+    ///
+    /// # Returns
+    ///
+    /// The actual image name that was built (with git tag)
     async fn build_image(
         &self,
         image_name: &str,

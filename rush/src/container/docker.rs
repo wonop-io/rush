@@ -211,6 +211,7 @@ impl DockerClient for DockerCliClient {
 
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         trace!("Building Docker image: {}", tag);
+        info!("Docker build command: docker build --tag {} --file {} {}", tag, dockerfile, context);
 
         let output = Command::new(&self.docker_path)
             .args(["build", "--tag", tag, "--file", dockerfile, context])
@@ -218,12 +219,53 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to build image: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to execute docker build: {}", e)))?;
 
         if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Failed to build Docker image: {}", stderr);
-            return Err(Error::Docker(format!("Image build failed: {}", stderr)));
+            
+            error!("\n=== Docker Build Failed ===");
+            error!("Image tag: {}", tag);
+            error!("Dockerfile: {}", dockerfile);
+            error!("Context: {}", context);
+            error!("Exit code: {:?}", output.status.code());
+            
+            if !stdout.is_empty() {
+                error!("\n=== Build Output ===");
+                for line in stdout.lines() {
+                    error!("  {}", line);
+                }
+            }
+            
+            if !stderr.is_empty() {
+                error!("\n=== Error Output ===");
+                for line in stderr.lines() {
+                    error!("  {}", line);
+                }
+            }
+            
+            error!("\n=== Troubleshooting ===");
+            error!("1. Check if the Dockerfile exists at: {}", dockerfile);
+            error!("2. Verify the build context directory: {}", context);
+            error!("3. Ensure Docker daemon is running: docker ps");
+            error!("4. Check Docker disk space: docker system df");
+            error!("5. Try building manually: docker build --tag {} --file {} {}", tag, dockerfile, context);
+            
+            // Create a more informative error message
+            let error_summary = if stderr.contains("no such file or directory") {
+                "Dockerfile or build context not found"
+            } else if stderr.contains("permission denied") {
+                "Permission denied - check Docker permissions"
+            } else if stderr.contains("no space left") {
+                "No space left on device - clean up Docker images/containers"
+            } else if stderr.contains("network") {
+                "Network error - check internet connection for base image pulls"
+            } else {
+                "Build failed - see detailed output above"
+            };
+            
+            return Err(Error::Docker(format!("Docker build failed for {}: {}", tag, error_summary)));
         }
 
         debug!("Successfully built Docker image: {}", tag);
