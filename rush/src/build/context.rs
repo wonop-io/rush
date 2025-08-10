@@ -29,7 +29,6 @@ pub struct BuildContext {
     pub toolchain: ToolchainContext,
 
     /// Services specification for container coordination
-    #[serde(skip_serializing, skip_deserializing)]
     pub services: ServicesSpec,
 
     /// Current environment (dev, prod, etc.)

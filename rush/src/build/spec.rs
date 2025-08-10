@@ -574,15 +574,15 @@ impl ComponentBuildSpec {
     }
 
     /// Get the build artefacts for this component
-    pub fn build_artefacts(&self) -> HashMap<String, Artefact> {
+    pub fn build_artefacts(&self) -> Result<HashMap<String, Artefact>, crate::error::Error> {
         let mut ret = HashMap::new();
         if let Some(artefacts) = &self.artefacts {
             for (k, v) in artefacts.iter() {
-                let artefact = Artefact::new(k.to_string(), v.to_string());
+                let artefact = Artefact::new(k.to_string(), v.to_string())?;
                 ret.insert(k.to_string(), artefact);
             }
         }
-        ret
+        Ok(ret)
     }
 
     /// Generate a build context for this component

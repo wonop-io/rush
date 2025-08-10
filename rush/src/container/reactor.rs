@@ -1722,11 +1722,21 @@ impl ContainerReactor {
         if let Some(artefacts) = &spec.artefacts {
             for (input_path, output_name) in artefacts.iter() {
                 // Make input path absolute relative to product directory
-                let absolute_input_path = if Path::new(input_path).is_absolute() {
-                    PathBuf::from(input_path)
+                // First normalize the path to handle './' prefixes
+                let normalized_input_path = if input_path.starts_with("./") {
+                    &input_path[2..] // Remove './' prefix
                 } else {
-                    product_dir.join(input_path)
+                    input_path
                 };
+                
+                let absolute_input_path = if Path::new(normalized_input_path).is_absolute() {
+                    PathBuf::from(normalized_input_path)
+                } else {
+                    product_dir.join(normalized_input_path)
+                };
+                
+                debug!("Artifact path normalization: '{}' -> '{}' -> '{}'", 
+                      input_path, normalized_input_path, absolute_input_path.display());
                 
                 // For ingress, output goes to rushd/nginx.conf in the context directory
                 let absolute_output_path = if spec.component_name == "ingress" && output_name == "nginx.conf" {
@@ -1740,13 +1750,22 @@ impl ContainerReactor {
                      absolute_output_path.display());
                 
                 // Create the artifact with absolute paths
-                let artifact = Artefact::new(
+                let artifact = match Artefact::new(
                     absolute_input_path.to_string_lossy().to_string(),
                     absolute_output_path.to_string_lossy().to_string()
-                );
+                ) {
+                    Ok(artifact) => artifact,
+                    Err(e) => {
+                        error!("Failed to create artifact for {}: {}", spec.component_name, e);
+                        return Err(e);
+                    }
+                };
                 
                 // Render the artifact
-                artifact.render_to_file(&context);
+                if let Err(e) = artifact.render_to_file(&context) {
+                    error!("Failed to render artifact for {}: {}", spec.component_name, e);
+                    return Err(e);
+                }
             }
         }
         

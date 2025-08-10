@@ -1,5 +1,6 @@
 use crate::build::context::BuildContext;
 use log::{debug, error, trace};
+use std::error::Error;
 use std::fs;
 use std::path::Path;
 use tera::{Context, Tera};
@@ -25,27 +26,65 @@ impl Artefact {
     ///
     /// # Returns
     ///
-    /// A new Artefact instance
-    pub fn new(input_path: String, output_path: String) -> Self {
+    /// A new Artefact instance or an error if the template cannot be loaded
+    pub fn new(input_path: String, output_path: String) -> Result<Self, crate::error::Error> {
         trace!("Creating new artefact from {}", input_path);
-        let template = fs::read_to_string(&input_path).unwrap_or_else(|e| {
-            error!(
-                "Failed to read template from input file {}: {}",
-                input_path, e
-            );
-            panic!("Failed to read template from input file {}", input_path)
-        });
+        let template = match fs::read_to_string(&input_path) {
+            Ok(content) => content,
+            Err(e) => {
+                error!("\n=== Failed to Load Template File ===");
+                error!("Template path: {}", input_path);
+                error!("Error: {}", e);
+                
+                // Check if file exists and provide helpful information
+                let path = Path::new(&input_path);
+                if !path.exists() {
+                    error!("\n⚠️  File does not exist!");
+                    if let Some(parent) = path.parent() {
+                        error!("   Parent directory: {}", parent.display());
+                        if parent.exists() {
+                            error!("   Parent directory exists: ✓");
+                            // Try to list files in parent directory
+                            if let Ok(entries) = fs::read_dir(parent) {
+                                error!("   Files in parent directory:");
+                                for entry in entries.flatten().take(10) {
+                                    if let Some(name) = entry.file_name().to_str() {
+                                        error!("     - {}", name);
+                                    }
+                                }
+                            }
+                        } else {
+                            error!("   Parent directory does not exist: ✗");
+                        }
+                    }
+                } else if let Err(e) = fs::metadata(&input_path) {
+                    error!("\n⚠️  File exists but cannot read metadata: {}", e);
+                    error!("   Possible permission issue?");
+                }
+                
+                error!("\nPossible causes:");
+                error!("1. Template file path is incorrect");
+                error!("2. File was not created or copied to the expected location");
+                error!("3. Permission issues preventing file access");
+                error!("4. Path contains invalid characters or symbolic links");
+                
+                return Err(crate::error::Error::FileSystem {
+                    path: std::path::PathBuf::from(&input_path),
+                    message: format!("Failed to read template file: {}", e)
+                });
+            }
+        };
 
         debug!(
             "Loaded template from {} ({} bytes)",
             input_path,
             template.len()
         );
-        Artefact {
+        Ok(Artefact {
             input_path,
             output_path,
             template,
-        }
+        })
     }
 
     /// Renders the template using the provided build context
@@ -56,8 +95,8 @@ impl Artefact {
     ///
     /// # Returns
     ///
-    /// The rendered template as a string
-    pub fn render(&self, context: &BuildContext) -> String {
+    /// The rendered template as a string or an error
+    pub fn render(&self, context: &BuildContext) -> Result<String, crate::error::Error> {
         trace!("Rendering template {} with context", self.input_path);
         let template = self.template.clone();
 
@@ -68,17 +107,56 @@ impl Artefact {
                 panic!("Failed to add template to Tera")
             });
 
-        let context = Context::from_serialize(context).expect("Could not create context");
+        let tera_context = Context::from_serialize(context).expect("Could not create context");
 
-        match tera.render(&self.input_path, &context) {
+        match tera.render(&self.input_path, &tera_context) {
             Ok(rendered) => {
                 debug!("Successfully rendered template {}", self.input_path);
-                rendered
+                Ok(rendered)
             }
             Err(e) => {
-                error!("Failed to render template {}: {}", self.input_path, e);
-                error!("Context: {:#?}", context);
-                panic!("Failed to render template: {}", e);
+                error!("\n=== Template Rendering Failed ===");
+                error!("Template file: {}", self.input_path);
+                error!("Output path: {}", self.output_path);
+                // Show the actual Tera error details
+                error!("\nTera Error: {}", e);
+                
+                // Show the error chain if available
+                let mut source = e.source();
+                let mut depth = 1;
+                while let Some(err) = source {
+                    error!("  Caused by ({}): {}", depth, err);
+                    source = err.source();
+                    depth += 1;
+                }
+                
+                // Try to provide more specific error information
+                let error_msg = e.to_string();
+                if error_msg.contains("Variable") || error_msg.contains("not found") {
+                    error!("\n💡 This appears to be a missing variable error.");
+                    error!("   Check that all variables used in the template are defined in the context.");
+                    error!("   Available variables in context:");
+                    if let Ok(json) = serde_json::to_string_pretty(context) {
+                        for line in json.lines().take(50) {  // Show first 50 lines of context
+                            error!("     {}", line);
+                        }
+                        if json.lines().count() > 50 {
+                            error!("     ... (context truncated, {} more lines)", json.lines().count() - 50);
+                        }
+                    }
+                } else if error_msg.contains("Syntax") || error_msg.contains("parse") {
+                    error!("\n💡 This appears to be a template syntax error.");
+                    error!("   Check the Jinja2/Tera template syntax in your file.");
+                    error!("   Common issues:");
+                    error!("   - Unclosed tags: {{{{{{ variable }}}} should be {{{{{{ variable }}}}}}");
+                    error!("   - Invalid filters: {{{{ var | unknown_filter }}}}");
+                    error!("   - Missing endif/endfor for conditionals/loops");
+                }
+                
+                error!("\nContext (debug format): {:#?}", tera_context);
+                return Err(crate::error::Error::Template(
+                    e.to_string() // Use the actual Tera error message instead of wrapping it
+                ));
             }
         }
     }
@@ -88,37 +166,48 @@ impl Artefact {
     /// # Arguments
     ///
     /// * `context` - The build context containing variables for rendering
-    pub fn render_to_file(&self, context: &BuildContext) {
+    ///
+    /// # Returns
+    ///
+    /// Result indicating success or failure
+    pub fn render_to_file(&self, context: &BuildContext) -> Result<(), crate::error::Error> {
         trace!(
             "Rendering template {} to file {}",
             self.input_path,
             self.output_path
         );
-        let rendered = self.render(context);
+        let rendered = self.render(context)?;
 
         // Ensure the output directory exists
         if let Some(parent) = Path::new(&self.output_path).parent() {
             if !parent.exists() {
-                fs::create_dir_all(parent).unwrap_or_else(|e| {
+                fs::create_dir_all(parent).map_err(|e| {
                     error!(
                         "Failed to create output directory {}: {}",
                         parent.display(),
                         e
                     );
-                    panic!("Failed to create output directory {}", parent.display())
-                });
+                    crate::error::Error::FileSystem {
+                        path: parent.to_path_buf(),
+                        message: format!("Failed to create output directory: {}", e)
+                    }
+                })?;
             }
         }
 
-        fs::write(&self.output_path, rendered).unwrap_or_else(|e| {
+        fs::write(&self.output_path, rendered).map_err(|e| {
             error!("Failed to write to output file {}: {}", self.output_path, e);
-            panic!("Failed to write to output file {}", self.output_path)
-        });
+            crate::error::Error::FileSystem {
+                path: std::path::PathBuf::from(&self.output_path),
+                message: format!("Failed to write to output file: {}", e)
+            }
+        })?;
 
         debug!(
             "Successfully wrote rendered template to {}",
             self.output_path
         );
+        Ok(())
     }
 }
 
