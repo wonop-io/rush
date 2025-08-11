@@ -178,6 +178,11 @@ impl ImageBuilder {
         self.was_recently_rebuilt = was_recently_rebuilt;
     }
 
+    /// Sets the git tag directly (useful when already computed elsewhere)
+    pub fn set_git_tag(&mut self, tag: String) {
+        self.git_tag = Some(tag);
+    }
+
     /// Gets the untagged image name (without a tag)
     pub fn untagged_image_name(&self) -> String {
         format!("{}-{}", self.product_name, self.component_name)
@@ -323,9 +328,7 @@ impl ImageBuilder {
         use tokio::process::Command;
 
         // Ensure we have a git tag
-        if self.git_tag.is_none() {
-            self.compute_git_tag()?;
-        }
+        self.compute_git_tag()?;
 
         let tagged_name = self.tagged_image_name();
 
@@ -460,9 +463,7 @@ impl ImageBuilder {
         use log::info;
 
         // Ensure we have a git tag computed
-        if self.git_tag.is_none() {
-            self.compute_git_tag()?;
-        }
+        self.compute_git_tag()?;
 
         // Validate that we're not using 'latest' tag (unless intentional)
         if let Some(tag) = &self.git_tag {

@@ -349,24 +349,41 @@ impl ToolchainContext {
     pub fn get_git_wip(&self, subdirectory_path: &str) -> Result<String, String> {
         trace!("Checking for WIP changes in: {}", subdirectory_path);
 
-        let dirty_output = Command::new(&self.git)
-            .args(["diff", subdirectory_path])
+        // Use git status --porcelain to check for changes, respecting .gitignore
+        // The --porcelain flag gives us machine-readable output
+        // We only care about tracked files that have changes
+        let status_output = Command::new(&self.git)
+            .args(["status", "--porcelain", "--untracked-files=no", subdirectory_path])
             .output()
             .map_err(|e| e.to_string())?;
 
-        let diff = str::from_utf8(&dirty_output.stdout)
+        let status = str::from_utf8(&status_output.stdout)
             .map_err(|e| e.to_string())?
             .trim()
             .to_string();
 
-        if !diff.is_empty() {
-            let mut hasher = Sha256::new();
-            hasher.update(diff.as_bytes());
-            let wip_hash = hex::encode(hasher.finalize());
-            let suffix = format!("-wip-{}", &wip_hash[..8]);
+        if !status.is_empty() {
+            // There are changes to tracked files
+            // Get the actual diff for hashing (only tracked files)
+            let diff_output = Command::new(&self.git)
+                .args(["diff", "HEAD", subdirectory_path])
+                .output()
+                .map_err(|e| e.to_string())?;
 
-            trace!("WIP changes detected, suffix: {}", suffix);
-            return Ok(suffix);
+            let diff = str::from_utf8(&diff_output.stdout)
+                .map_err(|e| e.to_string())?
+                .trim()
+                .to_string();
+
+            if !diff.is_empty() {
+                let mut hasher = Sha256::new();
+                hasher.update(diff.as_bytes());
+                let wip_hash = hex::encode(hasher.finalize());
+                let suffix = format!("-wip-{}", &wip_hash[..8]);
+
+                trace!("WIP changes detected, suffix: {}", suffix);
+                return Ok(suffix);
+            }
         }
 
         trace!("No WIP changes detected");

@@ -875,6 +875,91 @@ impl ContainerReactor {
             // Set tagged image name in component spec
             let _tagged_image_name = format!("{image_name}:{image_tag}");
 
+            // Check if image already exists before running expensive build operations
+            let needs_rebuild = {
+                // Create a temporary ImageBuilder just to check cache status
+                let service_config = DockerServiceConfig {
+                    name: image_name.clone(),
+                    image: format!("{}:{}", image_name, image_tag),
+                    network: self.config.network_name.clone(),
+                    env_vars: HashMap::new(),
+                    ports: Vec::new(),
+                    volumes: Vec::new(),
+                };
+
+                let service = DockerService::new(
+                    "".to_string(),
+                    service_config,
+                    self.docker_client.clone(),
+                );
+
+                let dockerfile = if Path::new(dockerfile_path).is_absolute() {
+                    PathBuf::from(dockerfile_path)
+                } else {
+                    self.config.product_dir.join(dockerfile_path)
+                };
+
+                let component_dir = dockerfile
+                    .parent()
+                    .ok_or_else(|| Error::Docker("Invalid Dockerfile path".to_string()))?
+                    .to_path_buf();
+
+                let context = if Path::new(&context_dir).is_absolute() {
+                    PathBuf::from(&context_dir)
+                } else {
+                    component_dir.join(&context_dir)
+                };
+
+                let build_config = crate::container::BuildConfig {
+                    build_type: spec.build_type.clone(),
+                    dockerfile_path: Some(dockerfile.to_string_lossy().to_string()),
+                    context_dir: Some(context.to_string_lossy().to_string()),
+                    docker_registry: self.config.docker_registry.clone(),
+                    environment: self.config.environment.clone(),
+                    domain: spec.domain.clone(),
+                    mount_point: spec.mount_point.clone(),
+                };
+
+                let mut image_builder = crate::container::ImageBuilder::new(
+                    service,
+                    self.docker_client.clone(),
+                    component_name.to_string(),
+                    self.config.product_name.clone(),
+                )
+                .with_build_config(build_config);
+
+                // Set the git tag that we already computed to avoid recomputing it
+                image_builder.set_git_tag(image_tag.clone());
+
+                // Also set toolchain if available (as a fallback)
+                if let Some(toolchain) = &self.toolchain {
+                    image_builder = image_builder.with_toolchain(toolchain.clone());
+                }
+
+                match image_builder.evaluate_rebuild_needed().await {
+                    Ok(needed) => needed,
+                    Err(e) => {
+                        warn!("Failed to evaluate cache status: {}, will rebuild", e);
+                        true
+                    }
+                }
+            };
+
+            if !needs_rebuild {
+                info!(
+                    "Image {} already exists with clean git tag, skipping build and build script",
+                    image_name
+                );
+                // Store the image name for later use
+                let tagged_image_name = format!("{}:{}", image_name, image_tag);
+                self.built_images
+                    .insert(component_name.clone(), tagged_image_name.clone());
+                continue; // Skip to next component
+            }
+
+            // Only run expensive operations if we actually need to build
+            info!("Image {} needs to be built, running build preparations", image_name);
+
             // Render artifacts for components that need them (e.g., Ingress)
             if let Err(e) = self.render_artifacts_for_component(spec).await {
                 error!("Failed to render artifacts for {}: {}", component_name, e);
@@ -2246,7 +2331,8 @@ impl ContainerReactor {
         dockerfile: &PathBuf,
         spec: &ComponentBuildSpec,
     ) -> Result<String> {
-        info!("Evaluating if image {} needs to be built", image_name);
+        // Note: We already checked if rebuild is needed in build_all() before calling this
+        info!("Building Docker image: {}", image_name);
 
         // Extract component name from the image name (format: product-component)
         let component_name = if let Some(dash_pos) = image_name.rfind('-') {
@@ -2295,28 +2381,7 @@ impl ContainerReactor {
             image_builder = image_builder.with_toolchain(toolchain.clone());
         }
 
-        // Evaluate if rebuild is needed based on cache
-        let needs_rebuild = match image_builder.evaluate_rebuild_needed().await {
-            Ok(needed) => needed,
-            Err(e) => {
-                warn!(
-                    "Failed to evaluate cache status: {}, proceeding with build",
-                    e
-                );
-                true
-            }
-        };
-
-        if !needs_rebuild {
-            info!(
-                "Image {} already exists in cache with clean git tag, skipping build",
-                image_name
-            );
-            return Ok(image_builder.tagged_image_name());
-        }
-
-        info!("Building image {} with git-based tag", image_name);
-        // Build the image
+        // Build the image directly (we already checked if it needs rebuilding)
         image_builder.build().await?;
 
         // Return the actual tagged image name that was built
