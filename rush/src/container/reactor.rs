@@ -689,6 +689,17 @@ impl ContainerReactor {
                 }
 
                 // For non-fatal errors, wait for file changes or manual termination
+                
+                // Check if we're shutting down
+                if shutdown_token.is_cancelled() {
+                    info!("Shutdown detected after build error, exiting...");
+                    break;
+                }
+                
+                // Clear any pending file changes that might have accumulated during the failed build
+                self.change_processor.clear();
+                debug!("Cleared pending file changes after build error");
+                
                 info!("Waiting for file changes to retry build...");
                 match self.wait_for_changes_or_termination().await {
                     WaitResult::FileChanged => {
@@ -1499,9 +1510,21 @@ impl ContainerReactor {
                 }
 
                 _ = file_check_interval.tick() => {
+                    // Skip file change processing if we're shutting down
+                    if shutdown_token.is_cancelled() {
+                        debug!("Ignoring file changes during shutdown");
+                        return Ok(false);
+                    }
+                    
                     // Check if we have pending changes to process
                     let changed_files = self.change_processor.process_pending_changes().await?;
                     if !changed_files.is_empty() {
+                        // Double-check we're not shutting down before processing
+                        if shutdown_token.is_cancelled() {
+                            debug!("Ignoring file changes during shutdown");
+                            return Ok(false);
+                        }
+                        
                         info!("Processing file changes...");
                         // Test if the changes are significant (affect any component)
                         if self.test_if_significant_change(&changed_files).await {
@@ -1550,6 +1573,10 @@ impl ContainerReactor {
     /// Result indicating success or failure
     async fn cleanup_containers(&mut self) -> Result<()> {
         info!("Cleaning up containers");
+        
+        // Clear any pending file changes to prevent processing during shutdown
+        self.change_processor.clear();
+        debug!("Cleared pending file changes");
 
         // Broadcast shutdown signal to all services
         let _ = self.shutdown_sender.send(());
@@ -1821,8 +1848,19 @@ impl ContainerReactor {
                 }
 
                 _ = file_check_interval.tick() => {
+                    // Check for shutdown before processing file changes
+                    if shutdown_token.is_cancelled() {
+                        debug!("Shutdown detected during file change wait");
+                        return WaitResult::Terminated;
+                    }
+                    
                     let changed_files = self.change_processor.process_pending_changes().await.unwrap_or_else(|_| Vec::new());
                     if !changed_files.is_empty() {
+                        // Double-check shutdown before returning FileChanged
+                        if shutdown_token.is_cancelled() {
+                            debug!("Ignoring file changes due to shutdown");
+                            return WaitResult::Terminated;
+                        }
                         info!("File changes detected, resuming build");
                         return WaitResult::FileChanged;
                     }
