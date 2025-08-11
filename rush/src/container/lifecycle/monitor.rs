@@ -93,7 +93,7 @@ impl LifecycleMonitor {
 
         // We need to avoid holding the lock across await
         // For testing purposes, we'll just assume the container is running
-        // In a real scenario, we'd need to refactor to use Arc<DockerService> 
+        // In a real scenario, we'd need to refactor to use Arc<DockerService>
         // or use tokio::sync::Mutex instead of std::sync::Mutex
         let status = ContainerStatus::Running;
 
@@ -186,9 +186,9 @@ mod tests {
     #[tokio::test]
     async fn test_monitor_detects_container_stopping() {
         // Create a proper DockerService for testing
+        use crate::container::docker::{DockerCliClient, DockerService, DockerServiceConfig};
         use std::collections::HashMap;
-        use crate::container::docker::{DockerService, DockerServiceConfig, DockerCliClient};
-        
+
         let docker_client = Arc::new(DockerCliClient::new("docker".to_string()));
         let config = DockerServiceConfig {
             name: "test".to_string(),

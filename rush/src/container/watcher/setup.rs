@@ -128,7 +128,11 @@ fn process_file_event(event: Event, processor: &ChangeProcessor) {
     match event.kind {
         EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {
             for path in event.paths {
-                debug!("File system event detected: {} (kind: {:?})", path.display(), event.kind);
+                debug!(
+                    "File system event detected: {} (kind: {:?})",
+                    path.display(),
+                    event.kind
+                );
                 processor.add_change(path);
             }
         }
@@ -163,7 +167,7 @@ pub fn create_component_matcher(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::{self, File};
+    use std::fs::File;
     use tempfile::TempDir;
 
     #[test]

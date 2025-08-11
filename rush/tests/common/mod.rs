@@ -1,11 +1,11 @@
 // Helper module for test utilities
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use rush_cli::build::{BuildType, ComponentBuildSpec, Variables};
 use rush_cli::core::Config;
-use rush_cli::toolchain::{ToolchainContext, Platform};
+use rush_cli::toolchain::{Platform, ToolchainContext};
 
 // Create a test config suitable for basic tests
 pub fn create_test_config() -> Arc<Config> {
@@ -28,14 +28,14 @@ pub fn create_test_toolchain() -> Arc<ToolchainContext> {
 // Create a simple component build spec for testing
 pub fn create_test_spec(config: Arc<Config>) -> Arc<Mutex<ComponentBuildSpec>> {
     let variables = create_test_variables();
-    
+
     // BuildType::Image is a simplification - you'll need to use one of the actual enum variants
     let build_type = BuildType::PureDockerImage {
         image_name_with_tag: "test-image:latest".to_string(),
         command: None,
         entrypoint: None,
     };
-    
+
     let spec = ComponentBuildSpec {
         build_type,
         product_name: "test-product".to_string(),
@@ -64,6 +64,6 @@ pub fn create_test_spec(config: Arc<Config>) -> Arc<Mutex<ComponentBuildSpec>> {
         dotenv_secrets: HashMap::new(),
         domain: "test.test.app".to_string(),
     };
-    
+
     Arc::new(Mutex::new(spec))
 }

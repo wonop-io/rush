@@ -1,5 +1,5 @@
 //! Constants used throughout the Rush CLI application
-//! 
+//!
 //! This module centralizes all string literals, default values, and configuration
 //! constants to avoid duplication and make maintenance easier.
 

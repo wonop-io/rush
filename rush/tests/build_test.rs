@@ -23,15 +23,18 @@ fn test_image_name_generation_without_registry() {
     };
 
     let config = Arc::new(config);
-    
+
     // Test image name without registry
     let component_name = "frontend";
     let image_name = if config.docker_registry.is_empty() {
         format!("{}-{}", config.product_name, component_name)
     } else {
-        format!("{}/{}-{}", config.docker_registry, config.product_name, component_name)
+        format!(
+            "{}/{}-{}",
+            config.docker_registry, config.product_name, component_name
+        )
     };
-    
+
     assert_eq!(image_name, "test-product-frontend");
 }
 
@@ -53,17 +56,20 @@ fn test_image_name_generation_with_registry() {
     };
 
     let config = Arc::new(config);
-    
+
     // Test image name with registry
     let component_name = "backend";
     let image_name = if config.docker_registry.is_empty() {
         format!("{}-{}", config.product_name, component_name)
     } else {
-        format!("{}/{}-{}", config.docker_registry, config.product_name, component_name)
+        format!(
+            "{}/{}-{}",
+            config.docker_registry, config.product_name, component_name
+        )
     };
-    
+
     assert_eq!(image_name, "docker.io/myuser/test-product-backend");
-    
+
     // Test tagged image name
     let tagged_image = format!("{}:{}", image_name, config.git_hash);
     assert_eq!(tagged_image, "docker.io/myuser/test-product-backend:abc123");
@@ -73,11 +79,7 @@ fn test_image_name_generation_with_registry() {
 fn test_docker_registry_not_set_handling() {
     // Test that "not_set" is properly converted to empty string
     let registry = "not_set";
-    let processed_registry = if registry == "not_set" {
-        ""
-    } else {
-        registry
-    };
-    
+    let processed_registry = if registry == "not_set" { "" } else { registry };
+
     assert_eq!(processed_registry, "");
 }

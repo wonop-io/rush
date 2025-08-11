@@ -22,7 +22,11 @@ impl OutputSource {
     }
 
     /// Create a new output source with color
-    pub fn with_color(name: impl Into<String>, source_type: impl Into<String>, color: impl Into<String>) -> Self {
+    pub fn with_color(
+        name: impl Into<String>,
+        source_type: impl Into<String>,
+        color: impl Into<String>,
+    ) -> Self {
         Self {
             name: name.into(),
             source_type: source_type.into(),

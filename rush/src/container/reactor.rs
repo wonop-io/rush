@@ -12,11 +12,11 @@ use crate::container::{
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
     BuildProcessor, ContainerService, ServiceCollection,
 };
-use notify::RecommendedWatcher;
 use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::security::{FileVault, SecretsEncoder, Vault};
 use crate::shutdown;
+use notify::RecommendedWatcher;
 
 use log::{debug, error, info, trace, warn};
 use serde_yaml;
@@ -39,7 +39,7 @@ pub struct ContainerReactor {
 
     /// File change processor for detecting code changes
     change_processor: Arc<ChangeProcessor>,
-    
+
     /// File watcher (must be kept alive)
     _file_watcher: RecommendedWatcher,
 
@@ -51,7 +51,7 @@ pub struct ContainerReactor {
 
     /// Vault for accessing secrets
     vault: Arc<Mutex<dyn Vault + Send>>,
-    
+
     /// Toolchain for build operations
     toolchain: Option<Arc<crate::toolchain::ToolchainContext>>,
 
@@ -72,10 +72,10 @@ pub struct ContainerReactor {
 
     /// Secrets encoder
     secrets_encoder: Arc<dyn SecretsEncoder>,
-    
+
     /// Output director for handling container logs
     output_director: Option<crate::output::SharedOutputDirector>,
-    
+
     /// Mapping of component names to their actual built image names (with git tags)
     built_images: HashMap<String, String>,
 }
@@ -156,7 +156,7 @@ impl ContainerReactor {
         let (watcher, change_processor) = setup_file_watcher(config.watch_config.clone())?;
 
         let (shutdown_sender, _) = broadcast::channel(8);
-        
+
         // Create the toolchain for build operations
         let toolchain = Some(Arc::new(crate::toolchain::ToolchainContext::default()));
 
@@ -380,7 +380,10 @@ impl ContainerReactor {
 
             // Determine the image name based on build type
             let tagged_image_name = match &spec.build_type {
-                BuildType::PureDockerImage { image_name_with_tag, .. } => {
+                BuildType::PureDockerImage {
+                    image_name_with_tag,
+                    ..
+                } => {
                     // Use the pre-existing image directly (e.g., "postgres:latest")
                     image_name_with_tag.clone()
                 }
@@ -393,16 +396,18 @@ impl ContainerReactor {
                         let image_name = if self.config.docker_registry.is_empty() {
                             format!("{}-{}", self.config.product_name, component_name)
                         } else {
-                            format!("{}/{}-{}", 
-                                self.config.docker_registry, 
-                                self.config.product_name, 
-                                component_name)
+                            format!(
+                                "{}/{}-{}",
+                                self.config.docker_registry,
+                                self.config.product_name,
+                                component_name
+                            )
                         };
                         format!("{}:{}", image_name, self.config.git_hash)
                     }
                 }
             };
-            
+
             let service = Arc::new(ContainerService {
                 id: "TODO".to_string(),
                 name: component_name.clone(),
@@ -497,10 +502,10 @@ impl ContainerReactor {
     /// Build and push Docker images for all components
     pub async fn build_and_push(&mut self) -> Result<()> {
         info!("Building and pushing Docker images...");
-        
+
         // Build all components
         self.build_all().await?;
-        
+
         // Push images to registry
         for (_component_name, services) in self.services.iter() {
             for service in services {
@@ -513,7 +518,7 @@ impl ContainerReactor {
                 // TODO: Implement actual Docker push
             }
         }
-        
+
         info!("Build and push completed successfully");
         Ok(())
     }
@@ -521,13 +526,13 @@ impl ContainerReactor {
     /// Select Kubernetes context for deployment
     pub async fn select_kubernetes_context(&self, context: &str) -> Result<()> {
         info!("Selecting Kubernetes context: {}", context);
-        
+
         // TODO: Implement kubectl context selection
         // let kubectl = "kubectl"; // Temporary placeholder
         let _args = vec!["config", "use-context", context];
-        
+
         // Would use run_command here in actual implementation
-        
+
         info!("Kubernetes context set to: {}", context);
         Ok(())
     }
@@ -535,9 +540,9 @@ impl ContainerReactor {
     /// Apply Kubernetes manifests to the cluster
     pub async fn apply(&mut self) -> Result<()> {
         info!("Applying Kubernetes manifests...");
-        
+
         // TODO: Generate and apply K8s manifests
-        
+
         info!("Kubernetes manifests applied successfully");
         Ok(())
     }
@@ -545,9 +550,9 @@ impl ContainerReactor {
     /// Remove Kubernetes resources from the cluster
     pub async fn unapply(&mut self) -> Result<()> {
         info!("Removing Kubernetes resources...");
-        
+
         // TODO: Delete K8s resources
-        
+
         info!("Kubernetes resources removed successfully");
         Ok(())
     }
@@ -555,9 +560,9 @@ impl ContainerReactor {
     /// Install Kubernetes manifests (similar to apply but for installation)
     pub async fn install_manifests(&mut self) -> Result<()> {
         info!("Installing Kubernetes manifests...");
-        
+
         // TODO: Install K8s manifests for the product
-        
+
         info!("Kubernetes manifests installed successfully");
         Ok(())
     }
@@ -565,9 +570,9 @@ impl ContainerReactor {
     /// Uninstall Kubernetes manifests
     pub async fn uninstall_manifests(&mut self) -> Result<()> {
         info!("Uninstalling Kubernetes manifests...");
-        
+
         // TODO: Uninstall K8s manifests
-        
+
         info!("Kubernetes manifests uninstalled successfully");
         Ok(())
     }
@@ -575,9 +580,9 @@ impl ContainerReactor {
     /// Build Kubernetes manifests
     pub async fn build_manifests(&mut self) -> Result<()> {
         info!("Building Kubernetes manifests...");
-        
+
         // TODO: Generate K8s manifests from templates
-        
+
         info!("Kubernetes manifests built successfully");
         Ok(())
     }
@@ -585,13 +590,13 @@ impl ContainerReactor {
     /// Deploy containers to Kubernetes
     pub async fn deploy(&mut self) -> Result<()> {
         info!("Deploying to Kubernetes...");
-        
+
         // Build manifests
         self.build_manifests().await?;
-        
+
         // Apply manifests
         self.apply().await?;
-        
+
         info!("Deployment completed successfully");
         Ok(())
     }
@@ -648,21 +653,21 @@ impl ContainerReactor {
                     info!("Exiting due to shutdown signal during build error");
                     break;
                 }
-                
+
                 // Check if this is a Docker build error that likely won't be fixed by retrying
                 let is_fatal_error = match &e {
                     Error::Docker(msg) => {
                         // These errors typically require manual intervention
-                        msg.contains("Dockerfile or build context not found") ||
-                        msg.contains("Permission denied") ||
-                        msg.contains("No space left on device") ||
-                        msg.contains("Docker build failed") ||
-                        msg.contains("No such file or directory") ||
-                        msg.contains("Failed to execute docker build")
+                        msg.contains("Dockerfile or build context not found")
+                            || msg.contains("Permission denied")
+                            || msg.contains("No space left on device")
+                            || msg.contains("Docker build failed")
+                            || msg.contains("No such file or directory")
+                            || msg.contains("Failed to execute docker build")
                     }
                     _ => false,
                 };
-                
+
                 if is_fatal_error {
                     error!("\n╔══════════════════════════════════════════════════════════════╗");
                     error!("║                    FATAL BUILD ERROR                          ║");
@@ -676,7 +681,9 @@ impl ContainerReactor {
                     error!("   • Missing Dockerfile: Create or correct the Dockerfile path");
                     error!("   • Docker not running: Start Docker Desktop/daemon");
                     error!("   • Out of space: Run 'docker system prune -a'");
-                    error!("   • Build errors: Check Dockerfile syntax and base image availability");
+                    error!(
+                        "   • Build errors: Check Dockerfile syntax and base image availability"
+                    );
                     error!("\nExiting Rush...\n");
                     return Err(e);
                 }
@@ -687,12 +694,12 @@ impl ContainerReactor {
                     WaitResult::FileChanged => {
                         info!("File changes detected, retrying build...");
                         continue;
-                    },
+                    }
                     WaitResult::Terminated => break,
                     WaitResult::Timeout => {
                         warn!("Timeout waiting for changes, retrying anyway...");
                         continue;
-                    },
+                    }
                 }
             }
 
@@ -727,19 +734,20 @@ impl ContainerReactor {
         }
 
         info!("Container reactor shutting down");
-        
+
         // Cleanup containers on shutdown (with timeout to prevent hanging)
         let cleanup_result = tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            self.cleanup_containers()
-        ).await;
-        
+            self.cleanup_containers(),
+        )
+        .await;
+
         match cleanup_result {
             Ok(Ok(())) => info!("Container cleanup completed successfully"),
             Ok(Err(e)) => warn!("Container cleanup failed: {}", e),
             Err(_) => warn!("Container cleanup timed out"),
         }
-        
+
         Ok(())
     }
 
@@ -750,13 +758,13 @@ impl ContainerReactor {
     /// Result indicating success or failure
     async fn build_all(&mut self) -> Result<()> {
         let shutdown_token = shutdown::global_shutdown().cancellation_token();
-        
+
         // Check for shutdown before starting build
         if shutdown_token.is_cancelled() {
             info!("Build cancelled due to shutdown signal");
             return Err(Error::Terminated("Build cancelled due to shutdown".into()));
         }
-        
+
         // Verify Docker is working before attempting builds
         if let Err(e) = self.verify_docker_available().await {
             error!("\n=== Docker Check Failed ===");
@@ -809,7 +817,11 @@ impl ContainerReactor {
             // Get context directory
             // If no context_dir is specified, use the parent directory of the Dockerfile
             let context_dir = match &spec.build_type {
-                BuildType::TrunkWasm { context_dir, location, .. } => {
+                BuildType::TrunkWasm {
+                    context_dir,
+                    location,
+                    ..
+                } => {
                     context_dir.clone().unwrap_or_else(|| {
                         // If no context specified, use parent of Dockerfile location
                         if let Some(parent) = std::path::Path::new(dockerfile_path).parent() {
@@ -839,9 +851,11 @@ impl ContainerReactor {
                 }
                 _ => continue,
             };
-            
-            debug!("Component: {}, Dockerfile: {}, Context dir: {}", 
-                   component_name, dockerfile_path, context_dir);
+
+            debug!(
+                "Component: {}, Dockerfile: {}, Context dir: {}",
+                component_name, dockerfile_path, context_dir
+            );
 
             // Create image name and tag
             let image_name = if self.config.docker_registry.is_empty() {
@@ -865,17 +879,18 @@ impl ContainerReactor {
             }
 
             // Build any necessary scripts or templates first
-            // Note: For cross-compilation scenarios (e.g., macOS to Linux), 
+            // Note: For cross-compilation scenarios (e.g., macOS to Linux),
             // the build script may fail if the proper toolchain isn't installed.
             // In production, consider using Docker multi-stage builds instead.
             if let Err(e) = self.run_build_script_for_component(&spec).await {
                 error!("Failed to run build script for {}: {}", component_name, e);
-                
+
                 // Check if this is a cross-compilation issue
                 // For RustBinary builds targeting Linux from non-Linux hosts, this is expected
-                let is_cross_compile_issue = matches!(&spec.build_type, BuildType::RustBinary { .. }) 
-                    && cfg!(not(target_os = "linux"));
-                    
+                let is_cross_compile_issue =
+                    matches!(&spec.build_type, BuildType::RustBinary { .. })
+                        && cfg!(not(target_os = "linux"));
+
                 if is_cross_compile_issue {
                     error!(
                         "Cross-compilation from {} to Linux failed for {}.",
@@ -897,7 +912,7 @@ impl ContainerReactor {
                         5) Use a pre-built binary if available"
                     );
                 }
-                
+
                 self.rebuild_in_progress = false;
                 return Err(e);
             }
@@ -908,9 +923,9 @@ impl ContainerReactor {
             } else {
                 self.config.product_dir.join(dockerfile_path)
             };
-            
+
             // Resolve the Docker build context directory.
-            // 
+            //
             // Context directory resolution strategy:
             // 1. If context_dir is absolute, use it as-is
             // 2. For Ingress components with relative context_dir (e.g., "../"):
@@ -929,23 +944,31 @@ impl ContainerReactor {
                     BuildType::Ingress { .. } => {
                         // For ingress, the dockerfile path gives us the component location
                         // e.g., "ingress/Dockerfile" means component is in "ingress" directory
-                        if let Some(component_dir) = std::path::Path::new(dockerfile_path).parent() {
+                        if let Some(component_dir) = std::path::Path::new(dockerfile_path).parent()
+                        {
                             // Resolve context_dir relative to the component directory
                             // This allows "../" to correctly resolve to the product directory
-                            self.config.product_dir.join(component_dir).join(&context_dir)
+                            self.config
+                                .product_dir
+                                .join(component_dir)
+                                .join(&context_dir)
                         } else {
                             self.config.product_dir.join(&context_dir)
                         }
-                    },
+                    }
                     _ => {
                         // For other types, context_dir is relative to product directory
                         self.config.product_dir.join(&context_dir)
                     }
                 }
             };
-            
-            info!("Build paths for {}: Dockerfile={}, Context={}", 
-                  component_name, dockerfile.display(), context.display());
+
+            info!(
+                "Build paths for {}: Dockerfile={}, Context={}",
+                component_name,
+                dockerfile.display(),
+                context.display()
+            );
 
             // Set up Docker cross-compilation environment
             let target_platform = "linux/amd64"; // TODO: Should be configurable based on target
@@ -957,7 +980,8 @@ impl ContainerReactor {
             {
                 Ok(actual_image_name) => {
                     // Store the actual built image name for use during launch
-                    self.built_images.insert(component_name.clone(), actual_image_name.clone());
+                    self.built_images
+                        .insert(component_name.clone(), actual_image_name.clone());
                     info!(
                         "Successfully built/cached image for {}: {}",
                         component_name, actual_image_name
@@ -971,17 +995,23 @@ impl ContainerReactor {
                     error!("  Context: {}", context.display());
                     error!("  Image: {}", image_name);
                     error!("  Tag: {}", image_tag);
-                    
+
                     // Check if paths exist
                     if !dockerfile.exists() {
-                        error!("\n⚠️  Dockerfile does not exist at: {}", dockerfile.display());
+                        error!(
+                            "\n⚠️  Dockerfile does not exist at: {}",
+                            dockerfile.display()
+                        );
                     }
                     if !context.exists() {
-                        error!("\n⚠️  Build context directory does not exist at: {}", context.display());
+                        error!(
+                            "\n⚠️  Build context directory does not exist at: {}",
+                            context.display()
+                        );
                     }
-                    
+
                     self.rebuild_in_progress = false;
-                    
+
                     // Return a more descriptive error
                     return Err(Error::Docker(format!(
                         "Failed to build image for component '{}'. Check the output above for details.", 
@@ -1035,14 +1065,14 @@ impl ContainerReactor {
                         .find(|spec| spec.component_name == service.name);
 
                     let mut env_vars = HashMap::new();
-                    
+
                     // Add environment variables from component spec
                     if let Some(spec) = component_spec {
                         // Add dotenv variables (from .env files)
                         for (key, value) in &spec.dotenv {
                             env_vars.insert(key.clone(), value.clone());
                         }
-                        
+
                         // Add env variables (from YAML spec)
                         if let Some(env) = &spec.env {
                             for (key, value) in env {
@@ -1050,7 +1080,7 @@ impl ContainerReactor {
                             }
                         }
                     }
-                    
+
                     // Add encoded secrets as environment variables
                     let encoded_secrets = self.secrets_encoder.encode_secrets(secrets);
                     for (key, value) in encoded_secrets {
@@ -1068,18 +1098,19 @@ impl ContainerReactor {
                     }
 
                     // All containers should use the product directory as working directory
-                    let working_dir = format!("/app/{}", self.config.product_name.replace('.', "/"));
-                    
+                    let working_dir =
+                        format!("/app/{}", self.config.product_name.replace('.', "/"));
+
                     // Container name should be product_name-component_name (to match old implementation)
                     let container_name = format!("{}-{}", self.config.product_name, service.name);
-                    
+
                     let config = DockerServiceConfig {
                         name: container_name,
                         image: service.image.clone(),
                         network: self.config.network_name.clone(),
                         env_vars,
                         ports: vec![format!("{}:{}", service.port, service.target_port)],
-                        volumes,  // Use the already fixed volumes
+                        volumes, // Use the already fixed volumes
                         working_dir: Some(working_dir),
                     };
 
@@ -1109,19 +1140,27 @@ impl ContainerReactor {
                 .await?;
 
             // Create service object
-            let service = DockerService::new(container_id.clone(), config.clone(), self.docker_client.clone());
+            let service = DockerService::new(
+                container_id.clone(),
+                config.clone(),
+                self.docker_client.clone(),
+            );
 
             // Start following logs for this container
             let docker_client = self.docker_client.clone();
             let container_name = config.name.clone();
             let color = self.get_color_for_component(&container_name);
-            
+
             // Use output director if available, otherwise use standard output
             if let Some(ref output_director) = self.output_director {
-                eprintln!("DEBUG: Using output director for container {}", container_name);
+                eprintln!(
+                    "DEBUG: Using output director for container {}",
+                    container_name
+                );
                 let director = output_director.clone();
-                let source = crate::output::OutputSource::with_color(&container_name, "container", color);
-                
+                let source =
+                    crate::output::OutputSource::with_color(&container_name, "container", color);
+
                 tokio::spawn(async move {
                     eprintln!("DEBUG: Starting log follower for {}", container_name);
                     // Create a simple log follower that uses the shared director
@@ -1129,20 +1168,24 @@ impl ContainerReactor {
                         docker_client,
                         &container_id,
                         source,
-                        director
-                    ).await {
+                        director,
+                    )
+                    .await
+                    {
                         error!("Error following logs for {}: {}", container_name, e);
                     }
                 });
             } else {
-                eprintln!("DEBUG: No output director, using standard output for {}", container_name);
+                eprintln!(
+                    "DEBUG: No output director, using standard output for {}",
+                    container_name
+                );
                 // Fall back to standard output
                 tokio::spawn(async move {
-                    if let Err(e) = docker_client.follow_container_logs(
-                        &container_id, 
-                        container_name.clone(), 
-                        color
-                    ).await {
+                    if let Err(e) = docker_client
+                        .follow_container_logs(&container_id, container_name.clone(), color)
+                        .await
+                    {
                         error!("Error following logs for {}: {}", container_name, e);
                     }
                 });
@@ -1173,7 +1216,10 @@ impl ContainerReactor {
             return false;
         }
 
-        info!("Testing {} changed files for significance", changed_files.len());
+        info!(
+            "Testing {} changed files for significance",
+            changed_files.len()
+        );
         for file in changed_files {
             debug!("  Changed file: {}", file.display());
         }
@@ -1181,19 +1227,29 @@ impl ContainerReactor {
         let mut affected_components = Vec::new();
 
         // Check each component to see if it's affected by the changes
-        debug!("Checking {} components for changes", self.component_specs.len());
+        debug!(
+            "Checking {} components for changes",
+            self.component_specs.len()
+        );
         for spec in &self.component_specs {
             debug!("Evaluating component: {}", spec.component_name);
-            
+
             // Skip redirected components (they're not built locally)
-            if self.config.redirected_components.contains_key(&spec.component_name) {
+            if self
+                .config
+                .redirected_components
+                .contains_key(&spec.component_name)
+            {
                 debug!("  Skipping redirected component: {}", spec.component_name);
                 continue;
             }
 
             // Check if any changed file is in this component's context or matches its watch patterns
             if self.is_any_file_in_component_context(&spec, changed_files) {
-                info!("  ✓ Component '{}' is affected by file changes", spec.component_name);
+                info!(
+                    "  ✓ Component '{}' is affected by file changes",
+                    spec.component_name
+                );
                 affected_components.push(spec.component_name.clone());
             } else {
                 debug!("  ✗ Component '{}' not affected", spec.component_name);
@@ -1201,7 +1257,10 @@ impl ContainerReactor {
         }
 
         if !affected_components.is_empty() {
-            info!("Rebuild triggered for components: {:?}", affected_components);
+            info!(
+                "Rebuild triggered for components: {:?}",
+                affected_components
+            );
             true
         } else {
             info!("No components affected by file changes - rebuild skipped");
@@ -1220,9 +1279,16 @@ impl ContainerReactor {
     /// # Returns
     ///
     /// Boolean indicating whether the component is affected
-    fn is_any_file_in_component_context(&self, spec: &ComponentBuildSpec, file_paths: &[PathBuf]) -> bool {
-        debug!("    Checking context for component: {}", spec.component_name);
-        
+    fn is_any_file_in_component_context(
+        &self,
+        spec: &ComponentBuildSpec,
+        file_paths: &[PathBuf],
+    ) -> bool {
+        debug!(
+            "    Checking context for component: {}",
+            spec.component_name
+        );
+
         // First check if component has watch patterns defined
         if let Some(watch_matcher) = &spec.watch {
             debug!("    Component has watch patterns defined");
@@ -1231,22 +1297,29 @@ impl ContainerReactor {
                 if matches {
                     debug!("      ✓ File {} matches watch pattern", file.display());
                 } else {
-                    debug!("      ✗ File {} does not match watch patterns", file.display());
+                    debug!(
+                        "      ✗ File {} does not match watch patterns",
+                        file.display()
+                    );
                 }
                 matches
             });
-            
+
             // When watch patterns are defined, ONLY rebuild if a file matches the patterns
             debug!("    Watch pattern result: {}", matched);
             return matched;
         }
-        
+
         // If no watch patterns are defined, fall back to checking the context directory
         debug!("    No watch patterns defined, checking context directory");
 
         // Get the component's context directory based on build type
         let context_dir = match &spec.build_type {
-            BuildType::TrunkWasm { context_dir, location, .. } => {
+            BuildType::TrunkWasm {
+                context_dir,
+                location,
+                ..
+            } => {
                 context_dir.clone().unwrap_or_else(|| {
                     // For TrunkWasm, derive context from the parent directory of location
                     if let Some(parent) = std::path::Path::new(location).parent() {
@@ -1256,23 +1329,43 @@ impl ContainerReactor {
                     }
                 })
             }
-            BuildType::RustBinary { context_dir, location, .. } => {
+            BuildType::RustBinary {
+                context_dir,
+                location,
+                ..
+            } => {
                 // For RustBinary, use context_dir if specified, otherwise use location
                 context_dir.clone().unwrap_or_else(|| location.clone())
             }
-            BuildType::DixiousWasm { context_dir, location, .. } => {
-                // For DixiousWasm, use context_dir if specified, otherwise use location  
+            BuildType::DixiousWasm {
+                context_dir,
+                location,
+                ..
+            } => {
+                // For DixiousWasm, use context_dir if specified, otherwise use location
                 context_dir.clone().unwrap_or_else(|| location.clone())
             }
-            BuildType::Script { context_dir, location, .. } => {
+            BuildType::Script {
+                context_dir,
+                location,
+                ..
+            } => {
                 // For Script, use context_dir if specified, otherwise use location
                 context_dir.clone().unwrap_or_else(|| location.clone())
             }
-            BuildType::Zola { context_dir, location, .. } => {
+            BuildType::Zola {
+                context_dir,
+                location,
+                ..
+            } => {
                 // For Zola, use context_dir if specified, otherwise use location
                 context_dir.clone().unwrap_or_else(|| location.clone())
             }
-            BuildType::Book { context_dir, location, .. } => {
+            BuildType::Book {
+                context_dir,
+                location,
+                ..
+            } => {
                 // For Book, use context_dir if specified, otherwise use location
                 context_dir.clone().unwrap_or_else(|| location.clone())
             }
@@ -1280,7 +1373,7 @@ impl ContainerReactor {
                 // For Ingress, use context_dir if specified, otherwise current directory
                 context_dir.clone().unwrap_or_else(|| ".".to_string())
             }
-            BuildType::PureDockerImage { .. } 
+            BuildType::PureDockerImage { .. }
             | BuildType::PureKubernetes
             | BuildType::KubernetesInstallation { .. } => {
                 // These types don't have a build context for file watching
@@ -1292,28 +1385,40 @@ impl ContainerReactor {
         // Check if any changed file is within the component's context directory
         let context_path = self.config.product_dir.join(&context_dir);
         debug!("    Context directory: {}", context_path.display());
-        
+
         let result = file_paths.iter().any(|file_path| {
-            debug!("      Checking if {} is in context {}", file_path.display(), context_path.display());
-            
+            debug!(
+                "      Checking if {} is in context {}",
+                file_path.display(),
+                context_path.display()
+            );
+
             // Try to get absolute paths for comparison
             if let (Ok(abs_file), Ok(abs_context)) = (
                 std::fs::canonicalize(file_path),
-                std::fs::canonicalize(&context_path)
+                std::fs::canonicalize(&context_path),
             ) {
                 let is_match = abs_file.starts_with(&abs_context);
-                debug!("        Absolute comparison: {} starts_with {} = {}", 
-                     abs_file.display(), abs_context.display(), is_match);
+                debug!(
+                    "        Absolute comparison: {} starts_with {} = {}",
+                    abs_file.display(),
+                    abs_context.display(),
+                    is_match
+                );
                 is_match
             } else {
                 // Fallback to simple path comparison
                 let is_match = file_path.starts_with(&context_path);
-                debug!("        Simple comparison: {} starts_with {} = {}", 
-                     file_path.display(), context_path.display(), is_match);
+                debug!(
+                    "        Simple comparison: {} starts_with {} = {}",
+                    file_path.display(),
+                    context_path.display(),
+                    is_match
+                );
                 is_match
             }
         });
-        
+
         debug!("    Context directory check result: {}", result);
         result
     }
@@ -1397,24 +1502,31 @@ impl ContainerReactor {
         for service in &self.running_services {
             let mut retries = 0;
             let max_retries = 3;
-            
+
             while retries < max_retries {
                 // Try to stop gracefully first
                 let stop_result = service.stop().await;
                 let remove_result = service.remove().await;
-                
+
                 if stop_result.is_ok() && remove_result.is_ok() {
                     break;
                 }
-                
+
                 retries += 1;
                 if retries < max_retries {
-                    warn!("Failed to clean up container {} (attempt {}/{}), retrying...", 
-                          service.id(), retries, max_retries);
+                    warn!(
+                        "Failed to clean up container {} (attempt {}/{}), retrying...",
+                        service.id(),
+                        retries,
+                        max_retries
+                    );
                     tokio::time::sleep(Duration::from_millis(500 * retries as u64)).await;
                 } else {
-                    warn!("Failed to clean up container {} after {} retries", 
-                          service.id(), max_retries);
+                    warn!(
+                        "Failed to clean up container {} after {} retries",
+                        service.id(),
+                        max_retries
+                    );
                 }
             }
         }
@@ -1437,9 +1549,10 @@ impl ContainerReactor {
         for spec in &self.component_specs {
             // Use product_name-component_name to match the container naming convention
             let container_name = format!("{}-{}", self.config.product_name, spec.component_name);
-            
+
             // Try to kill and remove with retries
-            self.kill_and_remove_container_with_retry(&container_name, 3).await?;
+            self.kill_and_remove_container_with_retry(&container_name, 3)
+                .await?;
         }
 
         trace!("Container cleanup by name completed");
@@ -1447,21 +1560,27 @@ impl ContainerReactor {
     }
 
     /// Kill and remove a container with retry logic
-    async fn kill_and_remove_container_with_retry(&self, container_name: &str, max_retries: u32) -> Result<()> {
+    async fn kill_and_remove_container_with_retry(
+        &self,
+        container_name: &str,
+        max_retries: u32,
+    ) -> Result<()> {
         let mut retries = 0;
-        
+
         while retries < max_retries {
             // First try to kill if running
             match self.kill_container_by_name(container_name).await {
                 Ok(_) => debug!("Successfully killed container: {}", container_name),
                 Err(e) => {
                     if retries == max_retries - 1 {
-                        warn!("Failed to kill container {} after {} retries: {}", 
-                              container_name, max_retries, e);
+                        warn!(
+                            "Failed to kill container {} after {} retries: {}",
+                            container_name, max_retries, e
+                        );
                     }
                 }
             }
-            
+
             // Then try to remove
             match self.remove_container_by_name(container_name).await {
                 Ok(_) => {
@@ -1471,20 +1590,24 @@ impl ContainerReactor {
                 Err(e) => {
                     retries += 1;
                     if retries < max_retries {
-                        warn!("Failed to remove container {} (attempt {}/{}): {}, retrying...", 
-                              container_name, retries, max_retries, e);
+                        warn!(
+                            "Failed to remove container {} (attempt {}/{}): {}, retrying...",
+                            container_name, retries, max_retries, e
+                        );
                         // Wait a bit before retrying
                         tokio::time::sleep(Duration::from_millis(500 * retries as u64)).await;
                     } else {
-                        warn!("Failed to remove container {} after {} retries: {}", 
-                              container_name, max_retries, e);
+                        warn!(
+                            "Failed to remove container {} after {} retries: {}",
+                            container_name, max_retries, e
+                        );
                         // Don't fail completely, just warn
                         return Ok(());
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -1503,7 +1626,7 @@ impl ContainerReactor {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     let container_ids: Vec<&str> = stdout.trim().lines().collect();
-                    
+
                     if !container_ids.is_empty() {
                         // Container is running, kill it
                         info!("Killing running container: {}", container_name);
@@ -1513,11 +1636,19 @@ impl ContainerReactor {
                             .stderr(Stdio::piped())
                             .output()
                             .await
-                            .map_err(|e| Error::Container(format!("Failed to execute kill command for {}: {}", container_name, e)))?;
+                            .map_err(|e| {
+                                Error::Container(format!(
+                                    "Failed to execute kill command for {}: {}",
+                                    container_name, e
+                                ))
+                            })?;
 
                         if !kill_output.status.success() {
                             let stderr = String::from_utf8_lossy(&kill_output.stderr);
-                            return Err(Error::Container(format!("Failed to kill container {}: {}", container_name, stderr)));
+                            return Err(Error::Container(format!(
+                                "Failed to kill container {}: {}",
+                                container_name, stderr
+                            )));
                         }
                     } else {
                         trace!("No running container found for {}", container_name);
@@ -1527,7 +1658,11 @@ impl ContainerReactor {
                 }
             }
             Err(e) => {
-                trace!("Error executing docker ps command for {}: {}", container_name, e);
+                trace!(
+                    "Error executing docker ps command for {}: {}",
+                    container_name,
+                    e
+                );
             }
         }
 
@@ -1549,7 +1684,7 @@ impl ContainerReactor {
                 if output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     let container_ids: Vec<&str> = stdout.trim().lines().collect();
-                    
+
                     if !container_ids.is_empty() {
                         // Container exists, remove it
                         info!("Removing container: {}", container_name);
@@ -1559,11 +1694,19 @@ impl ContainerReactor {
                             .stderr(Stdio::piped())
                             .output()
                             .await
-                            .map_err(|e| Error::Container(format!("Failed to execute rm command for {}: {}", container_name, e)))?;
+                            .map_err(|e| {
+                                Error::Container(format!(
+                                    "Failed to execute rm command for {}: {}",
+                                    container_name, e
+                                ))
+                            })?;
 
                         if !rm_output.status.success() {
                             let stderr = String::from_utf8_lossy(&rm_output.stderr);
-                            return Err(Error::Container(format!("Failed to remove container {}: {}", container_name, stderr)));
+                            return Err(Error::Container(format!(
+                                "Failed to remove container {}: {}",
+                                container_name, stderr
+                            )));
                         }
                     } else {
                         trace!("No container found for {}", container_name);
@@ -1573,7 +1716,11 @@ impl ContainerReactor {
                 }
             }
             Err(e) => {
-                trace!("Error executing docker ps command for {}: {}", container_name, e);
+                trace!(
+                    "Error executing docker ps command for {}: {}",
+                    container_name,
+                    e
+                );
             }
         }
 
@@ -1594,7 +1741,7 @@ impl ContainerReactor {
                     "magenta" => "magenta",
                     "cyan" => "cyan",
                     "white" => "white",
-                    _ => "white"
+                    _ => "white",
                 };
             }
         }
@@ -1640,42 +1787,45 @@ impl ContainerReactor {
     /// Renders artifacts for a component before Docker build
     async fn render_artifacts_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
         use crate::build::{Artefact, BuildContext, ServiceSpec};
-        use crate::toolchain::{Platform, ToolchainContext};
         use crate::error::Error;
+        use crate::toolchain::{Platform, ToolchainContext};
         use std::collections::HashMap;
         use std::fs;
         use std::path::{Path, PathBuf};
-        
+
         // Check if this component has artifacts to render
         if spec.artefacts.is_none() {
             return Ok(());
         }
-        
+
         let artifact_count = spec.artefacts.as_ref().map(|a| a.len()).unwrap_or(0);
-        info!("Rendering {} artifacts for component: {}", artifact_count, spec.component_name);
-        
+        info!(
+            "Rendering {} artifacts for component: {}",
+            artifact_count, spec.component_name
+        );
+
         // Artifacts paths are relative to product directory
         // We need to resolve them to absolute paths
         let product_dir = &self.config.product_dir;
-        
+
         // Create toolchain context
         let host_platform = Platform::default();
         let target_platform = Platform::new("linux", "x86_64");
         let toolchain = ToolchainContext::new(host_platform.clone(), target_platform.clone());
-        
+
         // Get location from build type
         let location = spec.build_type.location().unwrap_or(".");
-        
+
         // For Ingress components, we need to filter services to only include
         // the components specified in the ingress configuration
         let services = if let BuildType::Ingress { components, .. } = &spec.build_type {
             // Build a filtered services map based on the ingress components
             let mut filtered_services = HashMap::new();
-            
+
             // We need to collect service information for the specified components
             // For now, we'll create basic service specs for the components
             let domain = format!("{}.local", spec.product_name);
-            
+
             for component in components {
                 let docker_host = format!("{}-{}", spec.product_name, component);
                 let service_spec = ServiceSpec {
@@ -1693,19 +1843,19 @@ impl ContainerReactor {
                         None
                     },
                 };
-                
+
                 // Add to the domain
                 filtered_services
                     .entry(domain.clone())
                     .or_insert_with(Vec::new)
                     .push(service_spec);
             }
-            
+
             filtered_services
         } else {
             Default::default()
         };
-        
+
         // Create build context for artifact rendering
         let context = BuildContext {
             build_type: spec.build_type.clone(),
@@ -1726,27 +1876,25 @@ impl ContainerReactor {
             env: spec.dotenv.clone(),
             secrets: Default::default(),
         };
-        
+
         // Create output directory for artifacts
         let output_dir = Path::new(&spec.artefact_output_dir);
         if !output_dir.exists() {
-            fs::create_dir_all(output_dir)
-                .map_err(|e| Error::FileSystem { 
-                    path: output_dir.to_path_buf(),
-                    message: format!("Failed to create artifact output directory: {}", e)
-                })?;
+            fs::create_dir_all(output_dir).map_err(|e| Error::FileSystem {
+                path: output_dir.to_path_buf(),
+                message: format!("Failed to create artifact output directory: {}", e),
+            })?;
         }
-        
+
         // Create rushd subdirectory if needed (for ingress nginx.conf)
         let rushd_dir = output_dir.join("rushd");
         if !rushd_dir.exists() {
-            fs::create_dir_all(&rushd_dir)
-                .map_err(|e| Error::FileSystem {
-                    path: rushd_dir.clone(),
-                    message: format!("Failed to create rushd directory: {}", e)
-                })?;
+            fs::create_dir_all(&rushd_dir).map_err(|e| Error::FileSystem {
+                path: rushd_dir.clone(),
+                message: format!("Failed to create rushd directory: {}", e),
+            })?;
         }
-        
+
         // Render each artifact
         // Note: The artifacts come with relative paths, we need to make them absolute
         if let Some(artefacts) = &spec.artefacts {
@@ -1758,69 +1906,84 @@ impl ContainerReactor {
                 } else {
                     input_path
                 };
-                
+
                 let absolute_input_path = if Path::new(normalized_input_path).is_absolute() {
                     PathBuf::from(normalized_input_path)
                 } else {
                     product_dir.join(normalized_input_path)
                 };
-                
-                debug!("Artifact path normalization: '{}' -> '{}' -> '{}'", 
-                      input_path, normalized_input_path, absolute_input_path.display());
-                
+
+                debug!(
+                    "Artifact path normalization: '{}' -> '{}' -> '{}'",
+                    input_path,
+                    normalized_input_path,
+                    absolute_input_path.display()
+                );
+
                 // For ingress, output goes to rushd/nginx.conf in the context directory
-                let absolute_output_path = if spec.component_name == "ingress" && output_name == "nginx.conf" {
-                    rushd_dir.join("nginx.conf")
-                } else {
-                    output_dir.join(output_name)
-                };
-                
-                info!("Rendering artifact: {} -> {}", 
-                     absolute_input_path.display(), 
-                     absolute_output_path.display());
-                
+                let absolute_output_path =
+                    if spec.component_name == "ingress" && output_name == "nginx.conf" {
+                        rushd_dir.join("nginx.conf")
+                    } else {
+                        output_dir.join(output_name)
+                    };
+
+                info!(
+                    "Rendering artifact: {} -> {}",
+                    absolute_input_path.display(),
+                    absolute_output_path.display()
+                );
+
                 // Create the artifact with absolute paths
                 let artifact = match Artefact::new(
                     absolute_input_path.to_string_lossy().to_string(),
-                    absolute_output_path.to_string_lossy().to_string()
+                    absolute_output_path.to_string_lossy().to_string(),
                 ) {
                     Ok(artifact) => artifact,
                     Err(e) => {
-                        error!("Failed to create artifact for {}: {}", spec.component_name, e);
+                        error!(
+                            "Failed to create artifact for {}: {}",
+                            spec.component_name, e
+                        );
                         return Err(e);
                     }
                 };
-                
+
                 // Render the artifact
                 if let Err(e) = artifact.render_to_file(&context) {
-                    error!("Failed to render artifact for {}: {}", spec.component_name, e);
+                    error!(
+                        "Failed to render artifact for {}: {}",
+                        spec.component_name, e
+                    );
                     return Err(e);
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// Runs the build script for a component before Docker build
     async fn run_build_script_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
         use crate::build::{BuildContext, BuildScript};
+        use crate::error::Error;
         use crate::toolchain::{Platform, ToolchainContext};
         use crate::utils::run_command;
-        use crate::error::Error;
-        
+
         // Skip components that don't need build scripts
         if !spec.build_type.requires_docker_build() {
             return Ok(());
         }
-        
+
         // Create toolchain context with proper cross-compilation setup
         // This matches the old implementation's behavior
         let host_platform = Platform::default();
         let target_platform = Platform::new("linux", "x86_64");
-        
+
         // For cross-compilation scenarios, we need to handle potential toolchain issues
-        let toolchain = if host_platform.os != target_platform.os || host_platform.arch != target_platform.arch {
+        let toolchain = if host_platform.os != target_platform.os
+            || host_platform.arch != target_platform.arch
+        {
             // Cross-compilation scenario
             match std::panic::catch_unwind(|| {
                 ToolchainContext::new(host_platform.clone(), target_platform.clone())
@@ -1845,16 +2008,16 @@ impl ContainerReactor {
             tc.setup_env();
             tc
         };
-        
+
         // Get location from build type (like the old implementation)
         let location = spec.build_type.location().unwrap_or(".");
-        
+
         // Create build context
         let context = BuildContext {
             build_type: spec.build_type.clone(),
             location: Some(location.to_string()),
             target: target_platform,
-            host: host_platform, 
+            host: host_platform,
             rust_target: "x86_64-unknown-linux-gnu".to_string(),
             toolchain,
             services: Default::default(),
@@ -1869,16 +2032,14 @@ impl ContainerReactor {
             env: spec.dotenv.clone(),
             secrets: Default::default(),
         };
-        
+
         // Check if we're attempting cross-compilation
         let is_cross_compile = location.contains("backend") && cfg!(not(target_os = "linux"));
-        
+
         if is_cross_compile {
             // For cross-compilation, we need special handling
             // Check if cross is installed
-            if let Ok(output) = std::process::Command::new("which")
-                .arg("cross")
-                .output() {
+            if let Ok(output) = std::process::Command::new("which").arg("cross").output() {
                 if output.status.success() {
                     info!("Found 'cross' tool for cross-compilation");
                     // Use cross instead of cargo for cross-compilation
@@ -1892,30 +2053,32 @@ impl ContainerReactor {
                 }
             }
         }
-        
+
         // Generate build script
         let build_script = BuildScript::new(spec.build_type.clone());
         let script_content = build_script.render(&context);
-        
+
         if script_content.is_empty() {
             // No build script needed for this component
             return Ok(());
         }
-        
+
         // Execute build script from product directory root (template will cd to location)
         let build_dir = self.config.product_dir.clone();
-        
-        info!("Running build script for component: {}", spec.component_name);
-        
+
+        info!(
+            "Running build script for component: {}",
+            spec.component_name
+        );
+
         // Write script to temporary file and execute it
         use std::fs;
         use std::os::unix::fs::PermissionsExt;
-        
-        
+
         let script_path = build_dir.join("build_script.sh");
         fs::write(&script_path, &script_content)
             .map_err(|e| Error::Build(format!("Failed to write build script: {}", e)))?;
-            
+
         // Make script executable
         let metadata = fs::metadata(&script_path)
             .map_err(|e| Error::Build(format!("Failed to get script metadata: {}", e)))?;
@@ -1923,23 +2086,22 @@ impl ContainerReactor {
         permissions.set_mode(0o755);
         fs::set_permissions(&script_path, permissions)
             .map_err(|e| Error::Build(format!("Failed to set script permissions: {}", e)))?;
-        
+
         // Use Directory guard to change to build directory and execute the script
         let output = {
             let _dir_guard = crate::utils::Directory::chpath(&build_dir);
-            run_command(
-                "Build script",
-                "bash",
-                vec!["./build_script.sh"],
-            ).await
+            run_command("Build script", "bash", vec!["./build_script.sh"]).await
         };
-        
+
         // Clean up the script file
         let _ = fs::remove_file(&script_path);
-        
+
         match output {
             Ok(_) => {
-                info!("Build script completed successfully for: {}", spec.component_name);
+                info!(
+                    "Build script completed successfully for: {}",
+                    spec.component_name
+                );
                 Ok(())
             }
             Err(e) => {
@@ -1963,20 +2125,22 @@ impl ContainerReactor {
     /// Result indicating success or failure
     async fn verify_docker_available(&self) -> Result<()> {
         use tokio::process::Command;
-        
+
         let output = Command::new("docker")
             .args(["version", "--format", "json"])
             .output()
             .await
             .map_err(|e| Error::Docker(format!("Cannot execute docker command: {}", e)))?;
-            
+
         if !output.status.success() {
-            return Err(Error::Docker("Docker is not available or not running".into()));
+            return Err(Error::Docker(
+                "Docker is not available or not running".into(),
+            ));
         }
-        
+
         Ok(())
     }
-    
+
     /// Builds a Docker image with caching support
     ///
     /// # Arguments
@@ -2010,7 +2174,7 @@ impl ContainerReactor {
         // Create an ImageBuilder with the right configuration
         // Set working directory to product directory
         let working_dir = format!("/app/{}", self.config.product_name.replace('.', "/"));
-        
+
         let service_config = DockerServiceConfig {
             name: image_name.to_string(),
             image: format!("{}:{}", image_name, image_tag),
@@ -2045,7 +2209,7 @@ impl ContainerReactor {
             self.config.product_name.clone(),
         )
         .with_build_config(build_config);
-        
+
         // Set up toolchain if available
         if let Some(toolchain) = &self.toolchain {
             image_builder = image_builder.with_toolchain(toolchain.clone());
@@ -2055,20 +2219,26 @@ impl ContainerReactor {
         let needs_rebuild = match image_builder.evaluate_rebuild_needed().await {
             Ok(needed) => needed,
             Err(e) => {
-                warn!("Failed to evaluate cache status: {}, proceeding with build", e);
+                warn!(
+                    "Failed to evaluate cache status: {}, proceeding with build",
+                    e
+                );
                 true
             }
         };
 
         if !needs_rebuild {
-            info!("Image {} already exists in cache with clean git tag, skipping build", image_name);
+            info!(
+                "Image {} already exists in cache with clean git tag, skipping build",
+                image_name
+            );
             return Ok(image_builder.tagged_image_name());
         }
 
         info!("Building image {} with git-based tag", image_name);
         // Build the image
         image_builder.build().await?;
-        
+
         // Return the actual tagged image name that was built
         Ok(image_builder.tagged_image_name())
     }
@@ -2104,9 +2274,12 @@ async fn follow_container_logs_with_shared_director(
     director: crate::output::SharedOutputDirector,
 ) -> Result<()> {
     use tokio::io::{AsyncBufReadExt, BufReader};
-    
-    eprintln!("DEBUG: Starting docker logs command for container {}", container_id);
-    
+
+    eprintln!(
+        "DEBUG: Starting docker logs command for container {}",
+        container_id
+    );
+
     // Use docker logs command to follow the container logs
     let mut child = Command::new("docker")
         .args(["logs", "-f", "--tail", "100", container_id])
@@ -2114,12 +2287,12 @@ async fn follow_container_logs_with_shared_director(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| Error::Docker(format!("Failed to follow container logs: {}", e)))?;
-    
+
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-    
+
     let mut handles = vec![];
-    
+
     // Handle stdout
     if let Some(stdout) = stdout {
         let source_clone = source.clone();
@@ -2129,13 +2302,13 @@ async fn follow_container_logs_with_shared_director(
             let mut reader = BufReader::new(stdout);
             let mut line = String::new();
             let mut line_count = 0;
-            
+
             loop {
                 line.clear();
                 match reader.read_line(&mut line).await {
                     Ok(0) => {
                         eprintln!("DEBUG: EOF reached on stdout after {} lines", line_count);
-                        break;  // EOF
+                        break; // EOF
                     }
                     Ok(_) => {
                         line_count += 1;
@@ -2163,7 +2336,7 @@ async fn follow_container_logs_with_shared_director(
         });
         handles.push(handle);
     }
-    
+
     // Handle stderr
     if let Some(stderr) = stderr {
         let source_clone = source.clone();
@@ -2173,13 +2346,13 @@ async fn follow_container_logs_with_shared_director(
             let mut reader = BufReader::new(stderr);
             let mut line = String::new();
             let mut line_count = 0;
-            
+
             loop {
                 line.clear();
                 match reader.read_line(&mut line).await {
                     Ok(0) => {
                         eprintln!("DEBUG: EOF reached on stderr after {} lines", line_count);
-                        break;  // EOF
+                        break; // EOF
                     }
                     Ok(_) => {
                         line_count += 1;
@@ -2207,12 +2380,15 @@ async fn follow_container_logs_with_shared_director(
         });
         handles.push(handle);
     }
-    
+
     // This function should run indefinitely following logs
     // The spawned tasks will continue running
     // We don't wait for them to complete since logs should stream continuously
-    
-    eprintln!("DEBUG: Log following tasks spawned for container {}", container_id);
-    
+
+    eprintln!(
+        "DEBUG: Log following tasks spawned for container {}",
+        container_id
+    );
+
     Ok(())
 }

@@ -9,8 +9,7 @@ use crate::k8s::context::KubernetesContext;
 use log::{debug, info, warn};
 use serde_yaml::{self, Value};
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tera::{Context, Tera};
@@ -291,6 +290,7 @@ impl ManifestCollection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
 

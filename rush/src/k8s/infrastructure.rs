@@ -7,8 +7,7 @@ use crate::error::{Error, Result};
 use crate::k8s::context::KubernetesContext;
 use crate::toolchain::ToolchainContext;
 use log::{debug, info};
-use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -257,6 +256,8 @@ impl InfrastructureRepo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::io::{Read, Write};
     use tempfile::TempDir;
 
     fn create_test_file(dir: &Path, name: &str, content: &str) -> Result<()> {

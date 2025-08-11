@@ -1,14 +1,14 @@
 //! Global shutdown management for graceful termination
-//! 
+//!
 //! This module provides a centralized shutdown system that can be used across
 //! the entire application to coordinate graceful shutdown of builds, containers,
 //! and other long-running operations.
 
-use std::sync::Arc;
+use log::{debug, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::{broadcast, Notify};
 use tokio_util::sync::CancellationToken;
-use log::{info, warn, debug};
 
 /// Global shutdown coordinator that manages graceful termination
 /// of all application components including builds and container operations.
@@ -16,19 +16,19 @@ use log::{info, warn, debug};
 pub struct ShutdownCoordinator {
     /// Main cancellation token for coordinating shutdown across all components
     cancellation_token: CancellationToken,
-    
+
     /// Broadcast channel for sending shutdown signals to multiple listeners
     shutdown_sender: broadcast::Sender<ShutdownReason>,
-    
+
     /// Flag to indicate if shutdown has been initiated
     shutdown_initiated: Arc<AtomicBool>,
-    
+
     /// Notification system for waiting on shutdown completion
     shutdown_complete: Arc<Notify>,
 }
 
 /// Reason for shutdown to help with logging and cleanup decisions.
-/// 
+///
 /// This enum helps differentiate between normal shutdowns (user-requested)
 /// and abnormal shutdowns (errors), allowing for appropriate cleanup actions.
 #[derive(Debug, Clone)]
@@ -51,7 +51,7 @@ impl ShutdownCoordinator {
     /// Creates a new shutdown coordinator
     pub fn new() -> Self {
         let (shutdown_sender, _) = broadcast::channel(16);
-        
+
         Self {
             cancellation_token: CancellationToken::new(),
             shutdown_sender,
@@ -59,44 +59,48 @@ impl ShutdownCoordinator {
             shutdown_complete: Arc::new(Notify::new()),
         }
     }
-    
+
     /// Get the cancellation token for use in async operations
     /// This should be passed to all long-running operations so they can
     /// be cancelled when shutdown is initiated.
     pub fn cancellation_token(&self) -> CancellationToken {
         self.cancellation_token.clone()
     }
-    
+
     /// Subscribe to shutdown notifications
     /// Returns a receiver that will be notified when shutdown is initiated
     pub fn subscribe(&self) -> broadcast::Receiver<ShutdownReason> {
         self.shutdown_sender.subscribe()
     }
-    
+
     /// Initiate shutdown with the specified reason
     /// This will cancel all operations and notify all listeners
     pub fn shutdown(&self, reason: ShutdownReason) {
-        if self.shutdown_initiated.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+        if self
+            .shutdown_initiated
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
             info!("Initiating graceful shutdown: {:?}", reason);
-            
+
             // Cancel all operations
             self.cancellation_token.cancel();
-            
+
             // Notify all listeners
             if let Err(_) = self.shutdown_sender.send(reason.clone()) {
                 debug!("No shutdown listeners to notify");
             }
-            
+
             // Mark shutdown as complete
             self.shutdown_complete.notify_waiters();
         }
     }
-    
+
     /// Check if shutdown has been initiated
     pub fn is_shutdown_initiated(&self) -> bool {
         self.shutdown_initiated.load(Ordering::SeqCst)
     }
-    
+
     /// Wait for shutdown to complete
     pub async fn wait_for_shutdown(&self) {
         if self.shutdown_initiated.load(Ordering::SeqCst) {
@@ -107,18 +111,21 @@ impl ShutdownCoordinator {
 }
 
 /// Global instance of the shutdown coordinator
-static SHUTDOWN_COORDINATOR: std::sync::OnceLock<Arc<ShutdownCoordinator>> = std::sync::OnceLock::new();
+static SHUTDOWN_COORDINATOR: std::sync::OnceLock<Arc<ShutdownCoordinator>> =
+    std::sync::OnceLock::new();
 
 /// Get the global shutdown coordinator instance
 pub fn global_shutdown() -> Arc<ShutdownCoordinator> {
-    SHUTDOWN_COORDINATOR.get_or_init(|| Arc::new(ShutdownCoordinator::new())).clone()
+    SHUTDOWN_COORDINATOR
+        .get_or_init(|| Arc::new(ShutdownCoordinator::new()))
+        .clone()
 }
 
 /// Initialize signal handlers for graceful shutdown
 /// This should be called early in main() to set up Ctrl+C and SIGTERM handling
 pub fn setup_signal_handlers() {
     let shutdown = global_shutdown();
-    
+
     tokio::spawn(async move {
         // Handle Ctrl+C (SIGINT)
         match tokio::signal::ctrl_c().await {
@@ -131,14 +138,14 @@ pub fn setup_signal_handlers() {
             }
         }
     });
-    
+
     // Handle SIGTERM on Unix systems
     #[cfg(unix)]
     {
         let shutdown = global_shutdown();
         tokio::spawn(async move {
             use tokio::signal::unix::{signal, SignalKind};
-            
+
             let mut sigterm = match signal(SignalKind::terminate()) {
                 Ok(signal) => signal,
                 Err(err) => {
@@ -146,7 +153,7 @@ pub fn setup_signal_handlers() {
                     return;
                 }
             };
-            
+
             sigterm.recv().await;
             info!("Received SIGTERM signal");
             shutdown.shutdown(ShutdownReason::UserRequested);
@@ -158,70 +165,75 @@ pub fn setup_signal_handlers() {
 mod tests {
     use super::*;
     use tokio::time::{timeout, Duration};
-    
+
     #[tokio::test]
     async fn test_shutdown_coordination() {
         let coordinator = ShutdownCoordinator::new();
-        
+
         // Test that shutdown is not initially initiated
         assert!(!coordinator.is_shutdown_initiated());
-        
+
         // Test subscription before shutdown
         let mut receiver = coordinator.subscribe();
-        
+
         // Test cancellation token
         let token = coordinator.cancellation_token();
         assert!(!token.is_cancelled());
-        
+
         // Initiate shutdown
         coordinator.shutdown(ShutdownReason::UserRequested);
-        
+
         // Test that shutdown is now initiated
         assert!(coordinator.is_shutdown_initiated());
         assert!(token.is_cancelled());
-        
+
         // Test that subscribers are notified
         let reason = receiver.recv().await.unwrap();
         match reason {
-            ShutdownReason::UserRequested => {},
+            ShutdownReason::UserRequested => {}
             _ => panic!("Expected UserRequested shutdown reason"),
         }
-        
+
         // Test that we can wait for shutdown (should complete immediately since shutdown was called)
-        let wait_result = timeout(Duration::from_millis(100), coordinator.wait_for_shutdown()).await;
-        assert!(wait_result.is_ok(), "Wait for shutdown should complete quickly after shutdown is initiated");
+        let wait_result =
+            timeout(Duration::from_millis(100), coordinator.wait_for_shutdown()).await;
+        assert!(
+            wait_result.is_ok(),
+            "Wait for shutdown should complete quickly after shutdown is initiated"
+        );
     }
-    
+
     #[tokio::test]
     async fn test_multiple_shutdown_calls() {
         let coordinator = ShutdownCoordinator::new();
-        
+
         // Multiple shutdown calls should be idempotent
         coordinator.shutdown(ShutdownReason::UserRequested);
         coordinator.shutdown(ShutdownReason::Error("test".to_string()));
-        
+
         assert!(coordinator.is_shutdown_initiated());
     }
 
     #[tokio::test]
     async fn test_multiple_subscribers() {
         let coordinator = ShutdownCoordinator::new();
-        
+
         // Create multiple subscribers
         let mut receivers = vec![];
         for _ in 0..5 {
             receivers.push(coordinator.subscribe());
         }
-        
+
         // Initiate shutdown
         coordinator.shutdown(ShutdownReason::Error(String::from("SIGTERM")));
-        
+
         // All subscribers should receive the shutdown reason
         for mut receiver in receivers {
-            let reason = timeout(Duration::from_secs(1), receiver.recv()).await
+            let reason = timeout(Duration::from_secs(1), receiver.recv())
+                .await
                 .expect("Should receive within timeout")
                 .expect("Should receive value");
-            
+
             match reason {
                 ShutdownReason::Error(sig) => assert_eq!(sig, "SIGTERM"),
                 _ => panic!("Wrong shutdown reason"),
@@ -246,7 +258,7 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_shutdown_calls() {
         let coordinator = ShutdownCoordinator::new();
-        
+
         // Spawn multiple tasks that try to shutdown concurrently
         let mut handles = vec![];
         for i in 0..10 {
@@ -256,15 +268,15 @@ mod tests {
                 coord.shutdown(ShutdownReason::UserRequested);
             }));
         }
-        
+
         // Wait for all tasks to complete
         for handle in handles {
             handle.await.unwrap();
         }
-        
+
         // Should be shutdown exactly once
         assert!(coordinator.is_shutdown_initiated());
-        
+
         // Cancellation token should be cancelled
         assert!(coordinator.cancellation_token().is_cancelled());
     }
@@ -273,10 +285,10 @@ mod tests {
     async fn test_shutdown_with_error_reason() {
         let coordinator = ShutdownCoordinator::new();
         let mut receiver = coordinator.subscribe();
-        
+
         let error_msg = "Critical system error";
         coordinator.shutdown(ShutdownReason::Error(error_msg.to_string()));
-        
+
         let reason = receiver.recv().await.unwrap();
         match reason {
             ShutdownReason::Error(msg) => assert_eq!(msg, error_msg),
@@ -287,28 +299,34 @@ mod tests {
     #[tokio::test]
     async fn test_wait_for_shutdown_immediate() {
         let coordinator = ShutdownCoordinator::new();
-        
+
         // Shutdown first
         coordinator.shutdown(ShutdownReason::UserRequested);
-        
+
         // Wait should complete immediately
         let result = timeout(Duration::from_millis(100), coordinator.wait_for_shutdown()).await;
-        assert!(result.is_ok(), "Should complete immediately when already shutdown");
+        assert!(
+            result.is_ok(),
+            "Should complete immediately when already shutdown"
+        );
     }
 
     #[tokio::test]
     async fn test_wait_for_shutdown_delayed() {
         let coordinator = ShutdownCoordinator::new();
         let coord2 = coordinator.clone();
-        
+
         // Spawn task that shuts down after delay
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
             coord2.shutdown(ShutdownReason::Error("SIGINT".to_string()));
         });
-        
+
         // Wait should complete after shutdown
         let result = timeout(Duration::from_secs(1), coordinator.wait_for_shutdown()).await;
-        assert!(result.is_ok(), "Should complete after shutdown is initiated");
+        assert!(
+            result.is_ok(),
+            "Should complete after shutdown is initiated"
+        );
     }
 }

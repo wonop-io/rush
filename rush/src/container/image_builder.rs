@@ -76,7 +76,12 @@ pub struct ImageBuilder {
 
 impl ImageBuilder {
     /// Creates a new ImageBuilder from a DockerService
-    pub fn new(service: DockerService, docker_client: Arc<dyn DockerClient>, component_name: String, product_name: String) -> Self {
+    pub fn new(
+        service: DockerService,
+        docker_client: Arc<dyn DockerClient>,
+        component_name: String,
+        product_name: String,
+    ) -> Self {
         Self {
             service,
             docker_client,
@@ -185,7 +190,10 @@ impl ImageBuilder {
             let base_name = self.untagged_image_name();
             // Include registry if specified
             if !self.build_config.docker_registry.is_empty() {
-                return format!("{}/{}:{}", self.build_config.docker_registry, base_name, git_tag);
+                return format!(
+                    "{}/{}:{}",
+                    self.build_config.docker_registry, base_name, git_tag
+                );
             } else {
                 return format!("{}:{}", base_name, git_tag);
             }
@@ -200,93 +208,129 @@ impl ImageBuilder {
         // Fallback to service image name if tagged name not available
         self.service.config.image.clone()
     }
-    
+
     /// Computes the git-based tag for this image
     /// Returns a tag like "abc12345" for clean commits or "abc12345-wip-def67890" for dirty state
     pub fn compute_git_tag(&mut self) -> Result<String> {
         log::debug!("Computing git tag for component: {}", self.component_name);
-        
-        let toolchain = self.toolchain.as_ref()
+
+        let toolchain = self
+            .toolchain
+            .as_ref()
             .ok_or_else(|| Error::Setup("No toolchain available for computing git tag".into()))?;
-        
+
         // Get the context directory for this component
         // First try to use location, then fall back to context_dir from build_config
         let context_dir = match &self.build_config.build_type {
-            BuildType::TrunkWasm { location, context_dir, .. } => {
-                if !location.is_empty() {
-                    location.clone()
-                } else {
-                    context_dir.clone().unwrap_or_else(|| "." .to_string())
-                }
-            },
-            BuildType::DixiousWasm { location, context_dir, .. } |
-            BuildType::RustBinary { location, context_dir, .. } |
-            BuildType::Zola { location, context_dir, .. } |
-            BuildType::Book { location, context_dir, .. } |
-            BuildType::Script { location, context_dir, .. } => {
+            BuildType::TrunkWasm {
+                location,
+                context_dir,
+                ..
+            } => {
                 if !location.is_empty() {
                     location.clone()
                 } else {
                     context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
-            },
+            }
+            BuildType::DixiousWasm {
+                location,
+                context_dir,
+                ..
+            }
+            | BuildType::RustBinary {
+                location,
+                context_dir,
+                ..
+            }
+            | BuildType::Zola {
+                location,
+                context_dir,
+                ..
+            }
+            | BuildType::Book {
+                location,
+                context_dir,
+                ..
+            }
+            | BuildType::Script {
+                location,
+                context_dir,
+                ..
+            } => {
+                if !location.is_empty() {
+                    location.clone()
+                } else {
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
+                }
+            }
             BuildType::Ingress { context_dir, .. } => {
                 // For Ingress build type, just use the context_dir as-is
                 // since it's already defined in the YAML relative to the product directory
                 context_dir.clone().unwrap_or_else(|| ".".to_string())
-            },
+            }
             _ => {
                 // Fall back to build_config's context_dir if available
-                self.build_config.context_dir.clone().unwrap_or_else(|| ".".to_string())
-            },
+                self.build_config
+                    .context_dir
+                    .clone()
+                    .unwrap_or_else(|| ".".to_string())
+            }
         };
-        
-        log::debug!("Using context directory '{}' for git hash computation", context_dir);
-        
+
+        log::debug!(
+            "Using context directory '{}' for git hash computation",
+            context_dir
+        );
+
         // Get the git hash for the context directory
-        let git_hash = toolchain.get_git_folder_hash(&context_dir)
+        let git_hash = toolchain
+            .get_git_folder_hash(&context_dir)
             .map_err(|e| Error::Setup(format!("Failed to get git hash: {}", e)))?;
-        
+
         log::debug!("Got git hash: {}", git_hash);
-        
+
         if git_hash.is_empty() || git_hash == "precommit" {
             // No git history, use a default tag
-            warn!("No git history found for context '{}', using '{}' tag. This will prevent caching!", 
-                  context_dir, DOCKER_TAG_LATEST);
+            warn!(
+                "No git history found for context '{}', using '{}' tag. This will prevent caching!",
+                context_dir, DOCKER_TAG_LATEST
+            );
             self.git_tag = Some(DOCKER_TAG_LATEST.to_string());
             return Ok(DOCKER_TAG_LATEST.to_string());
         }
-        
+
         // Use first 8 characters of the hash
         let short_hash = if git_hash.len() >= 8 {
             &git_hash[..8]
         } else {
             &git_hash
         };
-        
+
         // Check for uncommitted changes (WIP)
-        let wip_suffix = toolchain.get_git_wip(&context_dir)
+        let wip_suffix = toolchain
+            .get_git_wip(&context_dir)
             .unwrap_or_else(|_| String::new());
-        
+
         let tag = format!("{}{}", short_hash, wip_suffix);
         self.git_tag = Some(tag.clone());
-        
+
         Ok(tag)
     }
-    
+
     /// Checks if the image exists in the local Docker cache
     pub async fn check_image_exists(&mut self) -> Result<bool> {
         use tokio::process::Command;
-        
+
         // Ensure we have a git tag
         if self.git_tag.is_none() {
             self.compute_git_tag()?;
         }
-        
+
         let tagged_name = self.tagged_image_name();
-        
+
         log::debug!("Checking if image exists: {}", tagged_name);
-        
+
         // Use docker image inspect to check if the image exists
         let status = Command::new("docker")
             .args(["image", "inspect", &tagged_name])
@@ -295,42 +339,50 @@ impl ImageBuilder {
             .status()
             .await
             .map_err(|e| Error::Docker(format!("Failed to check image existence: {}", e)))?;
-        
+
         self.image_exists_in_cache = status.success();
-        
+
         if self.image_exists_in_cache {
             log::info!("Image {} already exists in cache", tagged_name);
         } else {
             log::debug!("Image {} not found in cache", tagged_name);
         }
-        
+
         Ok(self.image_exists_in_cache)
     }
-    
+
     /// Determines if the image should be rebuilt based on cache and file changes
     pub async fn evaluate_rebuild_needed(&mut self) -> Result<bool> {
         // First check if image exists
         let exists = self.check_image_exists().await?;
-        
+
         if !exists {
-            log::info!("Image {} doesn't exist, rebuild required", self.tagged_image_name());
+            log::info!(
+                "Image {} doesn't exist, rebuild required",
+                self.tagged_image_name()
+            );
             self.should_rebuild = true;
             return Ok(true);
         }
-        
+
         // If image exists and git tag doesn't have "-wip-", it's a clean build we can reuse
         if let Some(tag) = &self.git_tag {
             if !tag.contains("-wip-") {
-                log::info!("Image {} exists with clean git tag {}, skipping rebuild", 
-                          self.tagged_image_name(), tag);
+                log::info!(
+                    "Image {} exists with clean git tag {}, skipping rebuild",
+                    self.tagged_image_name(),
+                    tag
+                );
                 self.should_rebuild = false;
                 return Ok(false);
             }
         }
-        
+
         // For WIP tags or when explicitly marked for rebuild, we should rebuild
-        log::info!("Image {} exists but has WIP changes or is marked for rebuild", 
-                  self.tagged_image_name());
+        log::info!(
+            "Image {} exists but has WIP changes or is marked for rebuild",
+            self.tagged_image_name()
+        );
         self.should_rebuild = true;
         Ok(true)
     }
@@ -400,12 +452,12 @@ impl ImageBuilder {
     /// Builds the Docker image
     pub async fn build(&mut self) -> Result<()> {
         use log::info;
-        
+
         // Ensure we have a git tag computed
         if self.git_tag.is_none() {
             self.compute_git_tag()?;
         }
-        
+
         // Validate that we're not using 'latest' tag (unless intentional)
         if let Some(tag) = &self.git_tag {
             if tag == DOCKER_TAG_LATEST {
@@ -419,24 +471,30 @@ impl ImageBuilder {
                 );
             }
         }
-        
+
         // Use the tagged image name with git hash
         let image_tag = self.tagged_image_name();
         info!("Building Docker image: {}", image_tag);
-        
+
         // Get the dockerfile and context paths
-        let dockerfile_path = self.build_config.dockerfile_path.as_ref()
+        let dockerfile_path = self
+            .build_config
+            .dockerfile_path
+            .as_ref()
             .ok_or_else(|| Error::Build("No Dockerfile path specified".into()))?;
-        
+
         let default_context = ".".to_string();
-        let context_path = self.build_config.context_dir.as_ref()
+        let context_path = self
+            .build_config
+            .context_dir
+            .as_ref()
             .unwrap_or(&default_context);
-        
+
         // Use the docker client to build the image
         self.docker_client
             .build_image(&image_tag, dockerfile_path, &context_path)
             .await?;
-        
+
         info!("Successfully built Docker image: {}", image_tag);
         Ok(())
     }
@@ -475,7 +533,7 @@ impl ImageBuilder {
         // Create DockerServiceConfig from spec
         // Set working directory to product directory (reverse domain notation as path)
         let working_dir = format!("/app/{}", spec_guard.product_name.replace('.', "/"));
-        
+
         let service_config = DockerServiceConfig {
             name: spec_guard.docker_local_name(),
             image: format!("{}-{}", spec_guard.product_name, spec_guard.component_name),
@@ -614,7 +672,9 @@ mod tests {
 
     #[test]
     fn test_image_builder_creation() {
-        let mock_client = Arc::new(crate::container::docker::DockerCliClient::new("docker".to_string()));
+        let mock_client = Arc::new(crate::container::docker::DockerCliClient::new(
+            "docker".to_string(),
+        ));
         let config = DockerServiceConfig {
             name: "test".to_string(),
             image: "test:latest".to_string(),

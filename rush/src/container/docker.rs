@@ -58,8 +58,12 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
     async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String>;
 
     /// Follows the logs from a container with formatted output
-    async fn follow_container_logs(&self, container_id: &str, label: String, color: &str) -> Result<()>;
-
+    async fn follow_container_logs(
+        &self,
+        container_id: &str,
+        label: String,
+        color: &str,
+    ) -> Result<()>;
 
     /// Sends a signal to a container
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()>;
@@ -210,41 +214,42 @@ impl DockerClient for DockerCliClient {
     }
 
     /// Builds a Docker image from a Dockerfile and context directory.
-    /// 
+    ///
     /// This method:
     /// 1. Changes to the context directory using the Directory RAII guard
     /// 2. Calculates the relative path from context to Dockerfile
     /// 3. Executes docker build with the specified tag
     /// 4. Automatically restores the original directory when done
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `tag` - The tag to apply to the built image (e.g., "myapp:latest")
     /// * `dockerfile` - Path to the Dockerfile (can be absolute or relative)
     /// * `context` - The build context directory containing files for the Docker build
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// * `Ok(())` if the build succeeds
     /// * `Err(Error::Docker)` if the build fails with details about the failure
-    /// 
+    ///
     /// # Important
-    /// 
+    ///
     /// Uses the Directory RAII guard to safely change directories. The original
     /// directory is always restored, even if the build fails or panics.
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         use std::path::Path;
-        
+
         trace!("Building Docker image: {}", tag);
-        
+
         // Convert paths to PathBuf for manipulation
         let context_path = Path::new(context);
         let dockerfile_path = Path::new(dockerfile);
-        
+
         // Calculate relative path from context to Dockerfile
         let dockerfile_relative = if dockerfile_path.is_absolute() && context_path.is_absolute() {
             // Try to make dockerfile relative to context
-            dockerfile_path.strip_prefix(context_path)
+            dockerfile_path
+                .strip_prefix(context_path)
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|_| {
                     // If not a child of context, use absolute path
@@ -253,18 +258,27 @@ impl DockerClient for DockerCliClient {
         } else {
             dockerfile_path.to_path_buf()
         };
-        
+
         let dockerfile_arg = dockerfile_relative.to_string_lossy();
-        
+
         info!("Docker build: Running from directory '{}'", context);
-        info!("Docker build command: docker build --tag {} --file {} .", 
-              tag, dockerfile_arg);
+        info!(
+            "Docker build command: docker build --tag {} --file {} .",
+            tag, dockerfile_arg
+        );
 
         // Use the Directory guard to change to the build context directory
         let _dir_guard = crate::utils::Directory::chdir(context);
-        
+
         let output = Command::new(&self.docker_path)
-            .args(["build", "--tag", tag, "--file", &dockerfile_arg.to_string(), "."])
+            .args([
+                "build",
+                "--tag",
+                tag,
+                "--file",
+                &dockerfile_arg.to_string(),
+                ".",
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -274,36 +288,38 @@ impl DockerClient for DockerCliClient {
         if !output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
-            
+
             error!("\n=== Docker Build Failed ===");
             error!("Image tag: {}", tag);
             error!("Working directory: {}", context);
             error!("Dockerfile (relative): {}", dockerfile_arg);
             error!("Dockerfile (absolute): {}", dockerfile);
             error!("Exit code: {:?}", output.status.code());
-            
+
             if !stdout.is_empty() {
                 error!("\n=== Build Output ===");
                 for line in stdout.lines() {
                     error!("  {}", line);
                 }
             }
-            
+
             if !stderr.is_empty() {
                 error!("\n=== Error Output ===");
                 for line in stderr.lines() {
                     error!("  {}", line);
                 }
             }
-            
+
             error!("\n=== Troubleshooting ===");
             error!("1. Check if the Dockerfile exists at: {}", dockerfile);
             error!("2. Verify the build context directory: {}", context);
             error!("3. Ensure Docker daemon is running: docker ps");
             error!("4. Check Docker disk space: docker system df");
-            error!("5. Try building manually: cd {} && docker build --tag {} --file {} .", 
-                   context, tag, dockerfile_arg);
-            
+            error!(
+                "5. Try building manually: cd {} && docker build --tag {} --file {} .",
+                context, tag, dockerfile_arg
+            );
+
             // Create a more informative error message
             let error_summary = if stderr.contains("no such file or directory") {
                 "Dockerfile or build context not found"
@@ -316,8 +332,11 @@ impl DockerClient for DockerCliClient {
             } else {
                 "Build failed - see detailed output above"
             };
-            
-            return Err(Error::Docker(format!("Docker build failed for {}: {}", tag, error_summary)));
+
+            return Err(Error::Docker(format!(
+                "Docker build failed for {}: {}",
+                tag, error_summary
+            )));
         }
 
         debug!("Successfully built Docker image: {}", tag);
@@ -539,7 +558,12 @@ impl DockerClient for DockerCliClient {
         Ok(logs)
     }
 
-    async fn follow_container_logs(&self, container_id: &str, label: String, color: &str) -> Result<()> {
+    async fn follow_container_logs(
+        &self,
+        container_id: &str,
+        label: String,
+        color: &str,
+    ) -> Result<()> {
         trace!("Following logs for Docker container: {}", container_id);
 
         use colored::Colorize;
@@ -569,7 +593,7 @@ impl DockerClient for DockerCliClient {
                 loop {
                     line.clear();
                     match reader.read_line(&mut line).await {
-                        Ok(0) => break,  // EOF
+                        Ok(0) => break, // EOF
                         Ok(_) => {
                             // Print with formatted label prefix
                             print!("{} | {}", label_clone, line);
@@ -592,7 +616,7 @@ impl DockerClient for DockerCliClient {
                 loop {
                     line.clear();
                     match reader.read_line(&mut line).await {
-                        Ok(0) => break,  // EOF
+                        Ok(0) => break, // EOF
                         Ok(_) => {
                             // Print with formatted label prefix to stderr
                             eprint!("{} | {}", label_clone, line);
@@ -654,7 +678,10 @@ impl DockerCliClient {
         source: OutputSource,
         director: &mut T,
     ) -> Result<()> {
-        trace!("Following logs for Docker container with director: {}", container_id);
+        trace!(
+            "Following logs for Docker container with director: {}",
+            container_id
+        );
 
         // Use docker logs -f to follow the container logs
         let mut child = Command::new(&self.docker_path)
@@ -679,11 +706,11 @@ impl DockerCliClient {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut reader = BufReader::new(stdout);
                 let mut line = String::new();
-                
+
                 loop {
                     line.clear();
                     match reader.read_line(&mut line).await {
-                        Ok(0) => break,  // EOF
+                        Ok(0) => break, // EOF
                         Ok(_) => {
                             let output_data = line.as_bytes().to_vec();
                             let stream = OutputStream::stdout(output_data);
@@ -708,11 +735,11 @@ impl DockerCliClient {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let mut reader = BufReader::new(stderr);
                 let mut line = String::new();
-                
+
                 loop {
                     line.clear();
                     match reader.read_line(&mut line).await {
-                        Ok(0) => break,  // EOF
+                        Ok(0) => break, // EOF
                         Ok(_) => {
                             let output_data = line.as_bytes().to_vec();
                             let stream = OutputStream::stderr(output_data);
@@ -742,10 +769,10 @@ impl DockerCliClient {
 
         // Wait for child process to complete
         let _ = child.wait().await;
-        
+
         // Flush any remaining output
         director.flush().await?;
-        
+
         Ok(())
     }
 }
@@ -922,7 +949,12 @@ mod tests {
             async fn container_logs(&self, _container_id: &str, _lines: usize) -> Result<String> {
                 unimplemented!()
             }
-            async fn follow_container_logs(&self, _container_id: &str, _label: String, _color: &str) -> Result<()> {
+            async fn follow_container_logs(
+                &self,
+                _container_id: &str,
+                _label: String,
+                _color: &str,
+            ) -> Result<()> {
                 unimplemented!()
             }
             async fn send_signal_to_container(
@@ -1024,7 +1056,12 @@ mod tests {
             async fn container_logs(&self, _container_id: &str, _lines: usize) -> Result<String> {
                 unimplemented!()
             }
-            async fn follow_container_logs(&self, _container_id: &str, _label: String, _color: &str) -> Result<()> {
+            async fn follow_container_logs(
+                &self,
+                _container_id: &str,
+                _label: String,
+                _color: &str,
+            ) -> Result<()> {
                 unimplemented!()
             }
             async fn send_signal_to_container(

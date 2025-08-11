@@ -24,7 +24,7 @@ impl EnvironmentGenerator {
     /// Generate .env files based on environment definitions
     pub fn generate_dotenv_files(&self) -> Result<(), Error> {
         trace!("Generating dotenv files for product: {}", self.product_name);
-        
+
         // Load base environment if it exists
         let base_env = if PathBuf::from(&self.base_env_path).exists() {
             load_yaml_env(&self.base_env_path)?
@@ -48,10 +48,10 @@ impl EnvironmentGenerator {
             .parent()
             .unwrap_or(&PathBuf::from("."))
             .to_path_buf();
-        
+
         let env_file = product_dir.join(".env");
         save_dotenv(&env_file, merged_env)?;
-        
+
         trace!("Generated .env file at: {}", env_file.display());
         Ok(())
     }

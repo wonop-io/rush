@@ -3,20 +3,20 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 /// RAII guard for safely changing directories.
-/// 
+///
 /// When this struct is created, it changes the current working directory
 /// to the specified path and stores the previous directory. When the struct
 /// is dropped (goes out of scope), it automatically restores the previous
 /// directory.
-/// 
+///
 /// This ensures that directory changes are always properly cleaned up,
 /// even in the case of panics or early returns.
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```rust
 /// use rush_cli::utils::Directory;
-/// 
+///
 /// // The directory is changed when the guard is created
 /// {
 ///     let _guard = Directory::chdir("/tmp");
@@ -30,21 +30,21 @@ pub struct Directory {
 
 impl Directory {
     /// Changes the current directory to the specified path string.
-    /// 
+    ///
     /// Returns a guard that will restore the previous directory when dropped.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `dir` - The directory path to change to
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if:
     /// - Failed to get the current directory
     /// - Failed to change to the specified directory
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// use rush_cli::utils::Directory;
     /// let _guard = Directory::chdir("/tmp");
@@ -61,22 +61,22 @@ impl Directory {
     }
 
     /// Changes the current directory to the specified Path.
-    /// 
+    ///
     /// Returns a guard that will restore the previous directory when dropped.
     /// This is the same as `chdir` but accepts a `Path` instead of a string.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `dir` - The directory path to change to
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if:
     /// - Failed to get the current directory  
     /// - Failed to change to the specified directory
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```rust
     /// use rush_cli::utils::Directory;
     /// use std::path::Path;
@@ -105,22 +105,22 @@ impl Drop for Directory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;
-    use serial_test::serial;
-    
+
     /// Helper to compare current directory with expected, handling macOS canonicalization
     fn assert_current_dir_eq(expected: impl AsRef<Path>) {
         let current = env::current_dir().unwrap().canonicalize().unwrap();
         let expected = expected.as_ref().canonicalize().unwrap();
         assert_eq!(current, expected);
     }
-    
+
     /// Helper to save and restore directory for test isolation
     struct TestGuard {
         original_dir: PathBuf,
     }
-    
+
     impl TestGuard {
         fn new() -> Self {
             TestGuard {
@@ -128,7 +128,7 @@ mod tests {
             }
         }
     }
-    
+
     impl Drop for TestGuard {
         fn drop(&mut self) {
             // Always try to restore the original directory
@@ -177,7 +177,7 @@ mod tests {
         let temp_dir1 = tempdir().unwrap();
         let temp_dir2 = tempdir().unwrap();
         let original_dir = env::current_dir().unwrap();
-        
+
         // Keep paths alive
         let path1 = temp_dir1.path().to_path_buf();
         let path2 = temp_dir2.path().to_path_buf();
@@ -186,19 +186,19 @@ mod tests {
         {
             let _guard1 = Directory::chpath(&path1);
             assert_current_dir_eq(&path1);
-            
+
             {
                 let _guard2 = Directory::chpath(&path2);
                 assert_current_dir_eq(&path2);
             }
-            
+
             // After inner guard is dropped, we should be back to temp_dir1
             assert_current_dir_eq(&path1);
         }
 
         // After all guards are dropped, we should be back to the original directory
         assert_current_dir_eq(&original_dir);
-        
+
         // Keep temp dirs alive until end of test
         drop(temp_dir1);
         drop(temp_dir2);
@@ -239,7 +239,7 @@ mod tests {
         let temp_dir1 = tempdir().unwrap();
         let temp_dir2 = tempdir().unwrap();
         let original_dir = env::current_dir().unwrap();
-        
+
         // Keep paths alive
         let path1 = temp_dir1.path().to_path_buf();
         let path2 = temp_dir2.path().to_path_buf();
@@ -257,7 +257,7 @@ mod tests {
             assert_current_dir_eq(&path2);
         }
         assert_current_dir_eq(&original_dir);
-        
+
         // Keep temp dirs alive until end of test
         drop(temp_dir1);
         drop(temp_dir2);
@@ -278,7 +278,7 @@ mod tests {
         {
             let _guard = Directory::chpath(&new_dir);
             assert_current_dir_eq(&new_dir);
-            
+
             // Verify we can create files in the new directory
             fs::write("test_file.txt", b"test content").unwrap();
             assert!(Path::new("test_file.txt").exists());
@@ -288,7 +288,7 @@ mod tests {
         assert_current_dir_eq(&original_dir);
         // And the file should not exist in the original directory
         assert!(!Path::new("test_file.txt").exists());
-        
+
         // Keep temp dir alive until end of test
         drop(temp_base);
     }

@@ -1,7 +1,7 @@
+use super::{OutputDirector, OutputSource, OutputStream, OutputStreamType};
+use crate::error::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use crate::error::Result;
-use super::{OutputDirector, OutputSource, OutputStream, OutputStreamType};
 
 /// A buffered output director that accumulates partial lines before writing
 pub struct BufferedOutputDirector<T: OutputDirector> {
@@ -26,7 +26,11 @@ impl<T: OutputDirector> BufferedOutputDirector<T> {
     }
 
     /// Get or create the buffer for a source and stream type
-    fn get_buffer_mut(&mut self, source: &OutputSource, stream_type: OutputStreamType) -> &mut Vec<u8> {
+    fn get_buffer_mut(
+        &mut self,
+        source: &OutputSource,
+        stream_type: OutputStreamType,
+    ) -> &mut Vec<u8> {
         let _key = self.get_buffer_key(source, stream_type);
         self.buffers
             .entry(source.name.clone())
@@ -36,13 +40,17 @@ impl<T: OutputDirector> BufferedOutputDirector<T> {
     }
 
     /// Process buffered data and extract complete lines
-    fn extract_complete_lines(&mut self, source: &OutputSource, stream_type: OutputStreamType) -> Vec<OutputStream> {
+    fn extract_complete_lines(
+        &mut self,
+        source: &OutputSource,
+        stream_type: OutputStreamType,
+    ) -> Vec<OutputStream> {
         let buffer = self.get_buffer_mut(source, stream_type);
         let mut lines = Vec::new();
-        
+
         let data = buffer.clone();
         buffer.clear();
-        
+
         let mut start = 0;
         for (i, &byte) in data.iter().enumerate() {
             if byte == b'\n' {
@@ -53,12 +61,12 @@ impl<T: OutputDirector> BufferedOutputDirector<T> {
                 start = i + 1;
             }
         }
-        
+
         // If there's remaining data without a newline, keep it in the buffer
         if start < data.len() {
             buffer.extend_from_slice(&data[start..]);
         }
-        
+
         lines
     }
 }
@@ -76,7 +84,7 @@ impl<T: OutputDirector> OutputDirector for BufferedOutputDirector<T> {
 
         // Extract and write complete lines
         let complete_lines = self.extract_complete_lines(source, stream.stream_type);
-        
+
         for line in complete_lines {
             self.director.write_output(source, &line).await?;
         }
@@ -87,7 +95,7 @@ impl<T: OutputDirector> OutputDirector for BufferedOutputDirector<T> {
     async fn flush(&mut self) -> Result<()> {
         // Flush any remaining buffered data
         let mut sources_to_flush = Vec::new();
-        
+
         for source_name in self.buffers.keys() {
             sources_to_flush.push(source_name.clone());
         }
@@ -129,14 +137,14 @@ mod tests {
     async fn test_buffered_output_director_complete_lines() {
         let std_director = StdOutputDirector::new();
         let mut buffered = BufferedOutputDirector::new(std_director);
-        
+
         let source = OutputSource::new("test", "container");
-        
+
         // Write partial line
         let partial = OutputStream::stdout(b"Hello, ".to_vec());
         let result = buffered.write_output(&source, &partial).await;
         assert!(result.is_ok());
-        
+
         // Complete the line
         let complete = OutputStream::stdout(b"World!\n".to_vec());
         let result = buffered.write_output(&source, &complete).await;
@@ -147,13 +155,13 @@ mod tests {
     async fn test_buffered_output_director_flush() {
         let std_director = StdOutputDirector::new();
         let mut buffered = BufferedOutputDirector::new(std_director);
-        
+
         let source = OutputSource::new("test", "container");
         let partial = OutputStream::stdout(b"Incomplete line".to_vec());
-        
+
         let result = buffered.write_output(&source, &partial).await;
         assert!(result.is_ok());
-        
+
         // Flush should output the incomplete line
         let result = buffered.flush().await;
         assert!(result.is_ok());

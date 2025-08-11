@@ -33,26 +33,32 @@ impl BuildProcessor {
     /// Result indicating success or failure
     pub async fn build_image(&self, image: &mut ImageBuilder) -> Result<()> {
         let shutdown_token = shutdown::global_shutdown().cancellation_token();
-        
+
         // Check for shutdown before starting build
         if shutdown_token.is_cancelled() {
             info!("Build cancelled due to shutdown signal");
             return Err(Error::Terminated("Build cancelled due to shutdown".into()));
         }
-        
+
         debug!("Building image: {}", image.component_name());
 
         // Check if rebuild is needed based on cache
         let needs_rebuild = match image.evaluate_rebuild_needed().await {
             Ok(needed) => needed,
             Err(e) => {
-                warn!("Failed to evaluate cache status: {}, proceeding with build", e);
+                warn!(
+                    "Failed to evaluate cache status: {}, proceeding with build",
+                    e
+                );
                 true
             }
         };
 
         if !needs_rebuild {
-            info!("Image {} already exists in cache with clean git tag, skipping build", image.component_name());
+            info!(
+                "Image {} already exists in cache with clean git tag, skipping build",
+                image.component_name()
+            );
             return Ok(());
         }
 
@@ -62,7 +68,10 @@ impl BuildProcessor {
 
         // Check for shutdown again before expensive operations
         if shutdown_token.is_cancelled() {
-            info!("Build cancelled for {} due to shutdown signal", component_name);
+            info!(
+                "Build cancelled for {} due to shutdown signal",
+                component_name
+            );
             return Err(Error::Terminated("Build cancelled due to shutdown".into()));
         }
 
@@ -233,11 +242,16 @@ impl BuildProcessor {
         F: Fn() -> bool,
     {
         let shutdown_token = shutdown::global_shutdown().cancellation_token();
-        
+
         // Check if shutdown was initiated before handling the error
         if shutdown_token.is_cancelled() {
-            info!("Build error recovery cancelled for {} due to shutdown", component_name);
-            return Err(Error::Terminated("Build error recovery cancelled due to shutdown".into()));
+            info!(
+                "Build error recovery cancelled for {} due to shutdown",
+                component_name
+            );
+            return Err(Error::Terminated(
+                "Build error recovery cancelled due to shutdown".into(),
+            ));
         }
 
         // Colorize error messages for better visibility
@@ -247,7 +261,10 @@ impl BuildProcessor {
             .replace("warning:", &format!("{}:", "warning".yellow().bold()));
 
         error!("Build failed for {}: {}", component_name, colorized_error);
-        info!("Waiting for file changes or termination signal to retry build for {}", component_name);
+        info!(
+            "Waiting for file changes or termination signal to retry build for {}",
+            component_name
+        );
 
         // Check for file changes while waiting
         let mut check_interval = tokio::time::interval(tokio::time::Duration::from_millis(100));

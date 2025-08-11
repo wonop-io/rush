@@ -35,7 +35,7 @@ impl Artefact {
                 error!("\n=== Failed to Load Template File ===");
                 error!("Template path: {}", input_path);
                 error!("Error: {}", e);
-                
+
                 // Check if file exists and provide helpful information
                 let path = Path::new(&input_path);
                 if !path.exists() {
@@ -61,16 +61,16 @@ impl Artefact {
                     error!("\n⚠️  File exists but cannot read metadata: {}", e);
                     error!("   Possible permission issue?");
                 }
-                
+
                 error!("\nPossible causes:");
                 error!("1. Template file path is incorrect");
                 error!("2. File was not created or copied to the expected location");
                 error!("3. Permission issues preventing file access");
                 error!("4. Path contains invalid characters or symbolic links");
-                
+
                 return Err(crate::error::Error::FileSystem {
                     path: std::path::PathBuf::from(&input_path),
-                    message: format!("Failed to read template file: {}", e)
+                    message: format!("Failed to read template file: {}", e),
                 });
             }
         };
@@ -120,7 +120,7 @@ impl Artefact {
                 error!("Output path: {}", self.output_path);
                 // Show the actual Tera error details
                 error!("\nTera Error: {}", e);
-                
+
                 // Show the error chain if available
                 let mut source = e.source();
                 let mut depth = 1;
@@ -129,7 +129,7 @@ impl Artefact {
                     source = err.source();
                     depth += 1;
                 }
-                
+
                 // Try to provide more specific error information
                 let error_msg = e.to_string();
                 if error_msg.contains("Variable") || error_msg.contains("not found") {
@@ -137,25 +137,31 @@ impl Artefact {
                     error!("   Check that all variables used in the template are defined in the context.");
                     error!("   Available variables in context:");
                     if let Ok(json) = serde_json::to_string_pretty(context) {
-                        for line in json.lines().take(50) {  // Show first 50 lines of context
+                        for line in json.lines().take(50) {
+                            // Show first 50 lines of context
                             error!("     {}", line);
                         }
                         if json.lines().count() > 50 {
-                            error!("     ... (context truncated, {} more lines)", json.lines().count() - 50);
+                            error!(
+                                "     ... (context truncated, {} more lines)",
+                                json.lines().count() - 50
+                            );
                         }
                     }
                 } else if error_msg.contains("Syntax") || error_msg.contains("parse") {
                     error!("\n💡 This appears to be a template syntax error.");
                     error!("   Check the Jinja2/Tera template syntax in your file.");
                     error!("   Common issues:");
-                    error!("   - Unclosed tags: {{{{{{ variable }}}} should be {{{{{{ variable }}}}}}");
+                    error!(
+                        "   - Unclosed tags: {{{{{{ variable }}}} should be {{{{{{ variable }}}}}}"
+                    );
                     error!("   - Invalid filters: {{{{ var | unknown_filter }}}}");
                     error!("   - Missing endif/endfor for conditionals/loops");
                 }
-                
+
                 error!("\nContext (debug format): {:#?}", tera_context);
                 return Err(crate::error::Error::Template(
-                    e.to_string() // Use the actual Tera error message instead of wrapping it
+                    e.to_string(), // Use the actual Tera error message instead of wrapping it
                 ));
             }
         }
@@ -189,7 +195,7 @@ impl Artefact {
                     );
                     crate::error::Error::FileSystem {
                         path: parent.to_path_buf(),
-                        message: format!("Failed to create output directory: {}", e)
+                        message: format!("Failed to create output directory: {}", e),
                     }
                 })?;
             }
@@ -199,7 +205,7 @@ impl Artefact {
             error!("Failed to write to output file {}: {}", self.output_path, e);
             crate::error::Error::FileSystem {
                 path: std::path::PathBuf::from(&self.output_path),
-                message: format!("Failed to write to output file: {}", e)
+                message: format!("Failed to write to output file: {}", e),
             }
         })?;
 
@@ -241,7 +247,7 @@ mod tests {
             rust_target: "x86_64-unknown-linux-gnu".to_string(),
             toolchain: crate::toolchain::ToolchainContext::new(
                 Platform::new("linux", "x86_64"),
-                Platform::new("linux", "x86_64")
+                Platform::new("linux", "x86_64"),
             ),
             services: HashMap::new(),
             environment: "dev".to_string(),
@@ -270,7 +276,8 @@ mod tests {
         let artefact = Artefact::new(
             temp_file.path().to_string_lossy().to_string(),
             "output.txt".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let context = create_test_context();
         let rendered = artefact.render(&context).unwrap();
@@ -287,7 +294,8 @@ mod tests {
         let artefact = Artefact::new(
             temp_file.path().to_string_lossy().to_string(),
             "output.txt".to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let context = create_test_context();
         let rendered = artefact.render(&context).unwrap();

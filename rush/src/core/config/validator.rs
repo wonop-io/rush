@@ -128,13 +128,13 @@ mod tests {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new().unwrap();
         let root_path = temp_dir.path().to_str().unwrap();
-        
+
         // Create the products directory structure that Config::new expects
         let products_dir = temp_dir.path().join("products");
         std::fs::create_dir(&products_dir).unwrap();
         let product_dir = products_dir.join("io.wonop.test-product");
         std::fs::create_dir(&product_dir).unwrap();
-        
+
         // Change to the temp directory so Config::new can find the products dir
         let _dir_guard = crate::utils::Directory::chpath(temp_dir.path());
 
@@ -149,7 +149,7 @@ mod tests {
 
         // Create a valid config
         let config = Config::new(root_path, "test-product", "dev", "test-registry", 8080).unwrap();
-        
+
         // Directory is automatically restored when _dir_guard is dropped
 
         // Validation should pass
@@ -162,13 +162,13 @@ mod tests {
     fn test_validate_invalid_environment() {
         let temp_dir = TempDir::new().unwrap();
         let root_path = temp_dir.path().to_str().unwrap();
-        
+
         // Create the products directory structure that Config::new expects
         let products_dir = temp_dir.path().join("products");
         std::fs::create_dir(&products_dir).unwrap();
         let product_dir = products_dir.join("io.wonop.test-product");
         std::fs::create_dir(&product_dir).unwrap();
-        
+
         // Change to the temp directory so Config::new can find the products dir
         let _dir_guard = crate::utils::Directory::chpath(temp_dir.path());
 
@@ -182,6 +182,7 @@ mod tests {
         std::env::set_var("INFRASTRUCTURE_REPOSITORY", "git@github.com:test/repo.git");
 
         // This should panic with "Invalid environment"
-        let _config = Config::new(root_path, "test-product", "invalid", "test-registry", 8080).unwrap();
+        let _config =
+            Config::new(root_path, "test-product", "invalid", "test-registry", 8080).unwrap();
     }
 }

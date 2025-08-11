@@ -13,4 +13,4 @@ pub use factory::{OutputDirectorConfig, OutputDirectorFactory};
 pub use file::FileOutputDirector;
 pub use shared::SharedOutputDirector;
 pub use source::OutputSource;
-pub use stream::{OutputStreamType, OutputStream};
+pub use stream::{OutputStream, OutputStreamType};

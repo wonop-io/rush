@@ -1,10 +1,10 @@
+use super::{OutputDirector, OutputSource, OutputStream};
+use crate::error::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncWriteExt, BufWriter};
-use crate::error::Result;
-use super::{OutputDirector, OutputSource, OutputStream};
 
 /// File-based output director that writes to separate log files per source
 pub struct FileOutputDirector {
@@ -22,10 +22,11 @@ impl FileOutputDirector {
     /// Create a new file output director
     pub async fn new<P: AsRef<Path>>(output_dir: P) -> Result<Self> {
         let output_dir = output_dir.as_ref().to_path_buf();
-        
+
         // Create output directory if it doesn't exist
         if !output_dir.exists() {
-            tokio::fs::create_dir_all(&output_dir).await
+            tokio::fs::create_dir_all(&output_dir)
+                .await
                 .map_err(|e| crate::error::Error::Io(e))?;
         }
 
@@ -54,14 +55,14 @@ impl FileOutputDirector {
         if !self.writers.contains_key(&source.name) {
             let filename = format!("{}.log", sanitize_filename(&source.name));
             let file_path = self.output_dir.join(filename);
-            
+
             let file = OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&file_path)
                 .await
                 .map_err(|e| crate::error::Error::Io(e))?;
-            
+
             let writer = BufWriter::new(file);
             self.writers.insert(source.name.clone(), writer);
         }
@@ -72,23 +73,23 @@ impl FileOutputDirector {
     /// Format a log line with optional timestamp and source name
     fn format_log_line(&self, source: &OutputSource, content: &str) -> String {
         let mut line = String::new();
-        
+
         if self.include_timestamps {
             let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
             line.push_str(&format!("[{}] ", timestamp));
         }
-        
+
         if self.include_source_names {
             line.push_str(&format!("[{}] ", source.name));
         }
-        
+
         line.push_str(content);
-        
+
         // Ensure line ends with newline if it doesn't already
         if !line.ends_with('\n') {
             line.push('\n');
         }
-        
+
         line
     }
 }
@@ -96,16 +97,19 @@ impl FileOutputDirector {
 #[async_trait]
 impl OutputDirector for FileOutputDirector {
     async fn write_output(&mut self, source: &OutputSource, stream: &OutputStream) -> Result<()> {
-        eprintln!("DEBUG: FileOutputDirector writing output for source: {} to dir: {:?}", source.name, self.output_dir);
+        eprintln!(
+            "DEBUG: FileOutputDirector writing output for source: {} to dir: {:?}",
+            source.name, self.output_dir
+        );
         if stream.is_empty() {
             return Ok(());
         }
 
         let content = stream.as_str();
-        
+
         // Prepare all formatted lines first to avoid borrowing issues
         let mut formatted_lines = Vec::new();
-        
+
         // Handle line-by-line output
         for line in content.lines() {
             let formatted_line = self.format_log_line(source, line);
@@ -121,7 +125,9 @@ impl OutputDirector for FileOutputDirector {
         // Now get the writer and write all lines
         let writer = self.get_writer(source).await?;
         for line in formatted_lines {
-            writer.write_all(line.as_bytes()).await
+            writer
+                .write_all(line.as_bytes())
+                .await
                 .map_err(|e| crate::error::Error::Io(e))?;
         }
 
@@ -130,7 +136,10 @@ impl OutputDirector for FileOutputDirector {
 
     async fn flush(&mut self) -> Result<()> {
         for writer in self.writers.values_mut() {
-            writer.flush().await.map_err(|e| crate::error::Error::Io(e))?;
+            writer
+                .flush()
+                .await
+                .map_err(|e| crate::error::Error::Io(e))?;
         }
         Ok(())
     }
@@ -173,7 +182,7 @@ mod tests {
     async fn test_file_output_director_write() {
         let temp_dir = TempDir::new().unwrap();
         let mut director = FileOutputDirector::new(temp_dir.path()).await.unwrap();
-        
+
         let source = OutputSource::new("test-container", "container");
         let stream = OutputStream::stdout(b"Hello, World!\n".to_vec());
 
@@ -195,7 +204,10 @@ mod tests {
     #[test]
     fn test_sanitize_filename() {
         assert_eq!(sanitize_filename("test-container"), "test-container");
-        assert_eq!(sanitize_filename("test/container:name"), "test-container-name");
+        assert_eq!(
+            sanitize_filename("test/container:name"),
+            "test-container-name"
+        );
         assert_eq!(sanitize_filename("test*?<>|\"\\"), "test-------");
     }
 }

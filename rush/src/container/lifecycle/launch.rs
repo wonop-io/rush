@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use log::{debug, error, info, trace};
 use tokio::sync::mpsc;
@@ -134,7 +131,7 @@ async fn launch_service(
     } else {
         "/app".to_string()
     };
-    
+
     let container_id = docker_client
         .run_container(
             &config.image,

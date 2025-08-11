@@ -23,13 +23,13 @@ mod tests {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new().unwrap();
         let root_path = temp_dir.path();
-        
+
         // Create the products directory structure that Config::new expects
         let products_dir = temp_dir.path().join("products");
         std::fs::create_dir(&products_dir).unwrap();
         let product_dir = products_dir.join("io.wonop.test-product");
         std::fs::create_dir(&product_dir).unwrap();
-        
+
         // Change to the temp directory so Config::new can find the products dir
         let _dir_guard = crate::utils::Directory::chpath(temp_dir.path());
 
@@ -49,7 +49,7 @@ mod tests {
         let config = config_loader
             .load_config("test-product", "dev", "test-registry.io", 8080)
             .expect("Failed to load configuration");
-        
+
         // Directory is automatically restored when _dir_guard is dropped
 
         // Validate the configuration

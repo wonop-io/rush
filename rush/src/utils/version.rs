@@ -13,13 +13,8 @@ pub async fn check_version() {
     let version = env!("CARGO_PKG_VERSION");
     let url = "https://api.github.com/repos/wonop-io/rush/releases/latest";
     let client = reqwest::Client::new();
-    
-    let resp = match client
-        .get(url)
-        .header("User-Agent", "rush")
-        .send()
-        .await
-    {
+
+    let resp = match client.get(url).header("User-Agent", "rush").send().await {
         Ok(resp) => resp,
         Err(_) => return, // Silently skip version check if network request fails
     };
@@ -34,12 +29,12 @@ pub async fn check_version() {
         .replace("v.", "")
         .replace('v', "")
         .replace(' ', "");
-    
+
     let current_version = match semver::Version::parse(version) {
         Ok(v) => v,
         Err(_) => return,
     };
-    
+
     let latest_version = match semver::Version::parse(&latest_version) {
         Ok(v) => v,
         Err(_) => return,

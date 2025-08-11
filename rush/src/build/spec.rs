@@ -351,10 +351,7 @@ impl ComponentBuildSpec {
         };
 
         // Use product directory as base for resolving relative paths
-        let product_dir = config.product_path()
-            .to_str()
-            .unwrap()
-            .to_string();
+        let product_dir = config.product_path().to_str().unwrap().to_string();
 
         // Determine component path based on build type
         let location = match &build_type {

@@ -47,7 +47,10 @@ impl ChangeProcessor {
     /// * `path` - Path to the file that changed
     pub fn add_change(&self, path: PathBuf) {
         if self.should_ignore(&path) {
-            debug!("Ignoring change to file: {} (matched gitignore)", path.display());
+            debug!(
+                "Ignoring change to file: {} (matched gitignore)",
+                path.display()
+            );
             return;
         }
 
@@ -87,11 +90,11 @@ impl ChangeProcessor {
             let files = self.changed_files.lock().unwrap();
             !files.is_empty()
         };
-        
+
         if !has_changes {
             return Ok(Vec::new());
         }
-        
+
         // Wait for the debounce period to collect multiple rapid changes
         time::sleep(self.debounce_delay).await;
 

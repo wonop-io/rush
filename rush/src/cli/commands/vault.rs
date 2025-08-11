@@ -292,7 +292,7 @@ async fn create_vault_cmd(ctx: &mut CliContext) -> Result<()> {
 async fn migrate_vault(matches: &ArgMatches, _ctx: &mut CliContext) -> Result<()> {
     let dest = matches.get_one::<String>("dest").unwrap();
     trace!("Migrating secrets to: {}", dest);
-    
+
     // Implementation would go here
     Ok(())
 }
@@ -300,10 +300,10 @@ async fn migrate_vault(matches: &ArgMatches, _ctx: &mut CliContext) -> Result<()
 async fn add_secrets(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     let component = matches.get_one::<String>("component").unwrap();
     let secrets_json = matches.get_one::<String>("secrets").unwrap();
-    
+
     let secrets: HashMap<String, String> = serde_json::from_str(secrets_json)
         .map_err(|e| Error::InvalidInput(format!("Invalid JSON format: {}", e)))?;
-    
+
     match ctx
         .vault
         .lock()
@@ -325,7 +325,7 @@ async fn add_secrets(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
 
 async fn remove_secrets(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     let component = matches.get_one::<String>("component").unwrap();
-    
+
     match ctx
         .vault
         .lock()

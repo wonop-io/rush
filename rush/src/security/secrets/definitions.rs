@@ -334,7 +334,9 @@ impl SecretsDefinitions {
                                         Ok(text) => GenerationResult::Value(text),
                                         Err(_) => {
                                             warn!("File contains non-UTF8 data, using base64 encoding");
-                                            GenerationResult::Value(BASE64_STANDARD.encode(contents))
+                                            GenerationResult::Value(
+                                                BASE64_STANDARD.encode(contents),
+                                            )
                                         }
                                     }
                                 }

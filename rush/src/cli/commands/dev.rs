@@ -18,6 +18,7 @@ pub struct DevCommand {
     product_name: String,
     config: Arc<Config>,
     toolchain: Arc<ToolchainContext>,
+    #[allow(dead_code)]
     vault: Arc<dyn SecretsProvider>,
     redirect_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
@@ -105,9 +106,10 @@ impl DevCommand {
         debug!("Container reactor initialized successfully");
 
         // Create output director based on configuration
-        let _output_director = OutputDirectorFactory::create(self.output_config.clone()).await
+        let _output_director = OutputDirectorFactory::create(self.output_config.clone())
+            .await
             .map_err(|e| Error::Setup(format!("Failed to create output director: {}", e)))?;
-        
+
         debug!("Output director created successfully");
 
         // Launch the development environment

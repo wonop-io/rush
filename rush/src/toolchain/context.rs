@@ -316,24 +316,27 @@ impl ToolchainContext {
             .to_string();
 
         if !hash_output.status.success() || hash.is_empty() {
-            debug!("No git hash found for subdirectory '{}', trying HEAD", subdirectory_path);
-            
+            debug!(
+                "No git hash found for subdirectory '{}', trying HEAD",
+                subdirectory_path
+            );
+
             // Fall back to HEAD commit hash if subdirectory has no commits
             let head_output = Command::new(&self.git)
                 .args(["rev-parse", "HEAD"])
                 .output()
                 .map_err(|e| e.to_string())?;
-                
+
             let head_hash = str::from_utf8(&head_output.stdout)
                 .map_err(|e| e.to_string())?
                 .trim()
                 .to_string();
-                
+
             if !head_output.status.success() || head_hash.is_empty() {
                 debug!("No git HEAD found, using 'precommit'");
                 return Ok("precommit".to_string());
             }
-            
+
             trace!("Using HEAD hash: {}", head_hash);
             return Ok(head_hash);
         }

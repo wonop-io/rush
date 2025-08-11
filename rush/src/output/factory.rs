@@ -1,6 +1,6 @@
-use std::path::Path;
-use crate::error::Result;
 use super::{BufferedOutputDirector, FileOutputDirector, OutputDirector, StdOutputDirector};
+use crate::error::Result;
+use std::path::Path;
 
 /// Configuration for output director creation
 #[derive(Debug, Clone)]
@@ -53,19 +53,22 @@ pub struct OutputDirectorFactory;
 impl OutputDirectorFactory {
     /// Create an output director based on configuration
     pub async fn create(config: OutputDirectorConfig) -> Result<Box<dyn OutputDirector + Send>> {
-        eprintln!("DEBUG: OutputDirectorFactory::create called with config: {:?}", config);
+        eprintln!(
+            "DEBUG: OutputDirectorFactory::create called with config: {:?}",
+            config
+        );
         match config {
             OutputDirectorConfig::Stdout { colored, buffered } => {
                 let mut std_director = StdOutputDirector::new();
                 std_director.set_color_enabled(colored);
-                
+
                 if buffered {
                     Ok(Box::new(BufferedOutputDirector::new(std_director)))
                 } else {
                     Ok(Box::new(std_director))
                 }
             }
-            
+
             OutputDirectorConfig::Files {
                 output_dir,
                 include_timestamps,
@@ -76,15 +79,16 @@ impl OutputDirectorFactory {
                     &output_dir,
                     include_timestamps,
                     include_source_names,
-                ).await?;
-                
+                )
+                .await?;
+
                 if buffered {
                     Ok(Box::new(BufferedOutputDirector::new(file_director)))
                 } else {
                     Ok(Box::new(file_director))
                 }
             }
-            
+
             OutputDirectorConfig::Both {
                 stdout_colored,
                 output_dir,
@@ -98,8 +102,9 @@ impl OutputDirectorFactory {
                     &output_dir,
                     include_timestamps,
                     include_source_names,
-                ).await?;
-                
+                )
+                .await?;
+
                 if buffered {
                     Ok(Box::new(BufferedOutputDirector::new(combined)))
                 } else {
@@ -125,14 +130,14 @@ impl OutputDirectorFactory {
 
         match output_type {
             Some("stdout") | None => OutputDirectorConfig::Stdout { colored, buffered },
-            
+
             Some("files") => OutputDirectorConfig::Files {
                 output_dir: output_dir.unwrap_or("logs").to_string(),
                 include_timestamps,
                 include_source_names,
                 buffered,
             },
-            
+
             Some("both") => OutputDirectorConfig::Both {
                 stdout_colored: colored,
                 output_dir: output_dir.unwrap_or("logs").to_string(),
@@ -140,9 +145,12 @@ impl OutputDirectorFactory {
                 include_source_names,
                 buffered,
             },
-            
+
             _ => {
-                eprintln!("Warning: Unknown output type '{}', defaulting to stdout", output_type.unwrap());
+                eprintln!(
+                    "Warning: Unknown output type '{}', defaulting to stdout",
+                    output_type.unwrap()
+                );
                 OutputDirectorConfig::default()
             }
         }
@@ -164,12 +172,13 @@ impl CombinedOutputDirector {
     ) -> Result<Self> {
         let mut stdout_director = StdOutputDirector::new();
         stdout_director.set_color_enabled(stdout_colored);
-        
+
         let file_director = FileOutputDirector::new_with_options(
             output_dir,
             include_timestamps,
             include_source_names,
-        ).await?;
+        )
+        .await?;
 
         Ok(Self {
             stdout_director,
@@ -226,7 +235,7 @@ mod tests {
             colored: true,
             buffered: true,
         };
-        
+
         let director = OutputDirectorFactory::create(config).await;
         assert!(director.is_ok());
     }
@@ -240,7 +249,7 @@ mod tests {
             include_source_names: true,
             buffered: false,
         };
-        
+
         let director = OutputDirectorFactory::create(config).await;
         assert!(director.is_ok());
     }
@@ -248,23 +257,39 @@ mod tests {
     #[test]
     fn test_parse_from_args_stdout() {
         let config = OutputDirectorFactory::parse_from_args(
-            Some("stdout"), None, false, false, false, false
+            Some("stdout"),
+            None,
+            false,
+            false,
+            false,
+            false,
         );
-        
-        matches!(config, OutputDirectorConfig::Stdout { colored: true, buffered: true });
+
+        matches!(
+            config,
+            OutputDirectorConfig::Stdout {
+                colored: true,
+                buffered: true
+            }
+        );
     }
 
     #[test]
     fn test_parse_from_args_files() {
         let config = OutputDirectorFactory::parse_from_args(
-            Some("files"), Some("/tmp/logs"), false, false, false, false
+            Some("files"),
+            Some("/tmp/logs"),
+            false,
+            false,
+            false,
+            false,
         );
-        
-        matches!(config, OutputDirectorConfig::Files { 
-            output_dir, 
-            include_timestamps: true, 
-            include_source_names: true, 
-            buffered: true 
+
+        matches!(config, OutputDirectorConfig::Files {
+            output_dir,
+            include_timestamps: true,
+            include_source_names: true,
+            buffered: true
         } if output_dir == "/tmp/logs");
     }
 }

@@ -146,7 +146,9 @@ impl Config {
 
         let kube_context = match environment.as_str() {
             ENV_DEV => std::env::var(DEV_CTX_VAR).expect("DEV_CTX environment variable not found"),
-            ENV_PROD => std::env::var(PROD_CTX_VAR).expect("PROD_CTX environment variable not found"),
+            ENV_PROD => {
+                std::env::var(PROD_CTX_VAR).expect("PROD_CTX environment variable not found")
+            }
             ENV_STAGING => {
                 std::env::var(STAGING_CTX_VAR).expect("STAGING_CTX environment variable not found")
             }
@@ -156,18 +158,19 @@ impl Config {
             _ => panic!("Invalid environment"),
         };
 
-        let vault_name = match environment.as_str() {
-            ENV_DEV => std::env::var(DEV_VAULT_VAR).expect("DEV_VAULT environment variable not found"),
-            ENV_PROD => {
-                std::env::var(PROD_VAULT_VAR).expect("PROD_VAULT environment variable not found")
-            }
-            ENV_STAGING => std::env::var(STAGING_VAULT_VAR)
-                .expect("STAGING_VAULT environment variable not found"),
-            ENV_LOCAL => {
-                std::env::var(LOCAL_VAULT_VAR).expect("LOCAL_VAULT environment variable not found")
-            }
-            _ => panic!("Invalid environment"),
-        };
+        let vault_name =
+            match environment.as_str() {
+                ENV_DEV => {
+                    std::env::var(DEV_VAULT_VAR).expect("DEV_VAULT environment variable not found")
+                }
+                ENV_PROD => std::env::var(PROD_VAULT_VAR)
+                    .expect("PROD_VAULT environment variable not found"),
+                ENV_STAGING => std::env::var(STAGING_VAULT_VAR)
+                    .expect("STAGING_VAULT environment variable not found"),
+                ENV_LOCAL => std::env::var(LOCAL_VAULT_VAR)
+                    .expect("LOCAL_VAULT environment variable not found"),
+                _ => panic!("Invalid environment"),
+            };
 
         let k8s_encoder = match environment.as_str() {
             ENV_DEV => std::env::var(K8S_ENCODER_DEV_VAR)
@@ -207,9 +210,8 @@ impl Config {
 
         let domain_template =
             match environment.as_str() {
-                ENV_DEV => {
-                    std::env::var(DEV_DOMAIN_VAR).expect("DEV_DOMAIN environment variable not found")
-                }
+                ENV_DEV => std::env::var(DEV_DOMAIN_VAR)
+                    .expect("DEV_DOMAIN environment variable not found"),
                 ENV_PROD => std::env::var(PROD_DOMAIN_VAR)
                     .expect("PROD_DOMAIN environment variable not found"),
                 ENV_STAGING => std::env::var(STAGING_DOMAIN_VAR)

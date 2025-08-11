@@ -7,10 +7,7 @@ use log::{error, trace};
 use std::process;
 
 /// Execute the appropriate command based on command line arguments
-pub async fn execute_command(
-    matches: &ArgMatches,
-    ctx: &mut CliContext,
-) -> Result<()> {
+pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     // Validate secrets before executing commands
     if let Err(e) = ctx
         .secrets_context
@@ -39,11 +36,13 @@ pub async fn execute_command(
         commands::secrets::execute(secrets_matches, ctx).await
     } else if let Some(dev_matches) = matches.subcommand_matches("dev") {
         trace!("Executing dev command");
-        
+
         // Parse output director configuration from command line arguments
         let output_config = OutputDirectorFactory::parse_from_args(
             dev_matches.get_one::<String>("output").map(|s| s.as_str()),
-            dev_matches.get_one::<String>("output-dir").map(|s| s.as_str()),
+            dev_matches
+                .get_one::<String>("output-dir")
+                .map(|s| s.as_str()),
             dev_matches.get_flag("no-color"),
             dev_matches.get_flag("no-timestamps"),
             dev_matches.get_flag("no-source-names"),
@@ -51,7 +50,8 @@ pub async fn execute_command(
         );
 
         // Create output director
-        let output_director = OutputDirectorFactory::create(output_config.clone()).await
+        let output_director = OutputDirectorFactory::create(output_config.clone())
+            .await
             .map_err(|e| {
                 error!("Failed to create output director: {}", e);
                 e

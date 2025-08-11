@@ -1,12 +1,12 @@
-use async_trait::async_trait;
-use crate::error::Result;
 use super::{OutputSource, OutputStream};
+use crate::error::Result;
+use async_trait::async_trait;
 
 /// Trait for directing output streams to different destinations
 #[async_trait]
 pub trait OutputDirector: Send + Sync {
     /// Write output data to the director's destination
-    /// 
+    ///
     /// # Arguments
     /// * `source` - Information about where the output is coming from
     /// * `stream` - The output data and metadata
@@ -48,7 +48,7 @@ impl StdOutputDirector {
     /// Format the source label with optional color
     fn format_source_label(&self, source: &OutputSource) -> String {
         let label = source.display_name();
-        
+
         if self.color_enabled {
             if let Some(color) = &source.color {
                 use colored::Colorize;
@@ -87,7 +87,7 @@ impl OutputDirector for StdOutputDirector {
 
         let formatted_label = self.format_source_label(source);
         let content = stream.as_str();
-        
+
         // Handle line-by-line output to ensure proper formatting
         for line in content.lines() {
             match stream.stream_type {
@@ -117,8 +117,12 @@ impl OutputDirector for StdOutputDirector {
 
     async fn flush(&mut self) -> Result<()> {
         use std::io::{self, Write};
-        io::stdout().flush().map_err(|e| crate::error::Error::Io(e))?;
-        io::stderr().flush().map_err(|e| crate::error::Error::Io(e))?;
+        io::stdout()
+            .flush()
+            .map_err(|e| crate::error::Error::Io(e))?;
+        io::stderr()
+            .flush()
+            .map_err(|e| crate::error::Error::Io(e))?;
         Ok(())
     }
 
