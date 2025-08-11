@@ -826,33 +826,57 @@ impl ContainerReactor {
             };
 
             // Get context directory
-            // If no context_dir is specified, use the parent directory of the Dockerfile
+            // For components with a location, the context should be the component's location directory
             let context_dir = match &spec.build_type {
                 BuildType::TrunkWasm {
                     context_dir,
                     location,
                     ..
                 } => {
-                    context_dir.clone().unwrap_or_else(|| {
-                        // If no context specified, use parent of Dockerfile location
-                        if let Some(parent) = std::path::Path::new(dockerfile_path).parent() {
-                            parent.to_string_lossy().to_string()
-                        } else if let Some(parent) = std::path::Path::new(location).parent() {
-                            // Fallback: derive context from the parent directory of location
-                            parent.to_string_lossy().to_string()
-                        } else {
-                            ".".to_string()
-                        }
-                    })
+                    // If context_dir is None or ".", use the component's location
+                    match context_dir {
+                        Some(dir) if dir != "." => dir.clone(),
+                        _ => location.clone(),
+                    }
                 }
-                BuildType::RustBinary { context_dir, .. }
-                | BuildType::DixiousWasm { context_dir, .. }
-                | BuildType::Script { context_dir, .. }
-                | BuildType::Zola { context_dir, .. }
-                | BuildType::Book { context_dir, .. }
-                | BuildType::Ingress { context_dir, .. } => {
+                BuildType::RustBinary { context_dir, location, .. } => {
+                    // If context_dir is None or ".", use the component's location
+                    match context_dir {
+                        Some(dir) if dir != "." => dir.clone(),
+                        _ => location.clone(),
+                    }
+                }
+                BuildType::DixiousWasm { context_dir, location, .. } => {
+                    // If context_dir is None or ".", use the component's location
+                    match context_dir {
+                        Some(dir) if dir != "." => dir.clone(),
+                        _ => location.clone(),
+                    }
+                }
+                BuildType::Script { context_dir, location, .. } => {
+                    // If context_dir is None or ".", use the component's location
+                    match context_dir {
+                        Some(dir) if dir != "." => dir.clone(),
+                        _ => location.clone(),
+                    }
+                }
+                BuildType::Zola { context_dir, location, .. } => {
+                    // If context_dir is None or ".", use the component's location
+                    match context_dir {
+                        Some(dir) if dir != "." => dir.clone(),
+                        _ => location.clone(),
+                    }
+                }
+                BuildType::Book { context_dir, location, .. } => {
+                    // If context_dir is None or ".", use the component's location
+                    match context_dir {
+                        Some(dir) if dir != "." => dir.clone(),
+                        _ => location.clone(),
+                    }
+                }
+                BuildType::Ingress { context_dir, .. } => {
                     context_dir.clone().unwrap_or_else(|| {
-                        // If no context specified, use parent directory of Dockerfile
+                        // For Ingress, default to parent of Dockerfile if no context specified
                         if let Some(parent) = std::path::Path::new(dockerfile_path).parent() {
                             parent.to_string_lossy().to_string()
                         } else {
@@ -939,39 +963,22 @@ impl ContainerReactor {
             //
             // Context directory resolution strategy:
             // 1. If context_dir is absolute, use it as-is
-            // 2. For Ingress components with relative context_dir (e.g., "../"):
+            // 2. For components with a location (most build types):
+            //    - The context_dir is typically the component's location directory
+            //    - Resolve it relative to the product directory
+            // 3. For Ingress components with relative context_dir (e.g., "../"):
             //    - Extract component location from Dockerfile path (e.g., "ingress/Dockerfile" → "ingress")
             //    - Resolve context_dir relative to component location
             //    - Example: component at "ingress", context_dir "../" → "product_dir/ingress/../" → "product_dir"
-            // 3. For all other build types with relative context_dir:
-            //    - Resolve directly relative to product directory
             //
-            // This special handling for Ingress is needed because Ingress components often need
-            // access to the entire product directory to reference artifacts from other components.
+            // This ensures each component uses its own directory as the build context,
+            // while allowing Ingress components to access the entire product directory if needed.
             let context = if Path::new(&context_dir).is_absolute() {
                 PathBuf::from(&context_dir)
             } else {
-                match &spec.build_type {
-                    BuildType::Ingress { .. } => {
-                        // For ingress, the dockerfile path gives us the component location
-                        // e.g., "ingress/Dockerfile" means component is in "ingress" directory
-                        if let Some(component_dir) = std::path::Path::new(dockerfile_path).parent()
-                        {
-                            // Resolve context_dir relative to the component directory
-                            // This allows "../" to correctly resolve to the product directory
-                            self.config
-                                .product_dir
-                                .join(component_dir)
-                                .join(&context_dir)
-                        } else {
-                            self.config.product_dir.join(&context_dir)
-                        }
-                    }
-                    _ => {
-                        // For other types, context_dir is relative to product directory
-                        self.config.product_dir.join(&context_dir)
-                    }
-                }
+                // For all relative paths, resolve relative to product directory
+                // The context_dir now correctly points to the component's location
+                self.config.product_dir.join(&context_dir)
             };
 
             info!(
