@@ -487,8 +487,7 @@ impl ContainerReactor {
         // Build all containers
         self.build_all().await?;
 
-        // Launch all containers
-        self.launch_containers().await?;
+        panic!("Rollout not implemented");
 
         info!("Rollout completed successfully");
         Ok(())
@@ -610,6 +609,9 @@ impl ContainerReactor {
     /// 3. Monitoring for file changes
     /// 4. Handling shutdowns and rebuilds
     async fn launch_loop(&mut self) -> Result<()> {
+        let working_dir = self.config.product_dir.clone();
+        let _dir_guard = crate::utils::Directory::chpath(&working_dir);
+
         let shutdown_token = shutdown::global_shutdown().cancellation_token();
         let mut should_continue = true;
 
@@ -1188,10 +1190,6 @@ impl ContainerReactor {
                         }
                     }
 
-                    // All containers should use the product directory as working directory
-                    let working_dir =
-                        format!("/app/{}", self.config.product_name.replace('.', "/"));
-
                     // Container name should be product_name-component_name (to match old implementation)
                     let container_name = format!("{}-{}", self.config.product_name, service.name);
 
@@ -1202,7 +1200,6 @@ impl ContainerReactor {
                         env_vars,
                         ports: vec![format!("{}:{}", service.port, service.target_port)],
                         volumes, // Use the already fixed volumes
-                        working_dir: Some(working_dir),
                     };
 
                     service_configs.push(config);
@@ -1226,7 +1223,6 @@ impl ContainerReactor {
                         .collect::<Vec<_>>(),
                     &config.ports,
                     &config.volumes,
-                    config.working_dir.as_deref(),
                 )
                 .await?;
 
@@ -2309,9 +2305,6 @@ impl ContainerReactor {
         };
 
         // Create an ImageBuilder with the right configuration
-        // Set working directory to product directory
-        let working_dir = format!("/app/{}", self.config.product_name.replace('.', "/"));
-
         let service_config = DockerServiceConfig {
             name: image_name.to_string(),
             image: format!("{image_name}:{image_tag}"),
@@ -2319,7 +2312,6 @@ impl ContainerReactor {
             env_vars: HashMap::new(),
             ports: Vec::new(),
             volumes: Vec::new(),
-            working_dir: Some(working_dir),
         };
 
         let service = DockerService::new(

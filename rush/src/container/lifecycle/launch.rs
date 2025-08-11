@@ -61,9 +61,7 @@ pub async fn launch_containers(
                 let _ = status_sender
                     .send(ContainerStatus::Failed(service_config.name, e.to_string()))
                     .await;
-                return Err(Error::LaunchFailed(format!(
-                    "Service startup failed: {e}"
-                )));
+                return Err(Error::LaunchFailed(format!("Service startup failed: {e}")));
             }
         }
     }
@@ -139,7 +137,6 @@ async fn launch_service(
             &env_vars,
             &[port_mapping],
             &[], // volumes
-            Some(&working_dir),
         )
         .await?;
 

@@ -456,8 +456,8 @@ impl ImageBuilder {
 
     /// Builds the Docker image
     pub async fn build(&mut self) -> Result<()> {
-        use log::info;
         use crate::utils::DockerCrossCompileGuard;
+        use log::info;
 
         // Ensure we have a git tag computed
         if self.git_tag.is_none() {
@@ -496,7 +496,7 @@ impl ImageBuilder {
             // Default values if spec is not available
             ("native".to_string(), "linux/amd64".to_string())
         };
-        
+
         // Create cross-compilation guard for native compilation only
         // cross-rs handles its own Docker environment
         let _cross_guard = if cross_compile == "native" {
@@ -519,6 +519,7 @@ impl ImageBuilder {
             .as_ref()
             .unwrap_or(&default_context);
 
+        info!("Build config context dir: {}", context_path);
         // Use the docker client to build the image
         self.docker_client
             .build_image(&image_tag, dockerfile_path, context_path)
@@ -549,6 +550,10 @@ impl ImageBuilder {
             .map_err(|_| Error::Internal("Failed to lock spec".into()))?;
 
         // Extract configuration from spec
+        log::info!(
+            "DEBUG -- Getting context dir: {}",
+            Self::context_dir_from_spec(&spec_guard).unwrap()
+        );
         let build_config = BuildConfig {
             build_type: spec_guard.build_type.clone(),
             dockerfile_path: Self::docker_path_from_spec(&spec_guard),
@@ -560,8 +565,6 @@ impl ImageBuilder {
         };
 
         // Create DockerServiceConfig from spec
-        // Set working directory to product directory (reverse domain notation as path)
-        let working_dir = format!("/app/{}", spec_guard.product_name.replace('.', "/"));
 
         let service_config = DockerServiceConfig {
             name: spec_guard.docker_local_name(),
@@ -585,7 +588,6 @@ impl ImageBuilder {
             } else {
                 vec![]
             },
-            working_dir: Some(working_dir),
         };
 
         // Create the DockerService
@@ -658,40 +660,6 @@ impl ImageBuilder {
     }
 }
 
-/// Converts old DockerImage-style code to use ImageBuilder
-///
-/// # Migration Guide
-///
-/// If you were previously using `DockerImage`, you should now use `ImageBuilder`
-/// which provides equivalent functionality.
-///
-/// ## Example
-///
-/// ```rust,ignore
-/// // Old code:
-/// let image = DockerImage::from_docker_spec(spec.clone())?;
-/// image.set_toolchain(toolchain.clone());
-///
-/// // New code:
-/// let image = ImageBuilder::from_build_spec(spec.clone(), docker_client.clone())?;
-/// // Note: toolchain is now set internally by ImageBuilder
-/// ```
-pub fn convert_to_new_architecture(
-    component_specs: Vec<Arc<Mutex<ComponentBuildSpec>>>,
-    docker_client: Arc<dyn DockerClient>,
-) -> Result<Vec<DockerImage>> {
-    let mut images = Vec::new();
-
-    for spec in component_specs {
-        match ImageBuilder::from_build_spec(spec.clone(), docker_client.clone()) {
-            Ok(builder) => images.push(builder),
-            Err(e) => return Err(e),
-        }
-    }
-
-    Ok(images)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -711,7 +679,6 @@ mod tests {
             env_vars: HashMap::new(),
             ports: vec![],
             volumes: vec![],
-            working_dir: None,
         };
 
         let service = DockerService::new("test-id".to_string(), config, mock_client.clone());

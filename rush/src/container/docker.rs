@@ -39,7 +39,6 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
         env_vars: &[String],
         ports: &[String],
         volumes: &[String],
-        working_dir: Option<&str>,
     ) -> Result<String>; // Returns container ID
 
     /// Stops a running container
@@ -139,9 +138,7 @@ impl DockerClient for DockerCliClient {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("Failed to create Docker network: {}", stderr);
-            return Err(Error::Docker(format!(
-                "Network creation failed: {stderr}"
-            )));
+            return Err(Error::Docker(format!("Network creation failed: {stderr}")));
         }
 
         debug!("Successfully created Docker network: {}", name);
@@ -167,9 +164,7 @@ impl DockerClient for DockerCliClient {
                 return Ok(());
             }
             error!("Failed to delete Docker network: {}", stderr);
-            return Err(Error::Docker(format!(
-                "Network deletion failed: {stderr}"
-            )));
+            return Err(Error::Docker(format!("Network deletion failed: {stderr}")));
         }
 
         debug!("Successfully deleted Docker network: {}", name);
@@ -272,7 +267,7 @@ impl DockerClient for DockerCliClient {
             .args([
                 "build",
                 "--platform",
-                "linux/amd64",  // Always build for x86_64
+                "linux/amd64", // Always build for x86_64
                 "--tag",
                 tag,
                 "--file",
@@ -350,26 +345,19 @@ impl DockerClient for DockerCliClient {
         env_vars: &[String],
         ports: &[String],
         volumes: &[String],
-        working_dir: Option<&str>,
     ) -> Result<String> {
         trace!("Running Docker container {} from image {}", name, image);
 
         let mut args = vec![
-            "run", 
-            "-d", 
-            "--platform", 
-            "linux/amd64",  // Always run as x86_64
-            "--name", 
-            name, 
-            "--network", 
-            network
+            "run",
+            "-d",
+            "--platform",
+            "linux/amd64", // Always run as x86_64
+            "--name",
+            name,
+            "--network",
+            network,
         ];
-
-        // Set working directory if provided
-        if let Some(workdir) = working_dir {
-            args.push("-w");
-            args.push(workdir);
-        }
 
         // Add environment variables
         for env in env_vars {
@@ -459,9 +447,7 @@ impl DockerClient for DockerCliClient {
                 return Ok(());
             }
             error!("Failed to remove Docker container: {}", stderr);
-            return Err(Error::Docker(format!(
-                "Container removal failed: {stderr}"
-            )));
+            return Err(Error::Docker(format!("Container removal failed: {stderr}")));
         }
 
         debug!("Successfully removed Docker container: {}", container_id);
@@ -661,9 +647,7 @@ impl DockerClient for DockerCliClient {
                 return Ok(());
             }
             error!("Failed to send signal to Docker container: {}", stderr);
-            return Err(Error::Docker(format!(
-                "Container signal failed: {stderr}"
-            )));
+            return Err(Error::Docker(format!("Container signal failed: {stderr}")));
         }
 
         debug!(
@@ -796,8 +780,6 @@ pub struct DockerServiceConfig {
     pub ports: Vec<String>,
     /// Volume mappings (host:container)
     pub volumes: Vec<String>,
-    /// Working directory inside the container
-    pub working_dir: Option<String>,
 }
 
 /// Represents a running Docker service
@@ -931,7 +913,6 @@ mod tests {
                 _env_vars: &[String],
                 _ports: &[String],
                 _volumes: &[String],
-                _working_dir: Option<&str>,
             ) -> Result<String> {
                 unimplemented!()
             }
@@ -1038,7 +1019,6 @@ mod tests {
                 _env_vars: &[String],
                 _ports: &[String],
                 _volumes: &[String],
-                _working_dir: Option<&str>,
             ) -> Result<String> {
                 unimplemented!()
             }
