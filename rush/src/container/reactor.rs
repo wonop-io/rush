@@ -825,82 +825,33 @@ impl ContainerReactor {
             // Get context directory
             // For components with a location, the context should be the component's location directory
             let context_dir = match &spec.build_type {
-                BuildType::TrunkWasm {
-                    context_dir,
-                    location,
-                    ..
-                } => {
-                    // If context_dir is None or ".", use the component's location
-                    match context_dir {
-                        Some(dir) if dir != "." => dir.clone(),
-                        _ => location.clone(),
-                    }
+                BuildType::TrunkWasm { context_dir, .. } => {
+                    // If context_dir is set, return it, otherwise use "."
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
-                BuildType::RustBinary {
-                    context_dir,
-                    location,
-                    ..
-                } => {
-                    // If context_dir is None or ".", use the component's location
-                    match context_dir {
-                        Some(dir) if dir != "." => dir.clone(),
-                        _ => location.clone(),
-                    }
+                BuildType::RustBinary { context_dir, .. } => {
+                    // If context_dir is set, return it, otherwise use "."
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
-                BuildType::DixiousWasm {
-                    context_dir,
-                    location,
-                    ..
-                } => {
-                    // If context_dir is None or ".", use the component's location
-                    match context_dir {
-                        Some(dir) if dir != "." => dir.clone(),
-                        _ => location.clone(),
-                    }
+                BuildType::DixiousWasm { context_dir, .. } => {
+                    // If context_dir is set, return it, otherwise use "."
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
-                BuildType::Script {
-                    context_dir,
-                    location,
-                    ..
-                } => {
-                    // If context_dir is None or ".", use the component's location
-                    match context_dir {
-                        Some(dir) if dir != "." => dir.clone(),
-                        _ => location.clone(),
-                    }
+                BuildType::Script { context_dir, .. } => {
+                    // If context_dir is set, return it, otherwise use "."
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
-                BuildType::Zola {
-                    context_dir,
-                    location,
-                    ..
-                } => {
-                    // If context_dir is None or ".", use the component's location
-                    match context_dir {
-                        Some(dir) if dir != "." => dir.clone(),
-                        _ => location.clone(),
-                    }
+                BuildType::Zola { context_dir, .. } => {
+                    // If context_dir is set, return it, otherwise use "."
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
-                BuildType::Book {
-                    context_dir,
-                    location,
-                    ..
-                } => {
-                    // If context_dir is None or ".", use the component's location
-                    match context_dir {
-                        Some(dir) if dir != "." => dir.clone(),
-                        _ => location.clone(),
-                    }
+                BuildType::Book { context_dir, .. } => {
+                    // If context_dir is set, return it, otherwise use "."
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
                 BuildType::Ingress { context_dir, .. } => {
-                    // For Ingress, check if context_dir is "." or "../" and use product directory
-                    match context_dir {
-                        Some(dir) if dir != "." => dir.clone(),
-                        _ => {
-                            // Ingress typically needs access to the entire product directory
-                            // to reference artifacts from other components
-                            ".".to_string()
-                        }
-                    }
+                    // If context_dir is set, return it, otherwise use "."
+                    context_dir.clone().unwrap_or_else(|| ".".to_string())
                 }
                 _ => continue,
             };
