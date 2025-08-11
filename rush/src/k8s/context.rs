@@ -82,7 +82,7 @@ impl ContextManager {
 
         let output = cmd
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute kubectl: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute kubectl: {e}")))?;
 
         if output.status.success() {
             let context = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -94,8 +94,7 @@ impl ContextManager {
             warn!("Failed to get current context: {}", error);
             self.current_context = None;
             Err(Error::External(format!(
-                "Failed to get current context: {}",
-                error
+                "Failed to get current context: {error}"
             )))
         }
     }
@@ -115,7 +114,7 @@ impl ContextManager {
 
         let output = cmd
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute kubectl: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute kubectl: {e}")))?;
 
         if output.status.success() {
             let json = String::from_utf8_lossy(&output.stdout).to_string();
@@ -130,8 +129,7 @@ impl ContextManager {
             warn!("Failed to get available contexts: {}", error);
             self.available_contexts.clear();
             Err(Error::External(format!(
-                "Failed to get available contexts: {}",
-                error
+                "Failed to get available contexts: {error}"
             )))
         }
     }
@@ -141,7 +139,7 @@ impl ContextManager {
         self.available_contexts.clear();
 
         let parsed: serde_json::Value = serde_json::from_str(json)
-            .map_err(|e| Error::External(format!("Failed to parse context JSON: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to parse context JSON: {e}")))?;
 
         if let Some(contexts) = parsed.get("contexts").and_then(|c| c.as_array()) {
             for context in contexts {
@@ -190,8 +188,7 @@ impl ContextManager {
         // Check if context exists
         if !self.context_exists(context_name) {
             return Err(Error::InvalidInput(format!(
-                "Kubernetes context '{}' not found",
-                context_name
+                "Kubernetes context '{context_name}' not found"
             )));
         }
 
@@ -206,7 +203,7 @@ impl ContextManager {
 
         let output = cmd
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute kubectl: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute kubectl: {e}")))?;
 
         if output.status.success() {
             debug!("Successfully set Kubernetes context to: {}", context_name);
@@ -214,7 +211,7 @@ impl ContextManager {
             Ok(())
         } else {
             let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            Err(Error::External(format!("Failed to set context: {}", error)))
+            Err(Error::External(format!("Failed to set context: {error}")))
         }
     }
 
@@ -242,8 +239,7 @@ impl ContextManager {
     pub async fn validate_context(&self, context_name: &str) -> Result<()> {
         if !self.context_exists(context_name) {
             return Err(Error::InvalidInput(format!(
-                "Kubernetes context '{}' not found",
-                context_name
+                "Kubernetes context '{context_name}' not found"
             )));
         }
 
@@ -258,7 +254,7 @@ impl ContextManager {
 
         let output = cmd
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute kubectl: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute kubectl: {e}")))?;
 
         if output.status.success() {
             debug!(
@@ -269,8 +265,7 @@ impl ContextManager {
         } else {
             let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
             Err(Error::External(format!(
-                "Failed to validate context {}: {}",
-                context_name, error
+                "Failed to validate context {context_name}: {error}"
             )))
         }
     }

@@ -48,27 +48,27 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Io(err) => write!(f, "I/O error: {}", err),
-            Error::Config(msg) => write!(f, "Configuration error: {}", msg),
-            Error::Setup(msg) => write!(f, "Setup error: {}", msg),
-            Error::Docker(msg) => write!(f, "Docker error: {}", msg),
-            Error::Build(msg) => write!(f, "Build error: {}", msg),
-            Error::Deploy(msg) => write!(f, "Deployment error: {}", msg),
-            Error::Container(msg) => write!(f, "Container error: {}", msg),
-            Error::Kubernetes(msg) => write!(f, "Kubernetes error: {}", msg),
-            Error::Vault(msg) => write!(f, "Vault error: {}", msg),
+            Error::Io(err) => write!(f, "I/O error: {err}"),
+            Error::Config(msg) => write!(f, "Configuration error: {msg}"),
+            Error::Setup(msg) => write!(f, "Setup error: {msg}"),
+            Error::Docker(msg) => write!(f, "Docker error: {msg}"),
+            Error::Build(msg) => write!(f, "Build error: {msg}"),
+            Error::Deploy(msg) => write!(f, "Deployment error: {msg}"),
+            Error::Container(msg) => write!(f, "Container error: {msg}"),
+            Error::Kubernetes(msg) => write!(f, "Kubernetes error: {msg}"),
+            Error::Vault(msg) => write!(f, "Vault error: {msg}"),
             Error::FileSystem { path, message } => {
                 write!(f, "File system error at '{}': {}", path.display(), message)
             }
-            Error::Filesystem(msg) => write!(f, "Filesystem error: {}", msg),
-            Error::Template(msg) => write!(f, "Template error: {}", msg),
-            Error::Terminated(msg) => write!(f, "Terminated: {}", msg),
-            Error::Internal(msg) => write!(f, "Internal error: {}", msg),
-            Error::External(msg) => write!(f, "External error: {}", msg),
-            Error::LaunchFailed(msg) => write!(f, "Launch failed: {}", msg),
-            Error::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
-            Error::Validation(msg) => write!(f, "Validation error: {}", msg),
-            Error::Other(msg) => write!(f, "Error: {}", msg),
+            Error::Filesystem(msg) => write!(f, "Filesystem error: {msg}"),
+            Error::Template(msg) => write!(f, "Template error: {msg}"),
+            Error::Terminated(msg) => write!(f, "Terminated: {msg}"),
+            Error::Internal(msg) => write!(f, "Internal error: {msg}"),
+            Error::External(msg) => write!(f, "External error: {msg}"),
+            Error::LaunchFailed(msg) => write!(f, "Launch failed: {msg}"),
+            Error::InvalidInput(msg) => write!(f, "Invalid input: {msg}"),
+            Error::Validation(msg) => write!(f, "Validation error: {msg}"),
+            Error::Other(msg) => write!(f, "Error: {msg}"),
         }
     }
 }

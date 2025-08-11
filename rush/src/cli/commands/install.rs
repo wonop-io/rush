@@ -14,7 +14,7 @@ pub async fn execute(ctx: &mut CliContext) -> Result<()> {
         }
         Err(e) => {
             error!("Installation failed: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }
@@ -31,7 +31,7 @@ pub async fn uninstall(ctx: &mut CliContext) -> Result<()> {
         }
         Err(e) => {
             error!("Uninstallation failed: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }
@@ -52,7 +52,7 @@ async fn ensure_kubectl(ctx: &mut CliContext) -> Result<()> {
         Ok(_) => Ok(()),
         Err(e) => {
             error!("Failed to select kubernetes context: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }

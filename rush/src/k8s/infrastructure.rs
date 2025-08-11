@@ -94,7 +94,7 @@ impl InfrastructureRepo {
             // Create parent directory if it doesn't exist
             if let Some(parent) = self.local_path.parent() {
                 fs::create_dir_all(parent)
-                    .map_err(|e| Error::Filesystem(format!("Failed to create directory: {}", e)))?;
+                    .map_err(|e| Error::Filesystem(format!("Failed to create directory: {e}")))?;
             }
 
             // Clone the repository
@@ -127,13 +127,13 @@ impl InfrastructureRepo {
         // Delete target directory if it exists
         if target_directory.exists() {
             fs::remove_dir_all(&target_directory).map_err(|e| {
-                Error::Filesystem(format!("Failed to remove target directory: {}", e))
+                Error::Filesystem(format!("Failed to remove target directory: {e}"))
             })?;
         }
 
         // Create target directory
         fs::create_dir_all(&target_directory)
-            .map_err(|e| Error::Filesystem(format!("Failed to create target directory: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to create target directory: {e}")))?;
 
         // Copy manifests recursively
         self.copy_directory_recursively(source_directory, &target_directory)?;
@@ -191,11 +191,11 @@ impl InfrastructureRepo {
         let output = Command::new(self.toolchain.git())
             .args(args)
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute git command: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute git command: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::External(format!("Git command failed: {}", stderr)));
+            return Err(Error::External(format!("Git command failed: {stderr}")));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -217,14 +217,14 @@ impl InfrastructureRepo {
 
         if !destination.exists() {
             fs::create_dir_all(destination)
-                .map_err(|e| Error::Filesystem(format!("Failed to create directory: {}", e)))?;
+                .map_err(|e| Error::Filesystem(format!("Failed to create directory: {e}")))?;
         }
 
         for entry in fs::read_dir(source)
-            .map_err(|e| Error::Filesystem(format!("Failed to read directory: {}", e)))?
+            .map_err(|e| Error::Filesystem(format!("Failed to read directory: {e}")))?
         {
             let entry = entry
-                .map_err(|e| Error::Filesystem(format!("Failed to read directory entry: {}", e)))?;
+                .map_err(|e| Error::Filesystem(format!("Failed to read directory entry: {e}")))?;
             let path = entry.path();
             let dest_path = destination.join(path.file_name().unwrap());
 
@@ -232,7 +232,7 @@ impl InfrastructureRepo {
                 self.copy_directory_recursively(&path, &dest_path)?;
             } else {
                 fs::copy(&path, &dest_path)
-                    .map_err(|e| Error::Filesystem(format!("Failed to copy file: {}", e)))?;
+                    .map_err(|e| Error::Filesystem(format!("Failed to copy file: {e}")))?;
             }
         }
 
@@ -263,18 +263,18 @@ mod tests {
     fn create_test_file(dir: &Path, name: &str, content: &str) -> Result<()> {
         let path = dir.join(name);
         let mut file = File::create(&path)
-            .map_err(|e| Error::Filesystem(format!("Failed to create test file: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to create test file: {e}")))?;
         file.write_all(content.as_bytes())
-            .map_err(|e| Error::Filesystem(format!("Failed to write to test file: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to write to test file: {e}")))?;
         Ok(())
     }
 
     fn read_test_file(path: &Path) -> Result<String> {
         let mut file = File::open(path)
-            .map_err(|e| Error::Filesystem(format!("Failed to open test file: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to open test file: {e}")))?;
         let mut content = String::new();
         file.read_to_string(&mut content)
-            .map_err(|e| Error::Filesystem(format!("Failed to read test file: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to read test file: {e}")))?;
         Ok(content)
     }
 

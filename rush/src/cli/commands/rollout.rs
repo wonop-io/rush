@@ -28,7 +28,7 @@ impl RolloutCommand {
             }
             Err(e) => {
                 eprintln!("{}: {}", "Rollout failed".red().bold(), e);
-                Err(Error::Deploy(format!("Failed to rollout: {}", e)))
+                Err(Error::Deploy(format!("Failed to rollout: {e}")))
             }
         }
     }
@@ -44,7 +44,7 @@ pub async fn execute(ctx: &mut CliContext) -> Result<()> {
         }
         Err(e) => {
             error!("Rollout failed: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }

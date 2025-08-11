@@ -195,7 +195,7 @@ impl ImageBuilder {
                     self.build_config.docker_registry, base_name, git_tag
                 );
             } else {
-                return format!("{}:{}", base_name, git_tag);
+                return format!("{base_name}:{git_tag}");
             }
         } else if let Some(spec) = &self.spec {
             if let Ok(spec_guard) = spec.lock() {
@@ -286,7 +286,7 @@ impl ImageBuilder {
         // Get the git hash for the context directory
         let git_hash = toolchain
             .get_git_folder_hash(&context_dir)
-            .map_err(|e| Error::Setup(format!("Failed to get git hash: {}", e)))?;
+            .map_err(|e| Error::Setup(format!("Failed to get git hash: {e}")))?;
 
         log::debug!("Got git hash: {}", git_hash);
 
@@ -312,7 +312,7 @@ impl ImageBuilder {
             .get_git_wip(&context_dir)
             .unwrap_or_else(|_| String::new());
 
-        let tag = format!("{}{}", short_hash, wip_suffix);
+        let tag = format!("{short_hash}{wip_suffix}");
         self.git_tag = Some(tag.clone());
 
         Ok(tag)
@@ -338,7 +338,7 @@ impl ImageBuilder {
             .stderr(std::process::Stdio::null())
             .status()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to check image existence: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to check image existence: {e}")))?;
 
         self.image_exists_in_cache = status.success();
 
@@ -492,7 +492,7 @@ impl ImageBuilder {
 
         // Use the docker client to build the image
         self.docker_client
-            .build_image(&image_tag, dockerfile_path, &context_path)
+            .build_image(&image_tag, dockerfile_path, context_path)
             .await?;
 
         info!("Successfully built Docker image: {}", image_tag);
@@ -551,7 +551,7 @@ impl ImageBuilder {
             volumes: if let Some(volumes) = spec_guard.volumes.clone() {
                 volumes
                     .into_iter()
-                    .map(|(host, container)| format!("{}:{}", host, container))
+                    .map(|(host, container)| format!("{host}:{container}"))
                     .collect()
             } else {
                 vec![]

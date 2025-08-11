@@ -56,7 +56,7 @@ pub fn setup_file_watcher(config: WatcherConfig) -> Result<(RecommendedWatcher, 
 
     // Create watcher with default configuration
     let mut watcher = RecommendedWatcher::new(tx, NotifyConfig::default())
-        .map_err(|e| crate::error::Error::Setup(format!("Failed to create file watcher: {}", e)))?;
+        .map_err(|e| crate::error::Error::Setup(format!("Failed to create file watcher: {e}")))?;
 
     // Watch paths
     if config.watch_paths.is_empty() {

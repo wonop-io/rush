@@ -34,10 +34,10 @@ impl VaultCommand {
     pub async fn create(&self, product_name: &str) -> Result<()> {
         match self.vault.lock().unwrap().create_vault(product_name).await {
             Ok(_) => {
-                println!("Vault created successfully for {}", product_name);
+                println!("Vault created successfully for {product_name}");
                 Ok(())
             }
-            Err(e) => Err(Error::Vault(format!("Failed to create vault: {}", e))),
+            Err(e) => Err(Error::Vault(format!("Failed to create vault: {e}"))),
         }
     }
 
@@ -58,12 +58,11 @@ impl VaultCommand {
         {
             Ok(_) => {
                 println!(
-                    "Secrets added successfully for {}/{} in environment {}",
-                    product_name, component_name, environment
+                    "Secrets added successfully for {product_name}/{component_name} in environment {environment}"
                 );
                 Ok(())
             }
-            Err(e) => Err(Error::Vault(format!("Failed to add secrets: {}", e))),
+            Err(e) => Err(Error::Vault(format!("Failed to add secrets: {e}"))),
         }
     }
 
@@ -83,12 +82,11 @@ impl VaultCommand {
         {
             Ok(_) => {
                 println!(
-                    "Secrets removed successfully for {}/{} in environment {}",
-                    product_name, component_name, environment
+                    "Secrets removed successfully for {product_name}/{component_name} in environment {environment}"
                 );
                 Ok(())
             }
-            Err(e) => Err(Error::Vault(format!("Failed to remove secrets: {}", e))),
+            Err(e) => Err(Error::Vault(format!("Failed to remove secrets: {e}"))),
         }
     }
 
@@ -111,8 +109,7 @@ impl VaultCommand {
             Ok(_) => (),
             Err(e) => {
                 return Err(Error::Vault(format!(
-                    "Failed to create destination vault: {}",
-                    e
+                    "Failed to create destination vault: {e}"
                 )))
             }
         }
@@ -120,7 +117,7 @@ impl VaultCommand {
         let source_vault = self.vault.lock().unwrap();
 
         for component_name in components {
-            println!(" - Migrating {}", component_name);
+            println!(" - Migrating {component_name}");
             match source_vault
                 .get(product_name, component_name, environment)
                 .await
@@ -136,8 +133,7 @@ impl VaultCommand {
                             Ok(_) => (),
                             Err(e) => {
                                 return Err(Error::Vault(format!(
-                                "Failed to set secrets in destination vault for component {}: {}",
-                                component_name, e
+                                "Failed to set secrets in destination vault for component {component_name}: {e}"
                             )))
                             }
                         }
@@ -145,8 +141,7 @@ impl VaultCommand {
                 }
                 Err(e) => {
                     return Err(Error::Vault(format!(
-                        "Failed to get secrets from source vault for component {}: {}",
-                        component_name, e
+                        "Failed to get secrets from source vault for component {component_name}: {e}"
                     )))
                 }
             }
@@ -174,21 +169,19 @@ impl VaultCommand {
                     Ok(secrets) => {
                         if secrets.is_empty() {
                             println!(
-                                "No secrets found for {}/{} in environment {}",
-                                product_name, component, environment
+                                "No secrets found for {product_name}/{component} in environment {environment}"
                             );
                         } else {
                             println!(
-                                "Secrets for {}/{} in environment {}:",
-                                product_name, component, environment
+                                "Secrets for {product_name}/{component} in environment {environment}:"
                             );
                             for (key, _) in secrets {
-                                println!("  - {}", key);
+                                println!("  - {key}");
                             }
                         }
                         Ok(())
                     }
-                    Err(e) => Err(Error::Vault(format!("Failed to list secrets: {:?}", e))),
+                    Err(e) => Err(Error::Vault(format!("Failed to list secrets: {e:?}"))),
                 }
             }
             None => {
@@ -214,7 +207,7 @@ impl VaultCommand {
                 let component_name = &args[0];
                 let secrets_json = &args[1];
                 let secrets: HashMap<String, String> = serde_json::from_str(secrets_json)
-                    .map_err(|e| Error::InvalidInput(format!("Invalid JSON format: {}", e)))?;
+                    .map_err(|e| Error::InvalidInput(format!("Invalid JSON format: {e}")))?;
 
                 self.add(product_name, component_name, environment, secrets)
                     .await
@@ -236,17 +229,16 @@ impl VaultCommand {
                 }
                 // This would need to be implemented in a way that the destination vault can be created
                 // based on the arg, which would require access to the vault factory logic
-                return Err(Error::InvalidInput(
+                Err(Error::InvalidInput(
                     "Migration not implemented in this context".to_string(),
-                ));
+                ))
             }
             "list" => {
-                let component_name = args.get(0).map(|s| s.as_str());
+                let component_name = args.first().map(|s| s.as_str());
                 self.list(product_name, component_name, environment).await
             }
             _ => Err(Error::InvalidInput(format!(
-                "Unknown vault subcommand: {}",
-                subcommand
+                "Unknown vault subcommand: {subcommand}"
             ))),
         }
     }
@@ -283,7 +275,7 @@ async fn create_vault_cmd(ctx: &mut CliContext) -> Result<()> {
         }
         Err(e) => {
             error!("Failed to create vault: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }
@@ -302,7 +294,7 @@ async fn add_secrets(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     let secrets_json = matches.get_one::<String>("secrets").unwrap();
 
     let secrets: HashMap<String, String> = serde_json::from_str(secrets_json)
-        .map_err(|e| Error::InvalidInput(format!("Invalid JSON format: {}", e)))?;
+        .map_err(|e| Error::InvalidInput(format!("Invalid JSON format: {e}")))?;
 
     match ctx
         .vault
@@ -317,7 +309,7 @@ async fn add_secrets(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
         }
         Err(e) => {
             error!("Failed to add secrets: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }
@@ -339,7 +331,7 @@ async fn remove_secrets(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()
         }
         Err(e) => {
             error!("Failed to remove secrets: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }

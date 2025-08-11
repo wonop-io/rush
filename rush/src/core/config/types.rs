@@ -113,7 +113,7 @@ impl Config {
         let context = Context::from_serialize(&ctx).expect("Could not create config context");
         match Tera::one_off(&self.domain_template, &context, false) {
             Ok(d) => d,
-            Err(e) => panic!("Could not render domain template: {}", e),
+            Err(e) => panic!("Could not render domain template: {e}"),
         }
     }
 
@@ -139,9 +139,9 @@ impl Config {
         let product_uri = slug::slugify(&product_name).to_string();
         let product_uri = product_uri.to_lowercase();
         if !valid_environments.contains(&environment) {
-            eprintln!("Invalid environment: {}", environment);
-            eprintln!("Valid environments: {:#?}", valid_environments);
-            return Err(format!("Invalid environment: {}", environment));
+            eprintln!("Invalid environment: {environment}");
+            eprintln!("Valid environments: {valid_environments:#?}");
+            return Err(format!("Invalid environment: {environment}"));
         }
 
         let kube_context = match environment.as_str() {
@@ -260,8 +260,7 @@ impl Config {
             } else {
                 panic!(
                     "Product
- path does not exist for product_dirname: {}",
-                    product_dirname
+ path does not exist for product_dirname: {product_dirname}"
                 );
             }
         }
@@ -269,12 +268,11 @@ impl Config {
         let product_path = products_dir.join(&product_dirname);
         if !product_path.exists() {
             panic!(
-                "Product path does not exist for product_dirname: {}",
-                product_dirname
+                "Product path does not exist for product_dirname: {product_dirname}"
             );
         }
 
-        let network_name = format!("{}{}", NETWORK_PREFIX, product_uri);
+        let network_name = format!("{NETWORK_PREFIX}{product_uri}");
         trace!("Product dirname: {}", product_dirname);
 
         let one_password_account = std::env::var(ONE_PASSWORD_ACCOUNT_VAR).ok();

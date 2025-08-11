@@ -16,11 +16,11 @@ pub async fn execute(
 ) -> Result<()> {
     match cmd {
         DescribeCommand::Toolchain => {
-            println!("{:#?}", toolchain);
+            println!("{toolchain:#?}");
             Ok(())
         }
         DescribeCommand::Images => {
-            println!("{:#?}", services);
+            println!("{services:#?}");
             Ok(())
         }
         DescribeCommand::Services => {
@@ -29,7 +29,7 @@ pub async fn execute(
                 .iter()
                 .map(|s| (s.name.clone(), s.host.clone(), s.port, s.target_port))
                 .collect::<Vec<_>>();
-            println!("{:#?}", service_info);
+            println!("{service_info:#?}");
             Ok(())
         }
         DescribeCommand::BuildScript { component_name } => {
@@ -37,7 +37,7 @@ pub async fn execute(
                 .iter()
                 .find(|s| s.name == component_name)
                 .ok_or_else(|| {
-                    Error::InvalidInput(format!("Component '{}' not found", component_name))
+                    Error::InvalidInput(format!("Component '{component_name}' not found"))
                 })?;
 
             let _secrets = secrets_provider
@@ -47,21 +47,20 @@ pub async fn execute(
                     &config.environment().into(),
                 )
                 .await
-                .map_err(|e| Error::Vault(format!("Failed to get secrets: {}", e)))?;
+                .map_err(|e| Error::Vault(format!("Failed to get secrets: {e}")))?;
 
             // Building the context would require access to the build context
             // This is a placeholder implementation
-            return Err(Error::InvalidInput(format!(
-                "Build script functionality not implemented for component '{}'",
-                component_name
-            )));
+            Err(Error::InvalidInput(format!(
+                "Build script functionality not implemented for component '{component_name}'"
+            )))
         }
         DescribeCommand::BuildContext { component_name } => {
             let service = services
                 .iter()
                 .find(|s| s.name == component_name)
                 .ok_or_else(|| {
-                    Error::InvalidInput(format!("Component '{}' not found", component_name))
+                    Error::InvalidInput(format!("Component '{component_name}' not found"))
                 })?;
 
             let _secrets = secrets_provider
@@ -71,16 +70,16 @@ pub async fn execute(
                     &config.environment().into(),
                 )
                 .await
-                .map_err(|e| Error::Vault(format!("Failed to get secrets: {}", e)))?;
+                .map_err(|e| Error::Vault(format!("Failed to get secrets: {e}")))?;
 
             // Convert service to a context for display
             let service_context = serde_json::to_value(service)
-                .map_err(|e| Error::Template(format!("Failed to serialize service: {}", e)))?;
+                .map_err(|e| Error::Template(format!("Failed to serialize service: {e}")))?;
 
             let tera_ctx = Context::from_value(service_context)
-                .map_err(|e| Error::Template(format!("Failed to create context: {}", e)))?;
+                .map_err(|e| Error::Template(format!("Failed to create context: {e}")))?;
 
-            println!("{:#?}", tera_ctx);
+            println!("{tera_ctx:#?}");
             Ok(())
         }
         DescribeCommand::Artefacts { component_name } => {
@@ -88,25 +87,24 @@ pub async fn execute(
                 .iter()
                 .find(|s| s.name == component_name)
                 .ok_or_else(|| {
-                    Error::InvalidInput(format!("Component '{}' not found", component_name))
+                    Error::InvalidInput(format!("Component '{component_name}' not found"))
                 })?;
 
             // In the new architecture, artefacts might be handled differently
-            println!("Artefacts for component: {}", component_name);
-            println!("Service details: {:#?}", service);
+            println!("Artefacts for component: {component_name}");
+            println!("Service details: {service:#?}");
 
-            return Err(Error::InvalidInput(format!(
-                "Artefacts functionality not implemented for component '{}'",
-                component_name
-            )));
+            Err(Error::InvalidInput(format!(
+                "Artefacts functionality not implemented for component '{component_name}'"
+            )))
         }
         DescribeCommand::K8s => {
             // In the new architecture, Kubernetes manifests might be accessed differently
             println!("Kubernetes manifests functionality not implemented yet");
 
-            return Err(Error::InvalidInput(
+            Err(Error::InvalidInput(
                 "Kubernetes manifests functionality not implemented".to_string(),
-            ));
+            ))
         }
     }
 }

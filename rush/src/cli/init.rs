@@ -16,7 +16,7 @@ pub async fn init_application() -> Result<()> {
 
     // Find and set the project root
     let current_dir = env::current_dir().map_err(|e| {
-        crate::error::Error::Filesystem(format!("Failed to get current directory: {}", e))
+        crate::error::Error::Filesystem(format!("Failed to get current directory: {e}"))
     })?;
 
     let root_path = find_project_root(current_dir).ok_or_else(|| {
@@ -35,16 +35,16 @@ pub async fn init_application() -> Result<()> {
     if rushd_config_path.exists() {
         debug!("Loading rushd.yaml from {}", rushd_config_path.display());
         let mut file = File::open(&rushd_config_path).map_err(|e| {
-            crate::error::Error::Filesystem(format!("Failed to open rushd.yaml: {}", e))
+            crate::error::Error::Filesystem(format!("Failed to open rushd.yaml: {e}"))
         })?;
 
         let mut contents = String::new();
         file.read_to_string(&mut contents).map_err(|e| {
-            crate::error::Error::Filesystem(format!("Failed to read rushd.yaml: {}", e))
+            crate::error::Error::Filesystem(format!("Failed to read rushd.yaml: {e}"))
         })?;
 
         let rushd_config: RushdConfig = serde_yaml::from_str(&contents).map_err(|e| {
-            crate::error::Error::Config(format!("Failed to parse rushd.yaml: {}", e))
+            crate::error::Error::Config(format!("Failed to parse rushd.yaml: {e}"))
         })?;
 
         apply_rushd_config(&rushd_config);

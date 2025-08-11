@@ -27,7 +27,7 @@ impl FileOutputDirector {
         if !output_dir.exists() {
             tokio::fs::create_dir_all(&output_dir)
                 .await
-                .map_err(|e| crate::error::Error::Io(e))?;
+                .map_err(crate::error::Error::Io)?;
         }
 
         Ok(Self {
@@ -61,7 +61,7 @@ impl FileOutputDirector {
                 .append(true)
                 .open(&file_path)
                 .await
-                .map_err(|e| crate::error::Error::Io(e))?;
+                .map_err(crate::error::Error::Io)?;
 
             let writer = BufWriter::new(file);
             self.writers.insert(source.name.clone(), writer);
@@ -76,7 +76,7 @@ impl FileOutputDirector {
 
         if self.include_timestamps {
             let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
-            line.push_str(&format!("[{}] ", timestamp));
+            line.push_str(&format!("[{timestamp}] "));
         }
 
         if self.include_source_names {
@@ -128,7 +128,7 @@ impl OutputDirector for FileOutputDirector {
             writer
                 .write_all(line.as_bytes())
                 .await
-                .map_err(|e| crate::error::Error::Io(e))?;
+                .map_err(crate::error::Error::Io)?;
         }
 
         Ok(())
@@ -139,7 +139,7 @@ impl OutputDirector for FileOutputDirector {
             writer
                 .flush()
                 .await
-                .map_err(|e| crate::error::Error::Io(e))?;
+                .map_err(crate::error::Error::Io)?;
         }
         Ok(())
     }

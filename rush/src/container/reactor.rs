@@ -259,15 +259,15 @@ impl ContainerReactor {
         // Read stack configuration
         let stack_config = match fs::read_to_string(format!(
             "{}/stack.spec.yaml",
-            product_path.display().to_string()
+            product_path.display()
         )) {
             Ok(config) => config,
-            Err(e) => return Err(format!("Failed to read stack config: {}", e).into()),
+            Err(e) => return Err(format!("Failed to read stack config: {e}").into()),
         };
 
         // Parse YAML
         let stack_config_value: serde_yaml::Value = serde_yaml::from_str(&stack_config)
-            .map_err(|e| format!("Failed to parse stack config: {}", e))?;
+            .map_err(|e| format!("Failed to parse stack config: {e}"))?;
 
         // Create watch config
         let watch_config = WatcherConfig {
@@ -317,7 +317,7 @@ impl ContainerReactor {
                 // Ensure component_name is in the YAML
                 if let serde_yaml::Value::Mapping(ref mut yaml_section_map) = yaml_section_clone {
                     if !yaml_section_map
-                        .contains_key(&serde_yaml::Value::String("component_name".to_string()))
+                        .contains_key(serde_yaml::Value::String("component_name".to_string()))
                     {
                         yaml_section_map.insert(
                             serde_yaml::Value::String("component_name".to_string()),
@@ -423,7 +423,7 @@ impl ContainerReactor {
             // Add to services collection
             services
                 .entry(domain)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(service);
         }
 
@@ -437,7 +437,7 @@ impl ContainerReactor {
         let domain_base = format!("{}.{}", self.config.product_name, self.config.environment);
 
         match subdomain {
-            Some(sub) => Ok(format!("{}.{}", sub, domain_base)),
+            Some(sub) => Ok(format!("{sub}.{domain_base}")),
             None => Ok(domain_base),
         }
     }
@@ -529,7 +529,7 @@ impl ContainerReactor {
 
         // TODO: Implement kubectl context selection
         // let kubectl = "kubectl"; // Temporary placeholder
-        let _args = vec!["config", "use-context", context];
+        let _args = ["config", "use-context", context];
 
         // Would use run_command here in actual implementation
 
@@ -869,10 +869,10 @@ impl ContainerReactor {
             let image_tag = &self.config.git_hash;
 
             // Set tagged image name in component spec
-            let _tagged_image_name = format!("{}:{}", image_name, image_tag);
+            let _tagged_image_name = format!("{image_name}:{image_tag}");
 
             // Render artifacts for components that need them (e.g., Ingress)
-            if let Err(e) = self.render_artifacts_for_component(&spec).await {
+            if let Err(e) = self.render_artifacts_for_component(spec).await {
                 error!("Failed to render artifacts for {}: {}", component_name, e);
                 self.rebuild_in_progress = false;
                 return Err(e);
@@ -882,7 +882,7 @@ impl ContainerReactor {
             // Note: For cross-compilation scenarios (e.g., macOS to Linux),
             // the build script may fail if the proper toolchain isn't installed.
             // In production, consider using Docker multi-stage builds instead.
-            if let Err(e) = self.run_build_script_for_component(&spec).await {
+            if let Err(e) = self.run_build_script_for_component(spec).await {
                 error!("Failed to run build script for {}: {}", component_name, e);
 
                 // Check if this is a cross-compilation issue
@@ -975,7 +975,7 @@ impl ContainerReactor {
             let _docker_guard = crate::utils::DockerCrossCompileGuard::new(target_platform);
 
             match self
-                .build_image(&image_name, image_tag, &context, &dockerfile, &spec)
+                .build_image(&image_name, image_tag, &context, &dockerfile, spec)
                 .await
             {
                 Ok(actual_image_name) => {
@@ -1014,8 +1014,7 @@ impl ContainerReactor {
 
                     // Return a more descriptive error
                     return Err(Error::Docker(format!(
-                        "Failed to build image for component '{}'. Check the output above for details.", 
-                        component_name
+                        "Failed to build image for component '{component_name}'. Check the output above for details."
                     )));
                 }
             }
@@ -1039,7 +1038,7 @@ impl ContainerReactor {
         // Create service configs for each service
         let mut service_configs = Vec::new();
 
-        for (_domain, service_list) in &self.services {
+        for service_list in self.services.values() {
             for service in service_list {
                 let should_redirect = self
                     .config
@@ -1092,7 +1091,7 @@ impl ContainerReactor {
                     if let Some(spec) = component_spec {
                         if let Some(spec_volumes) = &spec.volumes {
                             for (host_path, container_path) in spec_volumes {
-                                volumes.push(format!("{}:{}", host_path, container_path));
+                                volumes.push(format!("{host_path}:{container_path}"));
                             }
                         }
                     }
@@ -1131,7 +1130,7 @@ impl ContainerReactor {
                     &config
                         .env_vars
                         .iter()
-                        .map(|(k, v)| format!("{}={}", k, v))
+                        .map(|(k, v)| format!("{k}={v}"))
                         .collect::<Vec<_>>(),
                     &config.ports,
                     &config.volumes,
@@ -1154,15 +1153,14 @@ impl ContainerReactor {
             // Use output director if available, otherwise use standard output
             if let Some(ref output_director) = self.output_director {
                 eprintln!(
-                    "DEBUG: Using output director for container {}",
-                    container_name
+                    "DEBUG: Using output director for container {container_name}"
                 );
                 let director = output_director.clone();
                 let source =
                     crate::output::OutputSource::with_color(&container_name, "container", color);
 
                 tokio::spawn(async move {
-                    eprintln!("DEBUG: Starting log follower for {}", container_name);
+                    eprintln!("DEBUG: Starting log follower for {container_name}");
                     // Create a simple log follower that uses the shared director
                     if let Err(e) = follow_container_logs_with_shared_director(
                         docker_client,
@@ -1177,8 +1175,7 @@ impl ContainerReactor {
                 });
             } else {
                 eprintln!(
-                    "DEBUG: No output director, using standard output for {}",
-                    container_name
+                    "DEBUG: No output director, using standard output for {container_name}"
                 );
                 // Fall back to standard output
                 tokio::spawn(async move {
@@ -1245,7 +1242,7 @@ impl ContainerReactor {
             }
 
             // Check if any changed file is in this component's context or matches its watch patterns
-            if self.is_any_file_in_component_context(&spec, changed_files) {
+            if self.is_any_file_in_component_context(spec, changed_files) {
                 info!(
                     "  ✓ Component '{}' is affected by file changes",
                     spec.component_name
@@ -1615,7 +1612,7 @@ impl ContainerReactor {
     async fn kill_container_by_name(&self, container_name: &str) -> Result<()> {
         // Check if the container is running
         let check_output = Command::new("docker")
-            .args(["ps", "-q", "-f", &format!("name={}", container_name)])
+            .args(["ps", "-q", "-f", &format!("name={container_name}")])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -1638,16 +1635,14 @@ impl ContainerReactor {
                             .await
                             .map_err(|e| {
                                 Error::Container(format!(
-                                    "Failed to execute kill command for {}: {}",
-                                    container_name, e
+                                    "Failed to execute kill command for {container_name}: {e}"
                                 ))
                             })?;
 
                         if !kill_output.status.success() {
                             let stderr = String::from_utf8_lossy(&kill_output.stderr);
                             return Err(Error::Container(format!(
-                                "Failed to kill container {}: {}",
-                                container_name, stderr
+                                "Failed to kill container {container_name}: {stderr}"
                             )));
                         }
                     } else {
@@ -1673,7 +1668,7 @@ impl ContainerReactor {
     async fn remove_container_by_name(&self, container_name: &str) -> Result<()> {
         // Check for any containers (running or stopped) with this name
         let check_output = Command::new("docker")
-            .args(["ps", "-a", "-q", "-f", &format!("name={}", container_name)])
+            .args(["ps", "-a", "-q", "-f", &format!("name={container_name}")])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -1696,16 +1691,14 @@ impl ContainerReactor {
                             .await
                             .map_err(|e| {
                                 Error::Container(format!(
-                                    "Failed to execute rm command for {}: {}",
-                                    container_name, e
+                                    "Failed to execute rm command for {container_name}: {e}"
                                 ))
                             })?;
 
                         if !rm_output.status.success() {
                             let stderr = String::from_utf8_lossy(&rm_output.stderr);
                             return Err(Error::Container(format!(
-                                "Failed to remove container {}: {}",
-                                container_name, stderr
+                                "Failed to remove container {container_name}: {stderr}"
                             )));
                         }
                     } else {
@@ -1882,7 +1875,7 @@ impl ContainerReactor {
         if !output_dir.exists() {
             fs::create_dir_all(output_dir).map_err(|e| Error::FileSystem {
                 path: output_dir.to_path_buf(),
-                message: format!("Failed to create artifact output directory: {}", e),
+                message: format!("Failed to create artifact output directory: {e}"),
             })?;
         }
 
@@ -1891,7 +1884,7 @@ impl ContainerReactor {
         if !rushd_dir.exists() {
             fs::create_dir_all(&rushd_dir).map_err(|e| Error::FileSystem {
                 path: rushd_dir.clone(),
-                message: format!("Failed to create rushd directory: {}", e),
+                message: format!("Failed to create rushd directory: {e}"),
             })?;
         }
 
@@ -2077,15 +2070,15 @@ impl ContainerReactor {
 
         let script_path = build_dir.join("build_script.sh");
         fs::write(&script_path, &script_content)
-            .map_err(|e| Error::Build(format!("Failed to write build script: {}", e)))?;
+            .map_err(|e| Error::Build(format!("Failed to write build script: {e}")))?;
 
         // Make script executable
         let metadata = fs::metadata(&script_path)
-            .map_err(|e| Error::Build(format!("Failed to get script metadata: {}", e)))?;
+            .map_err(|e| Error::Build(format!("Failed to get script metadata: {e}")))?;
         let mut permissions = metadata.permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&script_path, permissions)
-            .map_err(|e| Error::Build(format!("Failed to set script permissions: {}", e)))?;
+            .map_err(|e| Error::Build(format!("Failed to set script permissions: {e}")))?;
 
         // Use Directory guard to change to build directory and execute the script
         let output = {
@@ -2106,7 +2099,7 @@ impl ContainerReactor {
             }
             Err(e) => {
                 error!("Build script failed for {}: {}", spec.component_name, e);
-                Err(Error::Build(format!("Build script failed: {}", e)))
+                Err(Error::Build(format!("Build script failed: {e}")))
             }
         }
     }
@@ -2130,7 +2123,7 @@ impl ContainerReactor {
             .args(["version", "--format", "json"])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Cannot execute docker command: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Cannot execute docker command: {e}")))?;
 
         if !output.status.success() {
             return Err(Error::Docker(
@@ -2177,7 +2170,7 @@ impl ContainerReactor {
 
         let service_config = DockerServiceConfig {
             name: image_name.to_string(),
-            image: format!("{}:{}", image_name, image_tag),
+            image: format!("{image_name}:{image_tag}"),
             network: self.config.network_name.clone(),
             env_vars: HashMap::new(),
             ports: Vec::new(),
@@ -2276,8 +2269,7 @@ async fn follow_container_logs_with_shared_director(
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     eprintln!(
-        "DEBUG: Starting docker logs command for container {}",
-        container_id
+        "DEBUG: Starting docker logs command for container {container_id}"
     );
 
     // Use docker logs command to follow the container logs
@@ -2286,7 +2278,7 @@ async fn follow_container_logs_with_shared_director(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| Error::Docker(format!("Failed to follow container logs: {}", e)))?;
+        .map_err(|e| Error::Docker(format!("Failed to follow container logs: {e}")))?;
 
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -2307,7 +2299,7 @@ async fn follow_container_logs_with_shared_director(
                 line.clear();
                 match reader.read_line(&mut line).await {
                     Ok(0) => {
-                        eprintln!("DEBUG: EOF reached on stdout after {} lines", line_count);
+                        eprintln!("DEBUG: EOF reached on stdout after {line_count} lines");
                         break; // EOF
                     }
                     Ok(_) => {
@@ -2332,7 +2324,7 @@ async fn follow_container_logs_with_shared_director(
                     }
                 }
             }
-            eprintln!("DEBUG: stdout reader finished with {} lines", line_count);
+            eprintln!("DEBUG: stdout reader finished with {line_count} lines");
         });
         handles.push(handle);
     }
@@ -2351,7 +2343,7 @@ async fn follow_container_logs_with_shared_director(
                 line.clear();
                 match reader.read_line(&mut line).await {
                     Ok(0) => {
-                        eprintln!("DEBUG: EOF reached on stderr after {} lines", line_count);
+                        eprintln!("DEBUG: EOF reached on stderr after {line_count} lines");
                         break; // EOF
                     }
                     Ok(_) => {
@@ -2376,7 +2368,7 @@ async fn follow_container_logs_with_shared_director(
                     }
                 }
             }
-            eprintln!("DEBUG: stderr reader finished with {} lines", line_count);
+            eprintln!("DEBUG: stderr reader finished with {line_count} lines");
         });
         handles.push(handle);
     }
@@ -2386,8 +2378,7 @@ async fn follow_container_logs_with_shared_director(
     // We don't wait for them to complete since logs should stream continuously
 
     eprintln!(
-        "DEBUG: Log following tasks spawned for container {}",
-        container_id
+        "DEBUG: Log following tasks spawned for container {container_id}"
     );
 
     Ok(())

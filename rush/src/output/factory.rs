@@ -54,8 +54,7 @@ impl OutputDirectorFactory {
     /// Create an output director based on configuration
     pub async fn create(config: OutputDirectorConfig) -> Result<Box<dyn OutputDirector + Send>> {
         eprintln!(
-            "DEBUG: OutputDirectorFactory::create called with config: {:?}",
-            config
+            "DEBUG: OutputDirectorFactory::create called with config: {config:?}"
         );
         match config {
             OutputDirectorConfig::Stdout { colored, buffered } => {

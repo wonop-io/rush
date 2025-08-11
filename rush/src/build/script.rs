@@ -89,7 +89,7 @@ impl BuildScript {
                     cause = err.source();
                 }
 
-                panic!("Failed to render build script template '{}'", template_name);
+                panic!("Failed to render build script template '{template_name}'");
             }
         }
     }

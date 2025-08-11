@@ -196,7 +196,7 @@ fn create_config(
         Ok(config) => Ok(config),
         Err(e) => {
             error!("Failed to create config: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }
@@ -265,7 +265,7 @@ fn setup_environment_files(config: &Config, product_name: &str, environment: &st
         Ok(_) => Ok(()),
         Err(e) => {
             error!("Unable to generate dotenv files: {}", e);
-            eprintln!("{:#?}", e);
+            eprintln!("{e:#?}");
             process::exit(1);
         }
     }
@@ -312,7 +312,7 @@ fn create_reactor(
         Ok(reactor) => Ok(reactor),
         Err(e) => {
             error!("Failed to create Reactor: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }

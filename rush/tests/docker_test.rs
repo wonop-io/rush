@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    
     use std::sync::{Arc, Mutex};
 
     use rush_cli::build::{BuildType, ComponentBuildSpec, Variables};
@@ -132,7 +132,7 @@ mod tests {
             Arc::new(DockerCliClient::new("docker".to_string())),
         );
         assert!(result.is_ok());
-        let mut image = result.unwrap();
+        let image = result.unwrap();
 
         // Test tagging - set_tag method doesn't exist
         // The tagged image name is based on the spec
@@ -140,8 +140,7 @@ mod tests {
         // The default tag format includes the component name
         assert!(
             tagged_name.contains("test-component"),
-            "Tagged image name should contain the component: {}",
-            tagged_name
+            "Tagged image name should contain the component: {tagged_name}"
         );
     }
 
@@ -156,7 +155,7 @@ mod tests {
             Arc::new(DockerCliClient::new("docker".to_string())),
         );
         assert!(result.is_ok());
-        let mut image = result.unwrap();
+        let image = result.unwrap();
 
         // Test setting toolchain
         // Note: toolchain is set internally by ImageBuilder

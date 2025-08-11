@@ -80,7 +80,7 @@ impl BuildProcessor {
             result = image.generate_build_context() => {
                 match result {
                     Ok(context) => context,
-                    Err(e) => return Err(format!("Failed to generate build context: {}", e).into()),
+                    Err(e) => return Err(format!("Failed to generate build context: {e}").into()),
                 }
             }
             _ = shutdown_token.cancelled() => {
@@ -283,7 +283,7 @@ impl BuildProcessor {
                 }
                 _ = &mut timeout => {
                     warn!("Build error recovery timeout reached for {}", component_name);
-                    return Err(format!("Build failed for {} and recovery timeout reached", component_name).into());
+                    return Err(format!("Build failed for {component_name} and recovery timeout reached").into());
                 }
                 _ = shutdown_token.cancelled() => {
                     info!("Build error recovery terminated for {} due to shutdown signal", component_name);

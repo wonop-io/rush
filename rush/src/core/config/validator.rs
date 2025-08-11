@@ -81,8 +81,7 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigValidationError> {
     if start_port < 1024 {
         return Err(ConfigValidationError::with_field(
             format!(
-                "Invalid start port: {}. Port must be at least 1024",
-                start_port
+                "Invalid start port: {start_port}. Port must be at least 1024"
             ),
             "start_port",
         ));
@@ -105,8 +104,7 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigValidationError> {
     {
         return Err(ConfigValidationError::with_field(
             format!(
-                "Invalid Kubernetes version format: '{}'. Expected format: 'vX.Y.Z'",
-                k8s_version
+                "Invalid Kubernetes version format: '{k8s_version}'. Expected format: 'vX.Y.Z'"
             ),
             "k8s_version",
         ));

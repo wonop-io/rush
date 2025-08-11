@@ -52,7 +52,7 @@ impl ToolchainContext {
         } else {
             // Handle cross-compilation toolchains
             Self::find_cross_compilation_toolchain(&host, &target)
-                .unwrap_or_else(|| panic!("No suitable toolchain found for {:?}", target))
+                .unwrap_or_else(|| panic!("No suitable toolchain found for {target:?}"))
         };
 
         ret.host = host;
@@ -462,7 +462,7 @@ mod tests {
 
         // Modify the file and check WIP state
         let mut file = fs::OpenOptions::new()
-            .write(true)
+            
             .append(true)
             .open(test_file_path)
             .unwrap();

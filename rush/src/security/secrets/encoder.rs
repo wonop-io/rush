@@ -53,7 +53,7 @@ impl SecretsEncoder for EncryptedSecretsEncoder {
         secrets
             .into_iter()
             .map(|(key, value)| {
-                let encrypted = format!("ENCRYPTED:{}", value);
+                let encrypted = format!("ENCRYPTED:{value}");
                 (key, encrypted)
             })
             .collect()

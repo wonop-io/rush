@@ -10,7 +10,7 @@ mod basic_tests {
     fn test_basic_strings() {
         let s1 = "hello";
         let s2 = "world";
-        assert_eq!(format!("{} {}", s1, s2), "hello world");
+        assert_eq!(format!("{s1} {s2}"), "hello world");
     }
 
     #[test]

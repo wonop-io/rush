@@ -62,8 +62,7 @@ pub async fn execute(
             Ok(())
         }
         Err(e) => Err(Error::Deploy(format!(
-            "Failed to apply Kubernetes manifests: {}",
-            e
+            "Failed to apply Kubernetes manifests: {e}"
         ))),
     }
 }

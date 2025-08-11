@@ -43,15 +43,14 @@ impl K8sValidator for KubeconformValidator {
             .arg("-strict")
             .arg(path)
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute kubeconform: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute kubeconform: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
 
             return Err(Error::Validation(format!(
-                "Kubernetes manifest validation failed:\n{}\n{}",
-                stderr, stdout
+                "Kubernetes manifest validation failed:\n{stderr}\n{stdout}"
             )));
         }
 
@@ -84,15 +83,14 @@ impl K8sValidator for KubevalValidator {
             .arg(kubernetes_version)
             .arg(path)
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute kubeval: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute kubeval: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
 
             return Err(Error::Validation(format!(
-                "Kubernetes manifest validation failed:\n{}\n{}",
-                stderr, stdout
+                "Kubernetes manifest validation failed:\n{stderr}\n{stdout}"
             )));
         }
 
@@ -111,15 +109,14 @@ impl K8sValidator for KubevalValidator {
             .arg("--check-deprecated-apis")
             .arg(path)
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute kubeval: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute kubeval: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
 
             return Err(Error::Validation(format!(
-                "Kubernetes API deprecation check failed:\n{}\n{}",
-                stderr, stdout
+                "Kubernetes API deprecation check failed:\n{stderr}\n{stdout}"
             )));
         }
 

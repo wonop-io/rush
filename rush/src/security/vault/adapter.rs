@@ -29,8 +29,8 @@ impl<V: Vault + Send + Sync> VaultAdapter<V> {
 
     // Convert Box<dyn Error> to thread-safe error
     fn convert_error(err: Box<dyn std::error::Error>) -> Box<dyn std::error::Error + Send + Sync> {
-        let err_string = format!("{}", err);
-        Box::new(std::io::Error::new(std::io::ErrorKind::Other, err_string))
+        let err_string = format!("{err}");
+        Box::new(std::io::Error::other(err_string))
     }
 }
 

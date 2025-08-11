@@ -26,7 +26,7 @@ impl Display for Environment {
             Environment::Testing => write!(f, "testing"),
             Environment::Staging => write!(f, "staging"),
             Environment::Production => write!(f, "production"),
-            Environment::Custom(name) => write!(f, "{}", name),
+            Environment::Custom(name) => write!(f, "{name}"),
         }
     }
 }
@@ -56,11 +56,11 @@ pub enum SecretError {
 impl Display for SecretError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            SecretError::NotFound(msg) => write!(f, "Secret not found: {}", msg),
-            SecretError::AccessDenied(msg) => write!(f, "Access denied: {}", msg),
-            SecretError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
-            SecretError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
-            SecretError::Other(err) => write!(f, "Other error: {}", err),
+            SecretError::NotFound(msg) => write!(f, "Secret not found: {msg}"),
+            SecretError::AccessDenied(msg) => write!(f, "Access denied: {msg}"),
+            SecretError::ConnectionError(msg) => write!(f, "Connection error: {msg}"),
+            SecretError::ValidationError(msg) => write!(f, "Validation error: {msg}"),
+            SecretError::Other(err) => write!(f, "Other error: {err}"),
         }
     }
 }
@@ -97,8 +97,7 @@ pub trait SecretsProvider: Debug + Send + Sync {
             .await?;
         secrets.get(key).cloned().ok_or_else(|| {
             SecretError::NotFound(format!(
-                "Secret '{}' not found for {}/{}/{}",
-                key, product_name, component_name, environment
+                "Secret '{key}' not found for {product_name}/{component_name}/{environment}"
             ))
         })
     }
@@ -155,8 +154,7 @@ pub trait SecretsProvider: Debug + Send + Sync {
         // If key doesn't exist, return an error
         if !current_secrets.contains_key(key) {
             return Err(SecretError::NotFound(format!(
-                "Secret '{}' not found for {}/{}/{}",
-                key, product_name, component_name, environment
+                "Secret '{key}' not found for {product_name}/{component_name}/{environment}"
             )));
         }
 

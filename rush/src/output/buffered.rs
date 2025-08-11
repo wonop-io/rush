@@ -34,9 +34,9 @@ impl<T: OutputDirector> BufferedOutputDirector<T> {
         let _key = self.get_buffer_key(source, stream_type);
         self.buffers
             .entry(source.name.clone())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(stream_type)
-            .or_insert_with(Vec::new)
+            .or_default()
     }
 
     /// Process buffered data and extract complete lines

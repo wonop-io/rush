@@ -148,14 +148,14 @@ pub fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Resul
     if !from_path.exists() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
-            format!("Source directory does not exist: {:?}", from_path),
+            format!("Source directory does not exist: {from_path:?}"),
         ));
     }
 
     if !from_path.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("Source is not a directory: {:?}", from_path),
+            format!("Source is not a directory: {from_path:?}"),
         ));
     }
 

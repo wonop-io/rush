@@ -32,7 +32,7 @@ pub async fn run_command(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
+        .map_err(|e| format!("Failed to execute command: {e}"))?;
 
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
@@ -48,7 +48,7 @@ pub async fn run_command(
         trace!("Received line: {}", line.trim_end());
         lines.push(line.trim_end().to_string());
         let clean_line = line.trim_end().replace(['\x1B', '\r', '\n'], "");
-        println!("       {}  |   {}", formatted_label, clean_line);
+        println!("       {formatted_label}  |   {clean_line}");
     }
 
     // Wait for streams to complete
@@ -63,7 +63,7 @@ pub async fn run_command(
             if let Some(code) = status.code() {
                 if code != 0 {
                     error!("Command failed with exit code: {}", code);
-                    Err(format!("Command failed with exit code: {}", code))
+                    Err(format!("Command failed with exit code: {code}"))
                 } else {
                     trace!("Command completed successfully");
                     Ok(output)
@@ -75,7 +75,7 @@ pub async fn run_command(
         }
         Err(e) => {
             error!("Failed to wait for command completion: {}", e);
-            Err(format!("Failed to wait for command completion: {}", e))
+            Err(format!("Failed to wait for command completion: {e}"))
         }
     }
 }
@@ -113,7 +113,7 @@ pub async fn run_command_in_window(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
+        .map_err(|e| format!("Failed to execute command: {e}"))?;
 
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
@@ -146,7 +146,7 @@ pub async fn run_command_in_window(
         // Print each line in the window
         for line in lines_in_window.iter() {
             let clean_line = line.trim_end().replace(['\x1B', '\r', '\n'], "");
-            println!("       {}  |   {}", formatted_label, clean_line);
+            println!("       {formatted_label}  |   {clean_line}");
         }
     }
 
@@ -172,7 +172,7 @@ pub async fn run_command_in_window(
             if let Some(code) = status.code() {
                 if code != 0 {
                     error!("Command failed with exit code: {}", code);
-                    Err(format!("Command failed with exit code: {}", code))
+                    Err(format!("Command failed with exit code: {code}"))
                 } else {
                     trace!("Command completed successfully");
                     Ok(output)
@@ -184,7 +184,7 @@ pub async fn run_command_in_window(
         }
         Err(e) => {
             error!("Failed to wait for command completion: {}", e);
-            Err(format!("Failed to wait for command completion: {}", e))
+            Err(format!("Failed to wait for command completion: {e}"))
         }
     }
 }
@@ -208,8 +208,8 @@ async fn handle_stream<R: AsyncRead + Unpin>(reader: R, sender: Sender<String>) 
             Ok(n) if n > 0 => {
                 debug!("Read {} bytes", n);
                 if !line.trim().is_empty() {
-                    let parts = line.split('\r');
-                    let line = parts.last().unwrap_or(&line);
+                    let mut parts = line.split('\r');
+                    let line = parts.next_back().unwrap_or(&line);
                     if let Err(e) = sender.send(line.to_string()).await {
                         error!("Failed to send line to channel: {}", e);
                         break;

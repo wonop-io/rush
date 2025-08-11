@@ -32,10 +32,7 @@ impl DotenvVault {
                     component_name.as_str(),
                     component_info.get("location").and_then(|v| v.as_str()),
                 ) {
-                    let absolute_path = product_dir.join(location).canonicalize().expect(&format!(
-                        "Failed to get absolute path for component: {}",
-                        component_name
-                    ));
+                    let absolute_path = product_dir.join(location).canonicalize().unwrap_or_else(|_| panic!("Failed to get absolute path for component: {component_name}"));
                     components.insert(component_name.to_string(), absolute_path);
                 }
             }
@@ -228,7 +225,7 @@ component1:
         // Create a .env.secrets file
         let env_secrets_path = temp_dir.path().join("component1/.env.secrets");
         let mut file = File::create(&env_secrets_path).unwrap();
-        write!(file, "API_KEY=\"secret_value\"\n").unwrap();
+        writeln!(file, "API_KEY=\"secret_value\"").unwrap();
 
         let mut vault = DotenvVault::new(temp_dir.path().to_path_buf());
 

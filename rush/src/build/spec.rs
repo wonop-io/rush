@@ -168,7 +168,7 @@ impl ComponentBuildSpec {
                     .to_string(),
                 ssr: yaml_section
                     .get("ssr")
-                    .map_or(false, |v| v.as_bool().unwrap_or(false)),
+                    .is_some_and(|v| v.as_bool().unwrap_or(false)),
                 dockerfile_path: yaml_section
                     .get("dockerfile")
                     .expect("dockerfile_path is required")
@@ -377,7 +377,7 @@ impl ComponentBuildSpec {
                     match load_dotenv(&dotenv_path) {
                         Ok(env) => env,
                         Err(e) => {
-                            panic!("Failed to load .env file: {}", e);
+                            panic!("Failed to load .env file: {e}");
                         }
                     }
                 } else {
@@ -395,7 +395,7 @@ impl ComponentBuildSpec {
                     match load_dotenv(&dotenv_secrets_path) {
                         Ok(env) => env,
                         Err(e) => {
-                            panic!("Failed to load .env.secrets file: {}", e);
+                            panic!("Failed to load .env.secrets file: {e}");
                         }
                     }
                 } else {
@@ -516,7 +516,7 @@ impl ComponentBuildSpec {
                     let processed_str = Self::process_template_string(port_str, &variables);
                     processed_str
                         .parse::<u16>()
-                        .unwrap_or_else(|_| panic!("Could not parse port: {}", processed_str))
+                        .unwrap_or_else(|_| panic!("Could not parse port: {processed_str}"))
                 } else {
                     v.as_u64().unwrap() as u16
                 }
@@ -525,7 +525,7 @@ impl ComponentBuildSpec {
                 if let Some(target_port_str) = v.as_str() {
                     let processed_str = Self::process_template_string(target_port_str, &variables);
                     processed_str.parse::<u16>().unwrap_or_else(|_| {
-                        panic!("Could not parse target_port: {}", processed_str)
+                        panic!("Could not parse target_port: {processed_str}")
                     })
                 } else {
                     v.as_u64().unwrap() as u16
@@ -555,7 +555,7 @@ impl ComponentBuildSpec {
             let var_name = input.trim_start_matches("{{").trim_end_matches("}}").trim();
             variables
                 .get(var_name)
-                .unwrap_or_else(|| panic!("Variable `{}` not found", var_name))
+                .unwrap_or_else(|| panic!("Variable `{var_name}` not found"))
                 .to_string()
         } else {
             input.to_string()

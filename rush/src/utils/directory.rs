@@ -56,7 +56,7 @@ impl Directory {
         let previous = env::current_dir().expect("Failed to get current directory");
         debug!("Previous directory: {:?}", previous);
         env::set_current_dir(dir)
-            .unwrap_or_else(|_| panic!("Failed to set current directory to {}", dir));
+            .unwrap_or_else(|_| panic!("Failed to set current directory to {dir}"));
         Directory { previous }
     }
 

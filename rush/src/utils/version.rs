@@ -27,8 +27,7 @@ pub async fn check_version() {
     let latest_version = release
         .tag_name
         .replace("v.", "")
-        .replace('v', "")
-        .replace(' ', "");
+        .replace(['v', ' '], "");
 
     let current_version = match semver::Version::parse(version) {
         Ok(v) => v,

@@ -20,6 +20,12 @@ pub struct LifecycleManager {
     shutdown_manager: ShutdownManager,
 }
 
+impl Default for LifecycleManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LifecycleManager {
     /// Creates a new lifecycle manager
     pub fn new() -> Self {

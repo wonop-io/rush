@@ -49,8 +49,7 @@ pub async fn execute(
             Ok(())
         }
         Err(e) => Err(crate::error::Error::Kubernetes(format!(
-            "Failed to apply manifests: {}",
-            e
+            "Failed to apply manifests: {e}"
         ))),
     }
 }

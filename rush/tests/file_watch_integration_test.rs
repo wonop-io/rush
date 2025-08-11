@@ -1,6 +1,6 @@
 //! Integration tests for file watching and rebuild functionality
 
-use rush_cli::container::{setup_file_watcher, ChangeProcessor, WatcherConfig};
+use rush_cli::container::{setup_file_watcher, WatcherConfig};
 use std::fs;
 use std::time::Duration;
 use tempfile::TempDir;

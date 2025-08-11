@@ -101,14 +101,14 @@ impl DevCommand {
             self.redirect_components.clone(),
             self.silence_components.clone(),
         )
-        .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {}", e)))?;
+        .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {e}")))?;
 
         debug!("Container reactor initialized successfully");
 
         // Create output director based on configuration
         let _output_director = OutputDirectorFactory::create(self.output_config.clone())
             .await
-            .map_err(|e| Error::Setup(format!("Failed to create output director: {}", e)))?;
+            .map_err(|e| Error::Setup(format!("Failed to create output director: {e}")))?;
 
         debug!("Output director created successfully");
 

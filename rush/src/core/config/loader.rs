@@ -23,7 +23,7 @@ impl ConfigLoader {
     /// Creates a new ConfigLoader using the project root as the root path
     pub fn from_project_root() -> Result<Self, String> {
         let current_dir = std::env::current_dir()
-            .map_err(|e| format!("Failed to get current directory: {}", e))?;
+            .map_err(|e| format!("Failed to get current directory: {e}"))?;
 
         let project_root = find_project_root(current_dir)
             .ok_or_else(|| "Failed to find project root".to_string())?;
@@ -46,7 +46,7 @@ impl ConfigLoader {
 
         // Validate environment
         if !VALID_ENVIRONMENTS.contains(&environment) {
-            let err_msg = format!("Invalid environment: {}", environment);
+            let err_msg = format!("Invalid environment: {environment}");
             error!("{}", err_msg);
             error!("Valid environments: {:?}", VALID_ENVIRONMENTS);
             return Err(err_msg);
@@ -70,9 +70,9 @@ impl ConfigLoader {
         trace!("Loading rushd config from: {}", config_path.display());
 
         let content = read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read rushd.yaml: {}", e))?;
+            .map_err(|e| format!("Failed to read rushd.yaml: {e}"))?;
 
-        serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse rushd.yaml: {}", e))
+        serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse rushd.yaml: {e}"))
     }
 }
 

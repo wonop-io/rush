@@ -23,7 +23,7 @@ impl OperatingSystem {
         match s {
             "linux" => Self::Linux,
             "macos" => Self::MacOS,
-            _ => panic!("Invalid platform type: {}", s),
+            _ => panic!("Invalid platform type: {s}"),
         }
     }
 }
@@ -68,7 +68,7 @@ impl ArchType {
         match s {
             "x86_64" => Self::X86_64,
             "aarch64" => Self::AARCH64,
-            _ => panic!("Invalid architecture type: {}", s),
+            _ => panic!("Invalid architecture type: {s}"),
         }
     }
 }

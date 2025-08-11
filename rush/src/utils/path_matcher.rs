@@ -41,7 +41,7 @@ impl Pattern {
         let glob_pattern = if cleaned_pattern.starts_with('/') {
             GlobPattern::new(&cleaned_pattern).expect("Failed to compile glob pattern")
         } else {
-            GlobPattern::new(&format!("**/{}", cleaned_pattern))
+            GlobPattern::new(&format!("**/{cleaned_pattern}"))
                 .expect("Failed to compile glob pattern")
         };
 

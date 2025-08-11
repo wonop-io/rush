@@ -239,13 +239,13 @@ impl SecretsDefinitions {
                         GenerationResult::Value(BASE64_STANDARD.encode(value))
                     }
                     GenerationMethod::Ask(prompt) => {
-                        println!("\n{}: ", prompt);
+                        println!("\n{prompt}: ");
                         let mut input = String::new();
                         std::io::stdin().read_line(&mut input).unwrap();
                         GenerationResult::Value(input.trim().to_string())
                     }
                     GenerationMethod::AskWithDefault(prompt, default) => {
-                        println!("\n{} [default: {}]: ", prompt, default);
+                        println!("\n{prompt} [default: {default}]: ");
                         let mut input = String::new();
                         std::io::stdin().read_line(&mut input).unwrap();
                         let value = if input.trim().is_empty() {
@@ -256,7 +256,7 @@ impl SecretsDefinitions {
                         GenerationResult::Value(value)
                     }
                     GenerationMethod::AskPassword(prompt) => {
-                        println!("\n{}: ", prompt);
+                        println!("\n{prompt}: ");
                         let password = rpassword::prompt_password("").unwrap();
                         GenerationResult::Value(password)
                     }
@@ -292,7 +292,7 @@ impl SecretsDefinitions {
                     GenerationMethod::Timestamp => GenerationResult::Value(Utc::now().to_rfc3339()),
                     GenerationMethod::FromFile(should_ask, encode_base64, default_path) => {
                         let file_path = if *should_ask {
-                            println!("\nEnter file path [default: {}]: ", default_path);
+                            println!("\nEnter file path [default: {default_path}]: ");
                             let mut input = String::new();
                             std::io::stdin().read_line(&mut input).unwrap();
                             if input.trim().is_empty() {
@@ -418,7 +418,7 @@ impl SecretsDefinitions {
             let component_secrets = &self.components[component_name];
 
             trace!("Processing secrets for component: {}", component_name);
-            println!("\n{}", component_name);
+            println!("\n{component_name}");
             println!("{}", "=".repeat(component_name.len()));
 
             // Process each secret in the component
@@ -442,8 +442,7 @@ impl SecretsDefinitions {
                     };
 
                     println!(
-                        "Secret '{}' [{}] already exists. Override? (y/N)",
-                        secret_name, truncated_value
+                        "Secret '{secret_name}' [{truncated_value}] already exists. Override? (y/N)"
                     );
                     std::io::stdout().flush().unwrap();
                     std::io::stdin().read_line(&mut input).unwrap();
@@ -454,7 +453,7 @@ impl SecretsDefinitions {
                         store
                             .components
                             .entry(component_name.to_string())
-                            .or_insert_with(HashMap::new)
+                            .or_default()
                             .insert(secret_name.clone(), existing_value.clone());
                     }
 
@@ -474,17 +473,17 @@ impl SecretsDefinitions {
                         store
                             .components
                             .entry(component_name.to_string())
-                            .or_insert_with(HashMap::new)
+                            .or_default()
                             .insert(secret_name.clone(), value);
                     }
                     GenerationResult::Ref(ref_component, ref_secret) => {
                         store
                             .references
                             .entry(component_name.to_string())
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push((
                                 secret_name.clone(),
-                                format!("{}.{}", ref_component, ref_secret),
+                                format!("{ref_component}.{ref_secret}"),
                             ));
                     }
                     GenerationResult::None => {
@@ -521,7 +520,7 @@ impl SecretsDefinitions {
                     store
                         .components
                         .entry(component_name.clone())
-                        .or_insert_with(HashMap::new)
+                        .or_default()
                         .insert(secret_name.clone(), ref_value);
 
                     trace!(
@@ -548,9 +547,9 @@ impl SecretsDefinitions {
                 component_name
             );
 
-            println!("Saving secrets for {}", component_name);
-            for (secret_name, _) in secrets {
-                println!("  {}: ***", secret_name);
+            println!("Saving secrets for {component_name}");
+            for secret_name in secrets.keys() {
+                println!("  {secret_name}: ***");
             }
 
             vault

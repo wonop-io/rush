@@ -4,7 +4,7 @@ mod common;
 
 #[cfg(test)]
 mod integration_tests {
-    use std::collections::HashMap;
+    
     use std::sync::Arc;
 
     use rush_cli::container::{DockerCliClient, DockerImage};
@@ -46,8 +46,7 @@ mod integration_tests {
         let tagged_name = image.tagged_image_name();
         assert!(
             !tagged_name.is_empty(),
-            "Tagged image name should not be empty: {}",
-            tagged_name
+            "Tagged image name should not be empty: {tagged_name}"
         );
 
         // Set toolchain

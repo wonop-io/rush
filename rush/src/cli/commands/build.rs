@@ -61,7 +61,7 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
         let build_type = parse_build_type(&component.build_type)?;
 
         // Create a default domain for the component using product name and environment
-        let domain = format!("{}.{}.example.com", component_name, environment);
+        let domain = format!("{component_name}.{environment}.example.com");
 
         // Create build context
         let context = BuildContext {
@@ -78,13 +78,13 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
             product_uri: product.uri().to_string(),
             component: component_name.clone(),
             docker_registry: config.docker_registry().to_string(),
-            image_name: format!("{}-{}", product_name, component_name),
+            image_name: format!("{product_name}-{component_name}"),
             secrets: HashMap::new(), // Would be populated from a vault in a full implementation
             domains: HashMap::new(), // Empty domains map, would be populated from product
             env: HashMap::new(),     // Default to empty environment variables
         };
 
-        print!("Building {} ... ", component_name);
+        print!("Building {component_name} ... ");
 
         match build_component(&context, &toolchain).await {
             Ok(_) => {
@@ -156,8 +156,7 @@ fn parse_build_type(build_type_str: &str) -> Result<BuildType> {
             entrypoint: None,
         }),
         _ => Err(Error::InvalidInput(format!(
-            "Unknown build type: {}",
-            build_type_str
+            "Unknown build type: {build_type_str}"
         ))),
     }
 }
@@ -187,7 +186,7 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
             );
             run_command("build", "sh", vec!["-c", &build_script])
                 .await
-                .map_err(|e| Error::Build(format!("Build script execution failed: {}", e)))?;
+                .map_err(|e| Error::Build(format!("Build script execution failed: {e}")))?;
 
             // Build Docker image if needed
             build_docker_image(context, toolchain).await?;
@@ -204,7 +203,7 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
                 vec!["pull", image_name_with_tag],
             )
             .await
-            .map_err(|e| Error::Build(format!("Failed to pull Docker image: {}", e)))?;
+            .map_err(|e| Error::Build(format!("Failed to pull Docker image: {e}")))?;
         }
         BuildType::PureKubernetes => {
             // Nothing to build for pure Kubernetes
@@ -233,7 +232,7 @@ fn generate_build_script(context: &BuildContext) -> Result<String> {
 
     // Add environment variables
     for (key, value) in &context.env {
-        script.push_str(&format!("export {}=\"{}\"\n", key, value));
+        script.push_str(&format!("export {key}=\"{value}\"\n"));
     }
 
     // Add domain variables
@@ -255,7 +254,7 @@ fn generate_build_script(context: &BuildContext) -> Result<String> {
             // Add precompile commands if any
             if let Some(commands) = precompile_commands {
                 for cmd in commands {
-                    script.push_str(&format!("{}\n", cmd));
+                    script.push_str(&format!("{cmd}\n"));
                 }
             }
 
@@ -283,7 +282,7 @@ fn generate_build_script(context: &BuildContext) -> Result<String> {
             // Add precompile commands if any
             if let Some(commands) = precompile_commands {
                 for cmd in commands {
-                    script.push_str(&format!("{}\n", cmd));
+                    script.push_str(&format!("{cmd}\n"));
                 }
             }
 
@@ -298,7 +297,7 @@ fn generate_build_script(context: &BuildContext) -> Result<String> {
             }
 
             script.push_str(&build_cmd);
-            script.push_str("\n");
+            script.push('\n');
 
             // If SSR is enabled, also build the server
             if *ssr {
@@ -395,7 +394,7 @@ async fn build_docker_image(
         ],
     )
     .await
-    .map_err(|e| Error::Build(format!("Docker build failed: {}", e)))?;
+    .map_err(|e| Error::Build(format!("Docker build failed: {e}")))?;
 
     Ok(())
 }
@@ -410,7 +409,7 @@ pub async fn execute_with_context(ctx: &mut CliContext) -> Result<()> {
         }
         Err(e) => {
             error!("Build failed: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }
@@ -426,7 +425,7 @@ pub async fn push(ctx: &mut CliContext) -> Result<()> {
         }
         Err(e) => {
             error!("Build and push failed: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }

@@ -40,11 +40,11 @@ impl Manifest {
     /// * `output_path` - Path where the rendered manifest will be saved
     pub fn new(template_path: &Path, output_path: &Path) -> Result<Self> {
         let content = fs::read_to_string(template_path)
-            .map_err(|e| Error::InvalidInput(format!("Failed to read manifest: {}", e)))?;
+            .map_err(|e| Error::InvalidInput(format!("Failed to read manifest: {e}")))?;
 
         // Parse YAML to extract kind and name
         let yaml: Value = serde_yaml::from_str(&content)
-            .map_err(|e| Error::InvalidInput(format!("Invalid YAML: {}", e)))?;
+            .map_err(|e| Error::InvalidInput(format!("Invalid YAML: {e}")))?;
 
         let kind = yaml
             .get("kind")
@@ -90,13 +90,13 @@ impl Manifest {
             .unwrap_or("template");
 
         tera.add_raw_template(template_name, &self.content)
-            .map_err(|e| Error::Template(format!("Failed to add template: {}", e)))?;
+            .map_err(|e| Error::Template(format!("Failed to add template: {e}")))?;
 
         let tera_context = Context::from_serialize(context)
-            .map_err(|e| Error::Template(format!("Failed to create context: {}", e)))?;
+            .map_err(|e| Error::Template(format!("Failed to create context: {e}")))?;
 
         tera.render(template_name, &tera_context)
-            .map_err(|e| Error::Template(format!("Failed to render template: {}", e)))
+            .map_err(|e| Error::Template(format!("Failed to render template: {e}")))
     }
 
     /// Renders the manifest and writes it to the output path
@@ -110,11 +110,11 @@ impl Manifest {
         // Create parent directories if they don't exist
         if let Some(parent) = self.output_path.parent() {
             fs::create_dir_all(parent)
-                .map_err(|e| Error::Filesystem(format!("Failed to create directories: {}", e)))?;
+                .map_err(|e| Error::Filesystem(format!("Failed to create directories: {e}")))?;
         }
 
         fs::write(&self.output_path, rendered)
-            .map_err(|e| Error::Filesystem(format!("Failed to write manifest: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to write manifest: {e}")))?;
 
         debug!(
             "Rendered manifest {} to {}",
@@ -157,7 +157,7 @@ impl ManifestCollection {
     pub fn add_manifest(&mut self, component_name: &str, manifest: Manifest) {
         self.manifests
             .entry(component_name.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(manifest);
     }
 
@@ -183,20 +183,20 @@ impl ManifestCollection {
 
         // Create output directory if it doesn't exist
         fs::create_dir_all(output_dir)
-            .map_err(|e| Error::Filesystem(format!("Failed to create output directory: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to create output directory: {e}")))?;
 
         let entries = fs::read_dir(template_dir)
-            .map_err(|e| Error::Filesystem(format!("Failed to read directory: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to read directory: {e}")))?;
 
         for entry in entries {
             let entry = entry
-                .map_err(|e| Error::Filesystem(format!("Failed to read directory entry: {}", e)))?;
+                .map_err(|e| Error::Filesystem(format!("Failed to read directory entry: {e}")))?;
             let path = entry.path();
 
             if path.is_file()
                 && path
                     .extension()
-                    .map_or(false, |ext| ext == "yaml" || ext == "yml")
+                    .is_some_and(|ext| ext == "yaml" || ext == "yml")
             {
                 let filename = path.file_name().unwrap().to_str().unwrap();
                 let output_path = output_dir.join(filename);
@@ -238,8 +238,7 @@ impl ManifestCollection {
             Ok(())
         } else {
             Err(Error::InvalidInput(format!(
-                "No manifests found for component {}",
-                component_name
+                "No manifests found for component {component_name}"
             )))
         }
     }

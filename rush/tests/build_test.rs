@@ -1,9 +1,7 @@
-use rush_cli::container::{ContainerReactor, ContainerReactorConfig};
-use rush_cli::core::config::{Config, ConfigLoader};
-use rush_cli::security::{Base64SecretsEncoder, FileVault, SecretsEncoder};
+use rush_cli::container::ContainerReactorConfig;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[test]
 fn test_image_name_generation_without_registry() {

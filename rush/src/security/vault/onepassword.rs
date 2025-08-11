@@ -30,8 +30,7 @@ impl OnePassword {
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             debug!("1Password CLI command failed: {}", stderr);
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(Box::new(std::io::Error::other(
                 stderr,
             )))
         }
@@ -52,7 +51,7 @@ impl Vault for OnePassword {
             environment,
             product_name
         );
-        let item_name = format!("{}-{}", component_name, environment);
+        let item_name = format!("{component_name}-{environment}");
         let output = self.run_op_command(
             [
                 "item",
@@ -98,7 +97,7 @@ impl Vault for OnePassword {
             environment,
             product_name
         );
-        let item_name = format!("{}-{}", component_name, environment);
+        let item_name = format!("{component_name}-{environment}");
 
         // Check if the item already exists
         let list_output = self.run_op_command(
@@ -141,7 +140,7 @@ impl Vault for OnePassword {
         args.push(product_name.to_string());
 
         for (key, value) in &secrets {
-            args.push(format!("{}={}", key, value));
+            args.push(format!("{key}={value}"));
             debug!("Adding secret: {}", key);
         }
 
@@ -202,7 +201,7 @@ impl Vault for OnePassword {
             environment,
             product_name
         );
-        let item_name = format!("{}-{}", component_name, environment);
+        let item_name = format!("{component_name}-{environment}");
 
         let args = vec![
             "item".to_string(),

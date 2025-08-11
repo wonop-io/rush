@@ -16,7 +16,7 @@ async fn main() -> Result<(), std::io::Error> {
     match cli::init_application().await {
         Ok(_) => (),
         Err(e) => {
-            eprintln!("Failed to initialize application: {}", e);
+            eprintln!("Failed to initialize application: {e}");
             std::process::exit(1);
         }
     }
@@ -25,7 +25,7 @@ async fn main() -> Result<(), std::io::Error> {
     let mut ctx = match cli::create_context(&matches).await {
         Ok(ctx) => ctx,
         Err(e) => {
-            eprintln!("Failed to create context: {}", e);
+            eprintln!("Failed to create context: {e}");
             std::process::exit(1);
         }
     };
@@ -34,7 +34,7 @@ async fn main() -> Result<(), std::io::Error> {
     match cli::execute_command(&matches, &mut ctx).await {
         Ok(_) => Ok(()),
         Err(e) => {
-            eprintln!("Command failed: {}", e);
+            eprintln!("Command failed: {e}");
             std::process::exit(1);
         }
     }

@@ -12,7 +12,7 @@ use std::sync::Mutex;
 pub async fn execute(_args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
     // Create a container reactor to handle the unapply operation
     let _reactor = ContainerReactor::new_with_config(config.clone())
-        .map_err(|e| Error::Setup(format!("Failed to create container reactor: {}", e)))?;
+        .map_err(|e| Error::Setup(format!("Failed to create container reactor: {e}")))?;
 
     // Create and set up the Kubernetes context manager
     let context_manager = Arc::new(Mutex::new(ContextManager::new("kubectl".to_string(), None)));
@@ -25,8 +25,7 @@ pub async fn execute(_args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
         .await
     {
         return Err(Error::Kubernetes(format!(
-            "Failed to set Kubernetes context: {}",
-            e
+            "Failed to set Kubernetes context: {e}"
         )));
     }
 
@@ -52,8 +51,7 @@ pub async fn execute(_args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
             Ok(())
         }
         Err(e) => Err(Error::Kubernetes(format!(
-            "Failed to unapply Kubernetes resources: {}",
-            e
+            "Failed to unapply Kubernetes resources: {e}"
         ))),
     }
 }

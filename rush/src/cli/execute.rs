@@ -15,7 +15,7 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         .await
     {
         error!("Missing secrets in vault: {}", e);
-        eprintln!("{}", e);
+        eprintln!("{e}");
         process::exit(1);
     }
 
@@ -58,7 +58,7 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
             })?;
 
         // Debug: Log the output configuration
-        eprintln!("DEBUG: Output configuration: {:?}", output_config);
+        eprintln!("DEBUG: Output configuration: {output_config:?}");
         eprintln!("DEBUG: Setting output director on reactor");
 
         // Set the output director on the reactor
@@ -71,7 +71,7 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
             }
             Err(e) => {
                 error!("Failed to launch development environment: {}", e);
-                eprintln!("{}", e);
+                eprintln!("{e}");
                 process::exit(1);
             }
         }

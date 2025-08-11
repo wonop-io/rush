@@ -92,10 +92,10 @@ impl OutputDirector for StdOutputDirector {
         for line in content.lines() {
             match stream.stream_type {
                 super::OutputStreamType::Stdout | super::OutputStreamType::Combined => {
-                    println!("{} | {}", formatted_label, line);
+                    println!("{formatted_label} | {line}");
                 }
                 super::OutputStreamType::Stderr => {
-                    eprintln!("{} | {}", formatted_label, line);
+                    eprintln!("{formatted_label} | {line}");
                 }
             }
         }
@@ -104,10 +104,10 @@ impl OutputDirector for StdOutputDirector {
         if !content.ends_with('\n') && !content.ends_with("\r\n") && !content.is_empty() {
             match stream.stream_type {
                 super::OutputStreamType::Stdout | super::OutputStreamType::Combined => {
-                    print!("{} | {}", formatted_label, content);
+                    print!("{formatted_label} | {content}");
                 }
                 super::OutputStreamType::Stderr => {
-                    eprint!("{} | {}", formatted_label, content);
+                    eprint!("{formatted_label} | {content}");
                 }
             }
         }
@@ -119,10 +119,10 @@ impl OutputDirector for StdOutputDirector {
         use std::io::{self, Write};
         io::stdout()
             .flush()
-            .map_err(|e| crate::error::Error::Io(e))?;
+            .map_err(crate::error::Error::Io)?;
         io::stderr()
             .flush()
-            .map_err(|e| crate::error::Error::Io(e))?;
+            .map_err(crate::error::Error::Io)?;
         Ok(())
     }
 

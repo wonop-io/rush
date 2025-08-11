@@ -19,6 +19,12 @@ struct ShutdownRequest {
     result_tx: mpsc::Sender<Result<()>>,
 }
 
+impl Default for ShutdownManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ShutdownManager {
     /// Creates a new shutdown manager and spawns the background task to handle shutdowns
     pub fn new() -> Self {

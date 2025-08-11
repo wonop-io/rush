@@ -24,7 +24,7 @@ pub struct SealedSecretsEncoder;
 impl K8sEncoder for SealedSecretsEncoder {
     fn encode_file(&self, path: &str) -> Result<()> {
         let content = fs::read_to_string(path)
-            .map_err(|e| Error::Filesystem(format!("Failed to read manifest file: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to read manifest file: {e}")))?;
         trace!("Testing {} if it contains 'kind: Secret'", path);
 
         // Check if this is a Secret resource that needs encoding
@@ -36,7 +36,7 @@ impl K8sEncoder for SealedSecretsEncoder {
             return Ok(());
         }
 
-        let temp_file = format!("{}.tmp.yaml", path);
+        let temp_file = format!("{path}.tmp.yaml");
         trace!("Encoding file {}", path);
 
         // Run kubeseal command
@@ -48,7 +48,7 @@ impl K8sEncoder for SealedSecretsEncoder {
             .arg("-f")
             .arg(path)
             .output()
-            .map_err(|e| Error::External(format!("Failed to execute kubeseal: {}", e)))?;
+            .map_err(|e| Error::External(format!("Failed to execute kubeseal: {e}")))?;
 
         if !output.status.success() {
             info!("File attempted to be encoded: {}", path);
@@ -60,7 +60,7 @@ impl K8sEncoder for SealedSecretsEncoder {
 
         // Replace original file with encoded file
         fs::rename(&temp_file, path)
-            .map_err(|e| Error::Filesystem(format!("Failed to rename temporary file: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to rename temporary file: {e}")))?;
 
         Ok(())
     }

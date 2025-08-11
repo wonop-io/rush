@@ -87,7 +87,7 @@ impl ShutdownCoordinator {
             self.cancellation_token.cancel();
 
             // Notify all listeners
-            if let Err(_) = self.shutdown_sender.send(reason.clone()) {
+            if self.shutdown_sender.send(reason.clone()).is_err() {
                 debug!("No shutdown listeners to notify");
             }
 

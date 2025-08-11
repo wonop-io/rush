@@ -62,8 +62,7 @@ pub async fn launch_containers(
                     .send(ContainerStatus::Failed(service_config.name, e.to_string()))
                     .await;
                 return Err(Error::LaunchFailed(format!(
-                    "Service startup failed: {}",
-                    e
+                    "Service startup failed: {e}"
                 )));
             }
         }
@@ -114,11 +113,11 @@ async fn launch_service(
     // Prepare container configuration
     let mut env_vars = Vec::new();
     for (key, value) in &config.environment {
-        env_vars.push(format!("{}={}", key, value));
+        env_vars.push(format!("{key}={value}"));
     }
 
     for (key, value) in &config.secrets {
-        env_vars.push(format!("{}={}", key, value));
+        env_vars.push(format!("{key}={value}"));
     }
 
     // Create port mapping string
@@ -136,7 +135,7 @@ async fn launch_service(
         .run_container(
             &config.image,
             &config.name,
-            &network_name,
+            network_name,
             &env_vars,
             &[port_mapping],
             &[], // volumes

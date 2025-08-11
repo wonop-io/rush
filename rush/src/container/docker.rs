@@ -134,14 +134,13 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to create network: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to create network: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("Failed to create Docker network: {}", stderr);
             return Err(Error::Docker(format!(
-                "Network creation failed: {}",
-                stderr
+                "Network creation failed: {stderr}"
             )));
         }
 
@@ -158,7 +157,7 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to delete network: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to delete network: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -169,8 +168,7 @@ impl DockerClient for DockerCliClient {
             }
             error!("Failed to delete Docker network: {}", stderr);
             return Err(Error::Docker(format!(
-                "Network deletion failed: {}",
-                stderr
+                "Network deletion failed: {stderr}"
             )));
         }
 
@@ -187,7 +185,7 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::null())
             .status()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to check network: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to check network: {e}")))?;
 
         Ok(output.success())
     }
@@ -201,12 +199,12 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to pull image: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to pull image: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("Failed to pull Docker image: {}", stderr);
-            return Err(Error::Docker(format!("Image pull failed: {}", stderr)));
+            return Err(Error::Docker(format!("Image pull failed: {stderr}")));
         }
 
         debug!("Successfully pulled Docker image: {}", image);
@@ -276,14 +274,14 @@ impl DockerClient for DockerCliClient {
                 "--tag",
                 tag,
                 "--file",
-                &dockerfile_arg.to_string(),
+                dockerfile_arg.as_ref(),
                 ".",
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to execute docker build: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to execute docker build: {e}")))?;
 
         if !output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -334,8 +332,7 @@ impl DockerClient for DockerCliClient {
             };
 
             return Err(Error::Docker(format!(
-                "Docker build failed for {}: {}",
-                tag, error_summary
+                "Docker build failed for {tag}: {error_summary}"
             )));
         }
 
@@ -390,12 +387,12 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to run container: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to run container: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("Failed to run Docker container: {}", stderr);
-            return Err(Error::Docker(format!("Container run failed: {}", stderr)));
+            return Err(Error::Docker(format!("Container run failed: {stderr}")));
         }
 
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -415,7 +412,7 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to stop container: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to stop container: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -425,7 +422,7 @@ impl DockerClient for DockerCliClient {
                 return Ok(());
             }
             error!("Failed to stop Docker container: {}", stderr);
-            return Err(Error::Docker(format!("Container stop failed: {}", stderr)));
+            return Err(Error::Docker(format!("Container stop failed: {stderr}")));
         }
 
         debug!("Successfully stopped Docker container: {}", container_id);
@@ -441,7 +438,7 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to remove container: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to remove container: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -452,8 +449,7 @@ impl DockerClient for DockerCliClient {
             }
             error!("Failed to remove Docker container: {}", stderr);
             return Err(Error::Docker(format!(
-                "Container removal failed: {}",
-                stderr
+                "Container removal failed: {stderr}"
             )));
         }
 
@@ -474,7 +470,7 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to inspect container: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to inspect container: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -484,15 +480,14 @@ impl DockerClient for DockerCliClient {
             }
             error!("Failed to inspect Docker container: {}", stderr);
             return Err(Error::Docker(format!(
-                "Container inspection failed: {}",
-                stderr
+                "Container inspection failed: {stderr}"
             )));
         }
 
         let status_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let parts: Vec<&str> = status_str.split(',').collect();
 
-        match parts.get(0) {
+        match parts.first() {
             Some(&"running") => Ok(ContainerStatus::Running),
             Some(&"exited") => {
                 if let Some(exit_code) = parts.get(1) {
@@ -514,7 +509,7 @@ impl DockerClient for DockerCliClient {
                 "ps",
                 "-a",
                 "--filter",
-                &format!("name={}", name),
+                &format!("name={name}"),
                 "--format",
                 "{{.Names}}",
             ])
@@ -522,12 +517,12 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to list containers: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to list containers: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("Failed to check Docker container existence: {}", stderr);
-            return Err(Error::Docker(format!("Container check failed: {}", stderr)));
+            return Err(Error::Docker(format!("Container check failed: {stderr}")));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -543,14 +538,13 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to get container logs: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to get container logs: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!("Failed to get Docker container logs: {}", stderr);
             return Err(Error::Docker(format!(
-                "Container logs retrieval failed: {}",
-                stderr
+                "Container logs retrieval failed: {stderr}"
             )));
         }
 
@@ -569,7 +563,7 @@ impl DockerClient for DockerCliClient {
         use colored::Colorize;
 
         // Format label with padding (similar to old implementation)
-        let formatted_label = format!("{:15}", label).color(color).bold();
+        let formatted_label = format!("{label:15}").color(color).bold();
 
         // Use docker logs -f to follow the container logs
         let mut child = Command::new(&self.docker_path)
@@ -577,7 +571,7 @@ impl DockerClient for DockerCliClient {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| Error::Docker(format!("Failed to follow container logs: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to follow container logs: {e}")))?;
 
         // Get the streams
         let stdout = child.stdout.take();
@@ -596,7 +590,7 @@ impl DockerClient for DockerCliClient {
                         Ok(0) => break, // EOF
                         Ok(_) => {
                             // Print with formatted label prefix
-                            print!("{} | {}", label_clone, line);
+                            print!("{label_clone} | {line}");
                         }
                         Err(e) => {
                             error!("Error reading stdout: {}", e);
@@ -619,7 +613,7 @@ impl DockerClient for DockerCliClient {
                         Ok(0) => break, // EOF
                         Ok(_) => {
                             // Print with formatted label prefix to stderr
-                            eprint!("{} | {}", label_clone, line);
+                            eprint!("{label_clone} | {line}");
                         }
                         Err(e) => {
                             error!("Error reading stderr: {}", e);
@@ -646,7 +640,7 @@ impl DockerClient for DockerCliClient {
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to send signal to container: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to send signal to container: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -657,8 +651,7 @@ impl DockerClient for DockerCliClient {
             }
             error!("Failed to send signal to Docker container: {}", stderr);
             return Err(Error::Docker(format!(
-                "Container signal failed: {}",
-                stderr
+                "Container signal failed: {stderr}"
             )));
         }
 
@@ -689,7 +682,7 @@ impl DockerCliClient {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| Error::Docker(format!("Failed to follow container logs: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to follow container logs: {e}")))?;
 
         // Get the streams
         let stdout = child.stdout.take();

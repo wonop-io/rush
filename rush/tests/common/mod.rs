@@ -1,6 +1,5 @@
 // Helper module for test utilities
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use rush_cli::build::{BuildType, ComponentBuildSpec, Variables};

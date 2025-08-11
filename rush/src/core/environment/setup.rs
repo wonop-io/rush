@@ -81,7 +81,7 @@ pub fn load_environment_variables(environment: &str) -> Result<(), String> {
                 debug!("Using fallback value for {}: {}", env_var_name, value);
                 env::set_var(&env_var_name, value);
             } else {
-                let msg = format!("{} environment variable not found", env_var_name);
+                let msg = format!("{env_var_name} environment variable not found");
                 warn!("{}", msg);
                 return Err(msg);
             }

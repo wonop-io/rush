@@ -39,7 +39,7 @@ impl FileVault {
     fn get_vault_path(&self, product_name: &str, environment: &str) -> PathBuf {
         self.directory
             .join(product_name)
-            .join(format!("{}.json", environment))
+            .join(format!("{environment}.json"))
     }
 
     /// Loads secrets from a vault file

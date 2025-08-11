@@ -40,7 +40,7 @@ impl ProductLoader {
         let spec_content = match read_to_string(&stack_spec_path) {
             Ok(content) => content,
             Err(e) => {
-                let err_msg = format!("Failed to read stack specification: {}", e);
+                let err_msg = format!("Failed to read stack specification: {e}");
                 error!("{}", err_msg);
                 return Err(err_msg);
             }
@@ -49,7 +49,7 @@ impl ProductLoader {
         let spec_value: Value = match serde_yaml::from_str(&spec_content) {
             Ok(value) => value,
             Err(e) => {
-                let err_msg = format!("Failed to parse stack specification: {}", e);
+                let err_msg = format!("Failed to parse stack specification: {e}");
                 error!("{}", err_msg);
                 return Err(err_msg);
             }

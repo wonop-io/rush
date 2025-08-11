@@ -86,7 +86,7 @@ pub fn save_dotenv(path: &Path, env_map: HashMap<String, String>) -> Result<(), 
     let mut file = File::create(path)?;
 
     for (key, value) in &env_map {
-        writeln!(file, "{}=\"{}\"", key, value)?;
+        writeln!(file, "{key}=\"{value}\"")?;
     }
 
     debug!(

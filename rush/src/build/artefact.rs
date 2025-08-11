@@ -70,7 +70,7 @@ impl Artefact {
 
                 return Err(crate::error::Error::FileSystem {
                     path: std::path::PathBuf::from(&input_path),
-                    message: format!("Failed to read template file: {}", e),
+                    message: format!("Failed to read template file: {e}"),
                 });
             }
         };
@@ -195,7 +195,7 @@ impl Artefact {
                     );
                     crate::error::Error::FileSystem {
                         path: parent.to_path_buf(),
-                        message: format!("Failed to create output directory: {}", e),
+                        message: format!("Failed to create output directory: {e}"),
                     }
                 })?;
             }
@@ -205,7 +205,7 @@ impl Artefact {
             error!("Failed to write to output file {}: {}", self.output_path, e);
             crate::error::Error::FileSystem {
                 path: std::path::PathBuf::from(&self.output_path),
-                message: format!("Failed to write to output file: {}", e),
+                message: format!("Failed to write to output file: {e}"),
             }
         })?;
 

@@ -30,8 +30,7 @@ mod docker_tests {
         let untagged_name = image.untagged_image_name();
         assert!(
             untagged_name.contains("test-product") || untagged_name.contains("test-component"),
-            "Untagged image name should contain product or component: {}",
-            untagged_name
+            "Untagged image name should contain product or component: {untagged_name}"
         );
         // ImageBuilder defaults to should_rebuild = true
         assert!(image.should_rebuild());
@@ -74,7 +73,7 @@ mod docker_tests {
             Arc::new(DockerCliClient::new("docker".to_string())),
         );
         assert!(result.is_ok());
-        let mut image = result.unwrap();
+        let image = result.unwrap();
 
         // Note: set_tag method doesn't exist on ImageBuilder
         // The tagged image name is based on what's in the build spec
@@ -82,8 +81,7 @@ mod docker_tests {
         // Just verify that we can get a tagged name without errors
         assert!(
             !tagged_name.is_empty(),
-            "Tagged image name should not be empty: {}",
-            tagged_name
+            "Tagged image name should not be empty: {tagged_name}"
         );
     }
 
@@ -98,7 +96,7 @@ mod docker_tests {
             Arc::new(DockerCliClient::new("docker".to_string())),
         );
         assert!(result.is_ok());
-        let mut image = result.unwrap();
+        let image = result.unwrap();
 
         // Test setting toolchain
         // Note: toolchain is set internally by ImageBuilder

@@ -52,7 +52,7 @@ impl DockerCrossCompileGuard {
         };
 
         // Set environment variables for cross-compilation
-        env::set_var("CROSS_CONTAINER_OPTS", format!("--platform {}", target));
+        env::set_var("CROSS_CONTAINER_OPTS", format!("--platform {target}"));
         env::set_var("DOCKER_DEFAULT_PLATFORM", target);
         trace!(
             "Set CROSS_CONTAINER_OPTS and DOCKER_DEFAULT_PLATFORM to {}",

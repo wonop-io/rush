@@ -103,7 +103,7 @@ pub fn spawn_process(
 ///
 /// True if the command exists, false otherwise
 pub fn command_exists(command: &str) -> bool {
-    let cmd_check = format!("command -v {} >/dev/null 2>&1", command);
+    let cmd_check = format!("command -v {command} >/dev/null 2>&1");
 
     let args = if cfg!(target_os = "windows") {
         vec!["/C", "where", command]

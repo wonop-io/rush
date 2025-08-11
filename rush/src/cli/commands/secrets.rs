@@ -26,7 +26,7 @@ async fn initialize_secrets(ctx: &mut CliContext) -> Result<()> {
         Ok(_) => (),
         Err(e) => {
             error!("Failed to create vault: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }
@@ -43,7 +43,7 @@ async fn initialize_secrets(ctx: &mut CliContext) -> Result<()> {
         }
         Err(e) => {
             error!("Failed to initialize secrets: {}", e);
-            eprintln!("{}", e);
+            eprintln!("{e}");
             process::exit(1);
         }
     }

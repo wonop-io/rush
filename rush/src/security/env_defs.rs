@@ -97,7 +97,7 @@ impl EnvironmentDefinitions {
                             Err(e) => {
                                 if is_base {
                                     error!("Unable to parse YAML file '{}': {}", yaml_path, e);
-                                    panic!("Unable to parse base YAML file: {}", e);
+                                    panic!("Unable to parse base YAML file: {e}");
                                 } else {
                                     warn!("Unable to parse YAML file '{}': {}. Ignoring specialization.", yaml_path, e);
                                     HashMap::new()
@@ -108,7 +108,7 @@ impl EnvironmentDefinitions {
                     Err(e) => {
                         if is_base {
                             error!("Unable to read YAML file '{}': {}", yaml_path, e);
-                            panic!("Unable to read base YAML file: {}", e);
+                            panic!("Unable to read base YAML file: {e}");
                         } else {
                             warn!(
                                 "Unable to read YAML file '{}': {}. Ignoring specialization.",
@@ -122,7 +122,7 @@ impl EnvironmentDefinitions {
             Err(e) => {
                 if is_base {
                     error!("Unable to open YAML file '{}': {}", yaml_path, e);
-                    panic!("Unable to open base YAML file: {}", e);
+                    panic!("Unable to open base YAML file: {e}");
                 } else {
                     warn!(
                         "Unable to open YAML file '{}': {}. Ignoring specialization.",
@@ -211,7 +211,7 @@ impl EnvironmentDefinitions {
                 .insert(variable_name, generation_method);
         } else {
             error!("Component '{}' not found", component_name);
-            panic!("Component '{}' not found", component_name);
+            panic!("Component '{component_name}' not found");
         }
     }
 
@@ -238,7 +238,7 @@ impl EnvironmentDefinitions {
                         Some(value.clone())
                     }
                     GenerationMethod::Ask(prompt) => {
-                        print!("{}: ", prompt);
+                        print!("{prompt}: ");
                         std::io::stdout().flush().unwrap();
                         let mut input = String::new();
                         if std::io::stdin().read_line(&mut input).is_ok() {
@@ -252,7 +252,7 @@ impl EnvironmentDefinitions {
                         }
                     }
                     GenerationMethod::AskWithDefault(prompt, default) => {
-                        print!("{} (default: {}): ", prompt, default);
+                        print!("{prompt} (default: {default}): ");
                         std::io::stdout().flush().unwrap();
                         let mut input = String::new();
                         if std::io::stdin().read_line(&mut input).is_ok() {
@@ -454,7 +454,7 @@ impl EnvironmentDefinitions {
         let mut file = File::create(path)?;
 
         for (key, value) in &env_map {
-            writeln!(file, "{}=\"{}\"", key, value)?;
+            writeln!(file, "{key}=\"{value}\"")?;
         }
 
         debug!(

@@ -21,8 +21,7 @@ pub async fn execute(
         "kubeval" => Box::new(KubevalValidator),
         _ => {
             return Err(Error::InvalidInput(format!(
-                "Unsupported validator type: {}",
-                validator_type
+                "Unsupported validator type: {validator_type}"
             )))
         }
     };
@@ -40,7 +39,7 @@ pub async fn execute(
             }
             Err(e) => {
                 error!("Deprecated APIs found in manifests: {}", e);
-                Err(Error::Validation(format!("Deprecated APIs found: {}", e)))
+                Err(Error::Validation(format!("Deprecated APIs found: {e}")))
             }
         }
     } else {
@@ -59,8 +58,7 @@ pub async fn execute(
             Err(e) => {
                 error!("Validation failed: {}", e);
                 Err(Error::Validation(format!(
-                    "Schema validation failed: {}",
-                    e
+                    "Schema validation failed: {e}"
                 )))
             }
         }
