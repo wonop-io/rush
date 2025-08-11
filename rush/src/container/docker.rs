@@ -271,6 +271,8 @@ impl DockerClient for DockerCliClient {
         let output = Command::new(&self.docker_path)
             .args([
                 "build",
+                "--platform",
+                "linux/amd64",  // Always build for x86_64
                 "--tag",
                 tag,
                 "--file",
@@ -352,7 +354,16 @@ impl DockerClient for DockerCliClient {
     ) -> Result<String> {
         trace!("Running Docker container {} from image {}", name, image);
 
-        let mut args = vec!["run", "-d", "--name", name, "--network", network];
+        let mut args = vec![
+            "run", 
+            "-d", 
+            "--platform", 
+            "linux/amd64",  // Always run as x86_64
+            "--name", 
+            name, 
+            "--network", 
+            network
+        ];
 
         // Set working directory if provided
         if let Some(workdir) = working_dir {

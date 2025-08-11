@@ -257,13 +257,11 @@ impl ContainerReactor {
         let silenced_components = silence_components.into_iter().collect::<HashSet<_>>();
 
         // Read stack configuration
-        let stack_config = match fs::read_to_string(format!(
-            "{}/stack.spec.yaml",
-            product_path.display()
-        )) {
-            Ok(config) => config,
-            Err(e) => return Err(format!("Failed to read stack config: {e}").into()),
-        };
+        let stack_config =
+            match fs::read_to_string(format!("{}/stack.spec.yaml", product_path.display())) {
+                Ok(config) => config,
+                Err(e) => return Err(format!("Failed to read stack config: {e}").into()),
+            };
 
         // Parse YAML
         let stack_config_value: serde_yaml::Value = serde_yaml::from_str(&stack_config)
@@ -421,10 +419,7 @@ impl ContainerReactor {
             });
 
             // Add to services collection
-            services
-                .entry(domain)
-                .or_default()
-                .push(service);
+            services.entry(domain).or_default().push(service);
         }
 
         Ok(services)
@@ -689,17 +684,17 @@ impl ContainerReactor {
                 }
 
                 // For non-fatal errors, wait for file changes or manual termination
-                
+
                 // Check if we're shutting down
                 if shutdown_token.is_cancelled() {
                     info!("Shutdown detected after build error, exiting...");
                     break;
                 }
-                
+
                 // Clear any pending file changes that might have accumulated during the failed build
                 self.change_processor.clear();
                 debug!("Cleared pending file changes after build error");
-                
+
                 info!("Waiting for file changes to retry build...");
                 match self.wait_for_changes_or_termination().await {
                     WaitResult::FileChanged => {
@@ -839,35 +834,55 @@ impl ContainerReactor {
                         _ => location.clone(),
                     }
                 }
-                BuildType::RustBinary { context_dir, location, .. } => {
+                BuildType::RustBinary {
+                    context_dir,
+                    location,
+                    ..
+                } => {
                     // If context_dir is None or ".", use the component's location
                     match context_dir {
                         Some(dir) if dir != "." => dir.clone(),
                         _ => location.clone(),
                     }
                 }
-                BuildType::DixiousWasm { context_dir, location, .. } => {
+                BuildType::DixiousWasm {
+                    context_dir,
+                    location,
+                    ..
+                } => {
                     // If context_dir is None or ".", use the component's location
                     match context_dir {
                         Some(dir) if dir != "." => dir.clone(),
                         _ => location.clone(),
                     }
                 }
-                BuildType::Script { context_dir, location, .. } => {
+                BuildType::Script {
+                    context_dir,
+                    location,
+                    ..
+                } => {
                     // If context_dir is None or ".", use the component's location
                     match context_dir {
                         Some(dir) if dir != "." => dir.clone(),
                         _ => location.clone(),
                     }
                 }
-                BuildType::Zola { context_dir, location, .. } => {
+                BuildType::Zola {
+                    context_dir,
+                    location,
+                    ..
+                } => {
                     // If context_dir is None or ".", use the component's location
                     match context_dir {
                         Some(dir) if dir != "." => dir.clone(),
                         _ => location.clone(),
                     }
                 }
-                BuildType::Book { context_dir, location, .. } => {
+                BuildType::Book {
+                    context_dir,
+                    location,
+                    ..
+                } => {
                     // If context_dir is None or ".", use the component's location
                     match context_dir {
                         Some(dir) if dir != "." => dir.clone(),
@@ -875,19 +890,20 @@ impl ContainerReactor {
                     }
                 }
                 BuildType::Ingress { context_dir, .. } => {
-                    context_dir.clone().unwrap_or_else(|| {
-                        // For Ingress, default to parent of Dockerfile if no context specified
-                        if let Some(parent) = std::path::Path::new(dockerfile_path).parent() {
-                            parent.to_string_lossy().to_string()
-                        } else {
+                    // For Ingress, check if context_dir is "." or "../" and use product directory
+                    match context_dir {
+                        Some(dir) if dir != "." => dir.clone(),
+                        _ => {
+                            // Ingress typically needs access to the entire product directory
+                            // to reference artifacts from other components
                             ".".to_string()
                         }
-                    })
+                    }
                 }
                 _ => continue,
             };
 
-            debug!(
+            info!(
                 "Component: {}, Dockerfile: {}, Context dir: {}",
                 component_name, dockerfile_path, context_dir
             );
@@ -959,6 +975,12 @@ impl ContainerReactor {
                 self.config.product_dir.join(dockerfile_path)
             };
 
+            // TODO: We need to store this in self
+            let component_dir = dockerfile
+                .parent()
+                .ok_or_else(|| Error::Docker("Invalid Dockerfile path".to_string()))?
+                .to_path_buf();
+
             // Resolve the Docker build context directory.
             //
             // Context directory resolution strategy:
@@ -978,7 +1000,12 @@ impl ContainerReactor {
             } else {
                 // For all relative paths, resolve relative to product directory
                 // The context_dir now correctly points to the component's location
-                self.config.product_dir.join(&context_dir)
+                info!(
+                    "Mapping context: {} using {}",
+                    context_dir,
+                    component_dir.display()
+                );
+                component_dir.join(&context_dir)
             };
 
             info!(
@@ -1039,31 +1066,32 @@ impl ContainerReactor {
         }
 
         info!("All container images built successfully");
-        
+
         // Update services with the actual built image names
         self.update_service_images()?;
-        
+
         self.rebuild_in_progress = false;
         Ok(())
     }
-    
+
     /// Updates the services collection with the actual built image names
     fn update_service_images(&mut self) -> Result<()> {
         // Create a new services collection with updated image names
         let mut updated_services: ServiceCollection = HashMap::new();
-        
+
         for (domain, service_list) in &self.services {
             let mut updated_list = Vec::new();
-            
+
             for service in service_list {
                 // Check if we have a built image for this service
-                let updated_image = if let Some(built_image) = self.built_images.get(&service.name) {
+                let updated_image = if let Some(built_image) = self.built_images.get(&service.name)
+                {
                     built_image.clone()
                 } else {
                     // Keep the original image name (e.g., for PureDockerImage)
                     service.image.clone()
                 };
-                
+
                 // Create a new service with the updated image
                 let updated_service = Arc::new(ContainerService {
                     id: service.id.clone(),
@@ -1076,16 +1104,16 @@ impl ContainerReactor {
                     domain: service.domain.clone(),
                     docker_host: service.docker_host.clone(),
                 });
-                
+
                 updated_list.push(updated_service);
             }
-            
+
             updated_services.insert(domain.clone(), updated_list);
         }
-        
+
         // Replace the services collection with the updated one
         self.services = updated_services;
-        
+
         Ok(())
     }
 
@@ -1212,24 +1240,29 @@ impl ContainerReactor {
             // Start following logs for this container
             let docker_client = self.docker_client.clone();
             let container_name = config.name.clone();
-            
+
             // Extract component name from the full container name (e.g., "helloworld.wonop.io-frontend" -> "frontend")
-            let component_name = if let Some(service) = self.services.values()
+            let component_name = if let Some(service) = self
+                .services
+                .values()
                 .flat_map(|v| v.iter())
-                .find(|s| config.name.contains(&s.name)) {
+                .find(|s| config.name.contains(&s.name))
+            {
                 service.name.clone()
             } else {
                 // Fallback: try to extract from container name pattern "product-component"
-                container_name.rsplit('-').next().unwrap_or(&container_name).to_string()
+                container_name
+                    .rsplit('-')
+                    .next()
+                    .unwrap_or(&container_name)
+                    .to_string()
             };
-            
+
             let color = self.get_color_for_component(&component_name);
 
             // Use output director if available, otherwise use standard output
             if let Some(ref output_director) = self.output_director {
-                eprintln!(
-                    "DEBUG: Using output director for container {container_name}"
-                );
+                eprintln!("DEBUG: Using output director for container {container_name}");
                 let director = output_director.clone();
                 // Use component name for the output source label, not full container name
                 let source =
@@ -1250,17 +1283,22 @@ impl ContainerReactor {
                     }
                 });
             } else {
-                eprintln!(
-                    "DEBUG: No output director, using standard output for {container_name}"
-                );
+                eprintln!("DEBUG: No output director, using standard output for {container_name}");
                 // Fall back to standard output
                 let component_name_for_logs = component_name.clone();
                 tokio::spawn(async move {
                     if let Err(e) = docker_client
-                        .follow_container_logs(&container_id, component_name_for_logs.clone(), color)
+                        .follow_container_logs(
+                            &container_id,
+                            component_name_for_logs.clone(),
+                            color,
+                        )
                         .await
                     {
-                        error!("Error following logs for {}: {}", component_name_for_logs, e);
+                        error!(
+                            "Error following logs for {}: {}",
+                            component_name_for_logs, e
+                        );
                     }
                 });
             }
@@ -1522,7 +1560,7 @@ impl ContainerReactor {
                         debug!("Ignoring file changes during shutdown");
                         return Ok(false);
                     }
-                    
+
                     // Check if we have pending changes to process
                     let changed_files = self.change_processor.process_pending_changes().await?;
                     if !changed_files.is_empty() {
@@ -1531,7 +1569,7 @@ impl ContainerReactor {
                             debug!("Ignoring file changes during shutdown");
                             return Ok(false);
                         }
-                        
+
                         info!("Processing file changes...");
                         // Test if the changes are significant (affect any component)
                         if self.test_if_significant_change(&changed_files).await {
@@ -1580,7 +1618,7 @@ impl ContainerReactor {
     /// Result indicating success or failure
     async fn cleanup_containers(&mut self) -> Result<()> {
         info!("Cleaning up containers");
-        
+
         // Clear any pending file changes to prevent processing during shutdown
         self.change_processor.clear();
         debug!("Cleared pending file changes");
@@ -1860,7 +1898,7 @@ impl ContainerReactor {
                         debug!("Shutdown detected during file change wait");
                         return WaitResult::Terminated;
                     }
-                    
+
                     let changed_files = self.change_processor.process_pending_changes().await.unwrap_or_else(|_| Vec::new());
                     if !changed_files.is_empty() {
                         // Double-check shutdown before returning FileChanged
@@ -2374,9 +2412,7 @@ async fn follow_container_logs_with_shared_director(
 ) -> Result<()> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
-    eprintln!(
-        "DEBUG: Starting docker logs command for container {container_id}"
-    );
+    eprintln!("DEBUG: Starting docker logs command for container {container_id}");
 
     // Use docker logs command to follow the container logs
     let mut child = Command::new("docker")
@@ -2483,9 +2519,7 @@ async fn follow_container_logs_with_shared_director(
     // The spawned tasks will continue running
     // We don't wait for them to complete since logs should stream continuously
 
-    eprintln!(
-        "DEBUG: Log following tasks spawned for container {container_id}"
-    );
+    eprintln!("DEBUG: Log following tasks spawned for container {container_id}");
 
     Ok(())
 }
