@@ -10,7 +10,7 @@ use crate::container::{ContainerReactor, ContainerReactorConfig, DockerCliClient
 use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::output::{OutputDirectorConfig, OutputDirectorFactory};
-use crate::security::{Base64SecretsEncoder, FileVault, SecretsProvider};
+use crate::security::{Base64SecretsEncoder, FileVault, NoopEncoder, SecretsProvider};
 use crate::toolchain::ToolchainContext;
 
 /// Command to run the development environment
@@ -69,7 +69,7 @@ impl DevCommand {
             PathBuf::from("/tmp/vault"),
             None,
         )));
-        let secrets_encoder = Arc::new(Base64SecretsEncoder);
+        let secrets_encoder = Arc::new(NoopEncoder);
 
         // Create docker client
         let _docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));

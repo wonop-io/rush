@@ -122,12 +122,6 @@ async fn launch_service(
     let port_mapping = format!("{}:{}", config.port, config.target_port);
 
     // Start the container with proper working directory
-    // Set working directory to product directory (reverse domain notation as path)
-    let working_dir = if let Some(product_name) = config.name.split('-').next() {
-        format!("/app/{}", product_name.replace('.', "/"))
-    } else {
-        "/app".to_string()
-    };
 
     let container_id = docker_client
         .run_container(

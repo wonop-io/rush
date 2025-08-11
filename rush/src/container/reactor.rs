@@ -192,11 +192,12 @@ impl ContainerReactor {
     pub fn new_with_config(config: Arc<Config>) -> Result<Self> {
         // Create default implementations
         let docker_client = Arc::new(DockerCliClient::new("docker".to_string()));
+
         let vault = Arc::new(Mutex::new(FileVault::new(
             PathBuf::from("/tmp/vault"),
             None,
         )));
-        let secrets_encoder = Arc::new(crate::security::Base64SecretsEncoder);
+        let secrets_encoder = Arc::new(crate::security::NoopEncoder);
 
         // Create reactor config
         let reactor_config = ContainerReactorConfig {
@@ -887,11 +888,8 @@ impl ContainerReactor {
                     volumes: Vec::new(),
                 };
 
-                let service = DockerService::new(
-                    "".to_string(),
-                    service_config,
-                    self.docker_client.clone(),
-                );
+                let service =
+                    DockerService::new("".to_string(), service_config, self.docker_client.clone());
 
                 let dockerfile = if Path::new(dockerfile_path).is_absolute() {
                     PathBuf::from(dockerfile_path)
@@ -943,10 +941,10 @@ impl ContainerReactor {
                         true
                     }
                 };
-                
+
                 // Get the actual tagged image name with the computed git tag
                 let actual_image = image_builder.tagged_image_name();
-                
+
                 (rebuild_needed, actual_image)
             };
 
@@ -962,7 +960,10 @@ impl ContainerReactor {
             }
 
             // Only run expensive operations if we actually need to build
-            info!("Image {} needs to be built, running build preparations", image_name);
+            info!(
+                "Image {} needs to be built, running build preparations",
+                image_name
+            );
 
             // Render artifacts for components that need them (e.g., Ingress)
             if let Err(e) = self.render_artifacts_for_component(spec).await {

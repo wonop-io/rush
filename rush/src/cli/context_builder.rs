@@ -288,7 +288,9 @@ fn create_reactor(
     redirected_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
 ) -> Result<ContainerReactor> {
-    let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(Base64SecretsEncoder);
+    // TODO: Resolve conflicting name for NoopEncoder
+    let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(crate::security::NoopEncoder);
+    // TODO: Fix k8s encoding - also this seems redudant or at least very similar to dev
     let _k8s_encoder = match config.k8s_encoder() {
         "kubeseal" => {
             info!("Encrypting K8s secrets with kubeseal");

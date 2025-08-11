@@ -379,7 +379,7 @@ impl DockerClient for DockerCliClient {
 
         // Add image name at the end
         args.push(image);
-
+        println!("RUNNING: {}", args.join(" "));
         let output = Command::new(&self.docker_path)
             .args(&args)
             .stdout(Stdio::piped())
