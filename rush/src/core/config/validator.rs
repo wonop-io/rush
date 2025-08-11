@@ -78,10 +78,10 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigValidationError> {
 
     // Validate start port is in valid range
     let start_port = config.start_port();
-    if start_port < 1024 || start_port > 65535 {
+    if start_port < 1024 {
         return Err(ConfigValidationError::with_field(
             format!(
-                "Invalid start port: {}. Port must be between 1024 and 65535",
+                "Invalid start port: {}. Port must be at least 1024",
                 start_port
             ),
             "start_port",
@@ -136,7 +136,7 @@ mod tests {
         std::fs::create_dir(&product_dir).unwrap();
         
         // Change to the temp directory so Config::new can find the products dir
-        let _dir_guard = crate::utils::Directory::chpath(&temp_dir);
+        let _dir_guard = crate::utils::Directory::chpath(temp_dir.path());
 
         // Set required environment variables for the test
         std::env::set_var("DEV_CTX", "test-context");
@@ -170,7 +170,7 @@ mod tests {
         std::fs::create_dir(&product_dir).unwrap();
         
         // Change to the temp directory so Config::new can find the products dir
-        let _dir_guard = crate::utils::Directory::chpath(&temp_dir);
+        let _dir_guard = crate::utils::Directory::chpath(temp_dir.path());
 
         // Set required environment variables
         std::env::set_var("INVALID_CTX", "test-context");

@@ -1,10 +1,7 @@
-use crate::cli::{CommandArgs, DeployArgs};
 use crate::container::ContainerService;
 use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::k8s::ContextManager;
-use crate::security::VaultAdapter;
-use crate::toolchain::ToolchainContext;
 use log::{debug, info};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -15,7 +12,7 @@ use std::sync::Mutex;
 pub async fn execute(
     config: Arc<Config>,
     context_manager: Arc<Mutex<ContextManager>>,
-    services: &[ContainerService],
+    _services: &[ContainerService],
 ) -> Result<()> {
     debug!("Executing deploy command");
 

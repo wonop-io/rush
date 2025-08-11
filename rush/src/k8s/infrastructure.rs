@@ -6,7 +6,7 @@
 use crate::error::{Error, Result};
 use crate::k8s::context::KubernetesContext;
 use crate::toolchain::ToolchainContext;
-use log::{debug, error, info, trace, warn};
+use log::{debug, info};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -68,7 +68,7 @@ impl InfrastructureRepo {
     /// If the repository already exists locally, it performs a git pull.
     /// Otherwise, it clones the repository.
     pub async fn checkout(&self) -> Result<()> {
-        let git = self.toolchain.git();
+        let _git = self.toolchain.git();
 
         if self.local_path.exists() {
             debug!("Infrastructure repository exists, updating via pull");

@@ -1,7 +1,7 @@
 use crate::constants::*;
 use log::trace;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tera::Context;
 use tera::Tera;

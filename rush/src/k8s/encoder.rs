@@ -6,7 +6,6 @@
 use crate::error::{Error, Result};
 use log::{info, trace, warn};
 use std::fs;
-use std::path::Path;
 use std::process::Command;
 
 /// Trait defining operations for encoding Kubernetes secrets

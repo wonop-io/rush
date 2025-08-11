@@ -4,7 +4,7 @@
 //! manage, and monitor containers.
 
 use crate::error::{Error, Result};
-use crate::output::{OutputDirector, OutputSource, OutputStream, OutputStreamType};
+use crate::output::{OutputDirector, OutputSource, OutputStream};
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::fmt;
@@ -209,8 +209,31 @@ impl DockerClient for DockerCliClient {
         Ok(())
     }
 
+    /// Builds a Docker image from a Dockerfile and context directory.
+    /// 
+    /// This method:
+    /// 1. Changes to the context directory using the Directory RAII guard
+    /// 2. Calculates the relative path from context to Dockerfile
+    /// 3. Executes docker build with the specified tag
+    /// 4. Automatically restores the original directory when done
+    /// 
+    /// # Arguments
+    /// 
+    /// * `tag` - The tag to apply to the built image (e.g., "myapp:latest")
+    /// * `dockerfile` - Path to the Dockerfile (can be absolute or relative)
+    /// * `context` - The build context directory containing files for the Docker build
+    /// 
+    /// # Returns
+    /// 
+    /// * `Ok(())` if the build succeeds
+    /// * `Err(Error::Docker)` if the build fails with details about the failure
+    /// 
+    /// # Important
+    /// 
+    /// Uses the Directory RAII guard to safely change directories. The original
+    /// directory is always restored, even if the build fails or panics.
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
-        use std::path::{Path, PathBuf};
+        use std::path::Path;
         
         trace!("Building Docker image: {}", tag);
         

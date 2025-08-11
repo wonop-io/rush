@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use colored::Colorize;
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, warn};
 use tokio::time;
 
 /// Errors that can occur during the build process

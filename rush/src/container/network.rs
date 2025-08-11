@@ -4,7 +4,7 @@
 //! that are used to connect containers.
 
 use crate::container::DockerClient;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::utils::run_command;
 use colored::Colorize;
 use log::{debug, trace, warn};

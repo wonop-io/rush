@@ -1,7 +1,7 @@
 use crate::cli::commands;
 use crate::cli::context::CliContext;
 use crate::error::Result;
-use crate::output::{OutputDirectorConfig, OutputDirectorFactory};
+use crate::output::OutputDirectorFactory;
 use clap::ArgMatches;
 use log::{error, trace};
 use std::process;

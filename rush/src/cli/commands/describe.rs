@@ -4,7 +4,6 @@ use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::security::SecretsProvider;
 use crate::toolchain::ToolchainContext;
-use colored::Colorize;
 use std::sync::Arc;
 use tera::Context;
 
@@ -34,14 +33,14 @@ pub async fn execute(
             Ok(())
         }
         DescribeCommand::BuildScript { component_name } => {
-            let service = services
+            let _service = services
                 .iter()
                 .find(|s| s.name == component_name)
                 .ok_or_else(|| {
                     Error::InvalidInput(format!("Component '{}' not found", component_name))
                 })?;
 
-            let secrets = secrets_provider
+            let _secrets = secrets_provider
                 .get_secrets(
                     config.product_name(),
                     &component_name,
@@ -65,7 +64,7 @@ pub async fn execute(
                     Error::InvalidInput(format!("Component '{}' not found", component_name))
                 })?;
 
-            let secrets = secrets_provider
+            let _secrets = secrets_provider
                 .get_secrets(
                     config.product_name(),
                     &component_name,

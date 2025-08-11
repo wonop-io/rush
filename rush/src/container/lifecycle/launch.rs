@@ -1,18 +1,15 @@
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
-    process::{Command, Stdio},
     sync::Arc,
 };
 
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, trace};
 use tokio::sync::mpsc;
 
 use crate::{
     build::BuildContext,
     container::{setup_network, ContainerService, DockerClient, ServiceConfig},
     error::{Error, Result},
-    utils::run_command,
 };
 
 /// Launches containers based on the provided build context and configuration.

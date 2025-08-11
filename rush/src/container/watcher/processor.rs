@@ -8,10 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use log::{debug, info, trace, warn};
+use log::{debug, info};
 use tokio::time;
 
-use crate::container::BuildProcessor;
 use crate::error::Result;
 use crate::utils::PathMatcher;
 

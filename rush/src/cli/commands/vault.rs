@@ -289,7 +289,7 @@ async fn create_vault_cmd(ctx: &mut CliContext) -> Result<()> {
     }
 }
 
-async fn migrate_vault(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
+async fn migrate_vault(matches: &ArgMatches, _ctx: &mut CliContext) -> Result<()> {
     let dest = matches.get_one::<String>("dest").unwrap();
     trace!("Migrating secrets to: {}", dest);
     

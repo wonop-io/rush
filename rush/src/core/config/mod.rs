@@ -15,7 +15,6 @@ pub use self::validator::{validate_config, ConfigValidationError};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[test]
@@ -32,7 +31,7 @@ mod tests {
         std::fs::create_dir(&product_dir).unwrap();
         
         // Change to the temp directory so Config::new can find the products dir
-        let _dir_guard = crate::utils::Directory::chpath(&temp_dir);
+        let _dir_guard = crate::utils::Directory::chpath(temp_dir.path());
 
         // Set required environment variables for testing
         std::env::set_var("DEV_CTX", "test-context");

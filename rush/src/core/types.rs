@@ -5,7 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 /// Represents the build status of a component
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -3,6 +3,7 @@
 //! This module provides implementations for encoding secrets in formats
 //! required by different systems, such as base64 encoding for Kubernetes.
 
+use base64::prelude::*;
 use std::collections::HashMap;
 
 /// Trait for secret encoders that transform secret values for storage or transmission
@@ -27,7 +28,7 @@ impl SecretsEncoder for Base64SecretsEncoder {
     fn encode_secrets(&self, secrets: HashMap<String, String>) -> HashMap<String, String> {
         secrets
             .into_iter()
-            .map(|(key, value)| (key, base64::encode(value)))
+            .map(|(key, value)| (key, BASE64_STANDARD.encode(value)))
             .collect()
     }
 }

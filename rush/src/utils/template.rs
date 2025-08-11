@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use tera::Tera;
 
 use serde_json::value::{to_value, Value};
-use std::error::Error;
 use tera::{try_get_value, Context, Result};
 
 lazy_static! {

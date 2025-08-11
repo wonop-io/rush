@@ -9,9 +9,9 @@ use std::sync::Mutex;
 /// Execute the unapply command
 ///
 /// The unapply command removes the Kubernetes resources from the cluster
-pub async fn execute(args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
+pub async fn execute(_args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
     // Create a container reactor to handle the unapply operation
-    let mut reactor = ContainerReactor::new_with_config(config.clone())
+    let _reactor = ContainerReactor::new_with_config(config.clone())
         .map_err(|e| Error::Setup(format!("Failed to create container reactor: {}", e)))?;
 
     // Create and set up the Kubernetes context manager

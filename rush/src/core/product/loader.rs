@@ -69,7 +69,7 @@ impl ProductLoader {
     fn parse_components(
         &self,
         spec: &Value,
-        config: &Config,
+        _config: &Config,
     ) -> Result<HashMap<String, ProductComponent>, String> {
         let mut components = HashMap::new();
 

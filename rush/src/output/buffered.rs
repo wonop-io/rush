@@ -27,7 +27,7 @@ impl<T: OutputDirector> BufferedOutputDirector<T> {
 
     /// Get or create the buffer for a source and stream type
     fn get_buffer_mut(&mut self, source: &OutputSource, stream_type: OutputStreamType) -> &mut Vec<u8> {
-        let key = self.get_buffer_key(source, stream_type);
+        let _key = self.get_buffer_key(source, stream_type);
         self.buffers
             .entry(source.name.clone())
             .or_insert_with(HashMap::new)
@@ -46,7 +46,7 @@ impl<T: OutputDirector> BufferedOutputDirector<T> {
         let mut start = 0;
         for (i, &byte) in data.iter().enumerate() {
             if byte == b'\n' {
-                let mut line_data = data[start..=i].to_vec();
+                let line_data = data[start..=i].to_vec();
                 if !line_data.is_empty() {
                     lines.push(OutputStream::new(stream_type, line_data));
                 }

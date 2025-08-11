@@ -215,8 +215,6 @@ impl Artefact {
 mod tests {
     use super::*;
     use crate::build::build_type::BuildType;
-    use crate::core::types::ResourceRequirements;
-    use std::sync::Arc;
     use crate::toolchain::Platform;
     use std::collections::HashMap;
     use std::io::Write;
@@ -272,10 +270,10 @@ mod tests {
         let artefact = Artefact::new(
             temp_file.path().to_string_lossy().to_string(),
             "output.txt".to_string(),
-        );
+        ).unwrap();
 
         let context = create_test_context();
-        let rendered = artefact.render(&context);
+        let rendered = artefact.render(&context).unwrap();
 
         assert_eq!(rendered, "Hello test-component! Environment: dev");
     }
@@ -289,10 +287,10 @@ mod tests {
         let artefact = Artefact::new(
             temp_file.path().to_string_lossy().to_string(),
             "output.txt".to_string(),
-        );
+        ).unwrap();
 
         let context = create_test_context();
-        let rendered = artefact.render(&context);
+        let rendered = artefact.render(&context).unwrap();
 
         assert_eq!(rendered, "Environment variable: test_value");
     }

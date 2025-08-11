@@ -29,7 +29,7 @@ pub fn load_dotenv(path: &Path) -> Result<HashMap<String, String>, std::io::Erro
         }
 
         // Split the line into key and value
-        if let Some((key, mut value)) = line.split_once('=') {
+        if let Some((key, value)) = line.split_once('=') {
             let key = key.trim().to_string();
             let value_str = value.trim().to_string();
 

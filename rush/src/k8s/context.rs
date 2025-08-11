@@ -5,9 +5,7 @@
 
 use crate::error::{Error, Result};
 use log::{debug, trace, warn};
-use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
 
 /// Represents a Kubernetes context configuration
 #[derive(Debug, Clone)]

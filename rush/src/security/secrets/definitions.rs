@@ -1,5 +1,5 @@
 use crate::security::Vault;
-use base64;
+use base64::prelude::*;
 use chrono::Utc;
 use log::{debug, trace, warn};
 use rand::{distributions::Alphanumeric, Rng};
@@ -236,7 +236,7 @@ impl SecretsDefinitions {
                     }
                     GenerationMethod::Base64EncodedStatic(value) => {
                         trace!("Using base64 encoded static value");
-                        GenerationResult::Value(base64::encode(value))
+                        GenerationResult::Value(BASE64_STANDARD.encode(value))
                     }
                     GenerationMethod::Ask(prompt) => {
                         println!("\n{}: ", prompt);
@@ -284,7 +284,7 @@ impl SecretsDefinitions {
                     GenerationMethod::RandomBase64(length) => {
                         let random_bytes: Vec<u8> =
                             (0..*length).map(|_| rand::random::<u8>()).collect();
-                        GenerationResult::Value(base64::encode(random_bytes))
+                        GenerationResult::Value(BASE64_STANDARD.encode(random_bytes))
                     }
                     GenerationMethod::RandomUUID => {
                         GenerationResult::Value(Uuid::new_v4().to_string())
@@ -328,13 +328,13 @@ impl SecretsDefinitions {
                                 }
 
                                 if *encode_base64 {
-                                    GenerationResult::Value(base64::encode(contents))
+                                    GenerationResult::Value(BASE64_STANDARD.encode(contents))
                                 } else {
                                     match String::from_utf8(contents.clone()) {
                                         Ok(text) => GenerationResult::Value(text),
                                         Err(_) => {
                                             warn!("File contains non-UTF8 data, using base64 encoding");
-                                            GenerationResult::Value(base64::encode(contents))
+                                            GenerationResult::Value(BASE64_STANDARD.encode(contents))
                                         }
                                     }
                                 }

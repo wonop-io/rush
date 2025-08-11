@@ -13,7 +13,7 @@ pub struct RolloutCommand;
 
 impl RolloutCommand {
     pub async fn execute(
-        config: Arc<Config>,
+        _config: Arc<Config>,
         container_reactor: &mut ContainerReactor,
     ) -> Result<()> {
         println!("{}", "Rolling out product".bold().white());

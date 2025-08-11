@@ -11,7 +11,7 @@ pub mod validate;
 pub mod vault;
 
 pub use apply::execute as execute_apply;
-pub use build::{execute as execute_build, execute_with_context as execute_build_with_context};
+pub use build::execute as execute_build;
 pub use deploy::execute as execute_deploy;
 pub use describe::execute as execute_describe;
 pub use dev::execute as execute_dev;

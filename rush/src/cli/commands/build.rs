@@ -276,7 +276,7 @@ fn generate_build_script(context: &BuildContext) -> Result<String> {
         }
         BuildType::TrunkWasm {
             ssr,
-            features,
+            
             precompile_commands,
             ..
         } => {

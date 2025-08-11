@@ -7,8 +7,8 @@ mod launch;
 mod monitor;
 mod shutdown;
 
-pub use launch::{launch_containers, ContainerStatus};
-pub use monitor::{ContainerStatus as MonitorStatus, LifecycleMonitor};
+pub use launch::launch_containers;
+pub use monitor::LifecycleMonitor;
 pub use shutdown::ShutdownManager;
 
 /// Handles the complete container lifecycle from launch to termination
@@ -41,7 +41,7 @@ impl LifecycleManager {
     pub async fn shutdown_services(
         &self,
         services: &[crate::container::service::ContainerService],
-        timeout: std::time::Duration,
+        _timeout: std::time::Duration,
     ) -> crate::error::Result<()> {
         // Shutdown services in reverse order of their creation
         for service in services.iter().rev() {

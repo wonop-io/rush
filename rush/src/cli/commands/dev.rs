@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -11,7 +10,7 @@ use crate::container::{ContainerReactor, ContainerReactorConfig, DockerCliClient
 use crate::core::config::Config;
 use crate::error::{Error, Result};
 use crate::output::{OutputDirectorConfig, OutputDirectorFactory};
-use crate::security::{Base64SecretsEncoder, FileVault, SecretsEncoder, SecretsProvider};
+use crate::security::{Base64SecretsEncoder, FileVault, SecretsProvider};
 use crate::toolchain::ToolchainContext;
 
 /// Command to run the development environment
@@ -72,10 +71,10 @@ impl DevCommand {
         let secrets_encoder = Arc::new(Base64SecretsEncoder);
 
         // Create docker client
-        let docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));
+        let _docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));
 
         // Create the container reactor config
-        let reactor_config = ContainerReactorConfig {
+        let _reactor_config = ContainerReactorConfig {
             product_name: self.product_name.clone(),
             product_dir: self.config.product_path().clone(),
             network_name: self.config.network_name().to_string(),

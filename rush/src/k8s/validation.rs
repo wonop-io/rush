@@ -5,7 +5,6 @@
 
 use crate::error::{Error, Result};
 use log::{debug, info, trace, warn};
-use std::path::Path;
 use std::process::Command;
 
 /// Trait defining operations for validating Kubernetes resources

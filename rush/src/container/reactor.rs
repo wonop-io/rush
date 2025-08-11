@@ -18,7 +18,6 @@ use crate::error::{Error, Result};
 use crate::security::{FileVault, SecretsEncoder, Vault};
 use crate::shutdown;
 
-use colored::Colorize;
 use log::{debug, error, info, trace, warn};
 use serde_yaml;
 use std::collections::{HashMap, HashSet};
@@ -856,7 +855,7 @@ impl ContainerReactor {
             let image_tag = &self.config.git_hash;
 
             // Set tagged image name in component spec
-            let tagged_image_name = format!("{}:{}", image_name, image_tag);
+            let _tagged_image_name = format!("{}:{}", image_name, image_tag);
 
             // Render artifacts for components that need them (e.g., Ingress)
             if let Err(e) = self.render_artifacts_for_component(&spec).await {
@@ -910,16 +909,29 @@ impl ContainerReactor {
                 self.config.product_dir.join(dockerfile_path)
             };
             
+            // Resolve the Docker build context directory.
+            // 
+            // Context directory resolution strategy:
+            // 1. If context_dir is absolute, use it as-is
+            // 2. For Ingress components with relative context_dir (e.g., "../"):
+            //    - Extract component location from Dockerfile path (e.g., "ingress/Dockerfile" → "ingress")
+            //    - Resolve context_dir relative to component location
+            //    - Example: component at "ingress", context_dir "../" → "product_dir/ingress/../" → "product_dir"
+            // 3. For all other build types with relative context_dir:
+            //    - Resolve directly relative to product directory
+            //
+            // This special handling for Ingress is needed because Ingress components often need
+            // access to the entire product directory to reference artifacts from other components.
             let context = if Path::new(&context_dir).is_absolute() {
                 PathBuf::from(&context_dir)
             } else {
-                // For Ingress type, we need to resolve context_dir relative to the component location
                 match &spec.build_type {
                     BuildType::Ingress { .. } => {
                         // For ingress, the dockerfile path gives us the component location
                         // e.g., "ingress/Dockerfile" means component is in "ingress" directory
                         if let Some(component_dir) = std::path::Path::new(dockerfile_path).parent() {
                             // Resolve context_dir relative to the component directory
+                            // This allows "../" to correctly resolve to the product directory
                             self.config.product_dir.join(component_dir).join(&context_dir)
                         } else {
                             self.config.product_dir.join(&context_dir)
@@ -1627,7 +1639,7 @@ impl ContainerReactor {
 
     /// Renders artifacts for a component before Docker build
     async fn render_artifacts_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
-        use crate::build::{Artefact, BuildContext, ServiceSpec, Variables};
+        use crate::build::{Artefact, BuildContext, ServiceSpec};
         use crate::toolchain::{Platform, ToolchainContext};
         use crate::error::Error;
         use std::collections::HashMap;
@@ -1792,7 +1804,7 @@ impl ContainerReactor {
 
     /// Runs the build script for a component before Docker build
     async fn run_build_script_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
-        use crate::build::{BuildContext, BuildScript, Variables};
+        use crate::build::{BuildContext, BuildScript};
         use crate::toolchain::{Platform, ToolchainContext};
         use crate::utils::run_command;
         use crate::error::Error;
@@ -1898,7 +1910,7 @@ impl ContainerReactor {
         // Write script to temporary file and execute it
         use std::fs;
         use std::os::unix::fs::PermissionsExt;
-        use std::env;
+        
         
         let script_path = build_dir.join("build_script.sh");
         fs::write(&script_path, &script_content)

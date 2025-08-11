@@ -22,7 +22,7 @@ struct ShutdownRequest {
 impl ShutdownManager {
     /// Creates a new shutdown manager and spawns the background task to handle shutdowns
     pub fn new() -> Self {
-        let (shutdown_tx, shutdown_rx) = mpsc::channel(100);
+        let (shutdown_tx, _shutdown_rx) = mpsc::channel(100);
 
         // Spawn background task to handle shutdown requests
         // TODO: Fix this tokio::spawn(Self::shutdown_task(shutdown_rx));

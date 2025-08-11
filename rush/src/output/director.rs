@@ -134,7 +134,7 @@ impl OutputDirector for StdOutputDirector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::output::{OutputSource, OutputStream, OutputStreamType};
+    use crate::output::{OutputSource, OutputStream};
 
     #[tokio::test]
     async fn test_std_output_director() {

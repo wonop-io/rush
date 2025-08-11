@@ -1,12 +1,11 @@
 use crate::constants::*;
-use log::{debug, error, trace, warn};
+use log::{debug, error, trace};
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::core::config::types::Config;
-use crate::utils::{canonical_path, find_project_root, read_to_string};
+use crate::utils::{find_project_root, read_to_string};
 
 /// Loads configuration files for Rush CLI
 pub struct ConfigLoader {

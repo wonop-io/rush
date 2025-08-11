@@ -3,7 +3,7 @@ use crate::constants::*;
 use crate::container::ContainerReactor;
 use crate::core::config::{Config, ConfigLoader};
 use crate::core::environment::EnvironmentGenerator;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::k8s::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
 use crate::security::{Base64SecretsEncoder, SecretsDefinitions, SecretsEncoder, Vault};
 use crate::toolchain::{Platform, ToolchainContext};

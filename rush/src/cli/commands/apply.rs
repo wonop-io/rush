@@ -9,7 +9,7 @@ use std::sync::Mutex;
 pub async fn execute(
     config: Arc<Config>,
     context_manager: Arc<Mutex<ContextManager>>,
-    services: &[ContainerService],
+    _services: &[ContainerService],
 ) -> Result<()> {
     // Select the Kubernetes context
     context_manager

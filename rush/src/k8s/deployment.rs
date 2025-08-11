@@ -6,12 +6,11 @@
 use crate::build::BuildContext;
 use crate::error::{Error, Result};
 use crate::k8s::context::KubernetesContext;
-use log::{debug, info, trace, warn};
-use serde::{Deserialize, Serialize};
+use log::{debug, info, warn};
 use serde_yaml::{self, Value};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tera::{Context, Tera};

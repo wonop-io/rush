@@ -1,6 +1,6 @@
 use crate::security::Vault;
 use async_trait::async_trait;
-use log::{debug, error, trace, warn};
+use log::{debug, trace};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;

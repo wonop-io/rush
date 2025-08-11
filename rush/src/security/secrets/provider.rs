@@ -4,7 +4,6 @@
 //! different backend implementations to be used interchangeably.
 
 use async_trait::async_trait;
-use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};

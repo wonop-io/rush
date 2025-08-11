@@ -3,16 +3,12 @@
 //! This module provides functionality to set up file watchers that monitor
 //! for changes in the container context, triggering rebuilds when necessary.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, trace};
 use notify::{
     Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
-use tokio::sync::mpsc;
 
 use crate::container::watcher::processor::ChangeProcessor;
 use crate::error::Result;
@@ -168,7 +164,6 @@ pub fn create_component_matcher(
 mod tests {
     use super::*;
     use std::fs::{self, File};
-    use std::io::Write;
     use tempfile::TempDir;
 
     #[test]
