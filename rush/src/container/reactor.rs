@@ -1194,7 +1194,18 @@ impl ContainerReactor {
             // Start following logs for this container
             let docker_client = self.docker_client.clone();
             let container_name = config.name.clone();
-            let color = self.get_color_for_component(&container_name);
+            
+            // Extract component name from the full container name (e.g., "helloworld.wonop.io-frontend" -> "frontend")
+            let component_name = if let Some(service) = self.services.values()
+                .flat_map(|v| v.iter())
+                .find(|s| config.name.contains(&s.name)) {
+                service.name.clone()
+            } else {
+                // Fallback: try to extract from container name pattern "product-component"
+                container_name.rsplit('-').next().unwrap_or(&container_name).to_string()
+            };
+            
+            let color = self.get_color_for_component(&component_name);
 
             // Use output director if available, otherwise use standard output
             if let Some(ref output_director) = self.output_director {
@@ -1202,8 +1213,9 @@ impl ContainerReactor {
                     "DEBUG: Using output director for container {container_name}"
                 );
                 let director = output_director.clone();
+                // Use component name for the output source label, not full container name
                 let source =
-                    crate::output::OutputSource::with_color(&container_name, "container", color);
+                    crate::output::OutputSource::with_color(&component_name, "container", color);
 
                 tokio::spawn(async move {
                     eprintln!("DEBUG: Starting log follower for {container_name}");
@@ -1224,12 +1236,13 @@ impl ContainerReactor {
                     "DEBUG: No output director, using standard output for {container_name}"
                 );
                 // Fall back to standard output
+                let component_name_for_logs = component_name.clone();
                 tokio::spawn(async move {
                     if let Err(e) = docker_client
-                        .follow_container_logs(&container_id, container_name.clone(), color)
+                        .follow_container_logs(&container_id, component_name_for_logs.clone(), color)
                         .await
                     {
-                        error!("Error following logs for {}: {}", container_name, e);
+                        error!("Error following logs for {}: {}", component_name_for_logs, e);
                     }
                 });
             }
