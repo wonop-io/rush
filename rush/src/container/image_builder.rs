@@ -354,40 +354,74 @@ impl ImageBuilder {
         Ok(self.image_exists_in_cache)
     }
 
+    /// Checks if a specific image exists (without modifying internal state)
+    async fn check_specific_image_exists(&self, image_name: &str) -> Result<bool> {
+        use tokio::process::Command;
+
+        log::debug!("Checking if specific image exists: {}", image_name);
+
+        let status = Command::new("docker")
+            .args(["image", "inspect", image_name])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to check image existence: {e}")))?;
+
+        Ok(status.success())
+    }
+
+    /// Retags an existing Docker image
+    async fn retag_image(&self, old_tag: &str, new_tag: &str) -> Result<()> {
+        use tokio::process::Command;
+
+        log::info!("Retagging image from {} to {}", old_tag, new_tag);
+
+        let status = Command::new("docker")
+            .args(["tag", old_tag, new_tag])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to retag image: {e}")))?;
+
+        if !status.success() {
+            return Err(Error::Docker(format!(
+                "Failed to retag image from {} to {}",
+                old_tag, new_tag
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Gets the context directory for this image
+    fn get_context_dir(&self) -> String {
+        // Try to get from build config first
+        if let Some(ref context_dir) = self.build_config.context_dir {
+            return context_dir.clone();
+        }
+
+        // Otherwise derive from build type
+        match &self.build_config.build_type {
+            BuildType::TrunkWasm { context_dir, .. }
+            | BuildType::RustBinary { context_dir, .. }
+            | BuildType::DixiousWasm { context_dir, .. }
+            | BuildType::Script { context_dir, .. }
+            | BuildType::Zola { context_dir, .. }
+            | BuildType::Book { context_dir, .. }
+            | BuildType::Ingress { context_dir, .. } => {
+                context_dir.clone().unwrap_or_else(|| ".".to_string())
+            }
+            _ => ".".to_string(),
+        }
+    }
+
     /// Determines if the image should be rebuilt based on cache and file changes
     pub async fn evaluate_rebuild_needed(&mut self) -> Result<bool> {
         // First check if image exists
-        let exists = self.check_image_exists().await?;
-
-        if !exists {
-            log::info!(
-                "Image {} doesn't exist, rebuild required",
-                self.tagged_image_name()
-            );
-            self.should_rebuild = true;
-            return Ok(true);
-        }
-
-        // If image exists and git tag doesn't have "-wip-", it's a clean build we can reuse
-        if let Some(tag) = &self.git_tag {
-            if !tag.contains("-wip-") {
-                log::info!(
-                    "Image {} exists with clean git tag {}, skipping rebuild",
-                    self.tagged_image_name(),
-                    tag
-                );
-                self.should_rebuild = false;
-                return Ok(false);
-            }
-        }
-
-        // For WIP tags or when explicitly marked for rebuild, we should rebuild
-        log::info!(
-            "Image {} exists but has WIP changes or is marked for rebuild",
-            self.tagged_image_name()
-        );
-        self.should_rebuild = true;
-        Ok(true)
+        self.should_rebuild = !self.check_image_exists().await?;
+        Ok(self.should_rebuild)
     }
 
     /// Generates a build context with secrets from the vault
