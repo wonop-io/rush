@@ -82,6 +82,7 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
             secrets: HashMap::new(), // Would be populated from a vault in a full implementation
             domains: HashMap::new(), // Empty domains map, would be populated from product
             env: HashMap::new(),     // Default to empty environment variables
+            cross_compile: "native".to_string(), // Default to native compilation
         };
 
         print!("Building {component_name} ... ");

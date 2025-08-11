@@ -60,4 +60,7 @@ pub struct BuildContext {
 
     /// Environment variables for the component
     pub env: HashMap<String, String>,
+
+    /// Cross-compilation method ("native" or "cross-rs")
+    pub cross_compile: String,
 }

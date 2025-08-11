@@ -21,5 +21,16 @@ CARGO_TARGET_DIR=./target wasm-trunk build  --release
 
 {% if ssr %}
 export SQLX_OFFLINE=true
+{% if cross_compile == "cross-rs" %}
+# Use cross-rs for SSR binary cross-compilation
+echo "Using cross-rs for SSR binary cross-compilation to {{ rust_target }}"
+if ! command -v cross &> /dev/null; then
+    echo "Error: cross-rs is not installed. Install it with: cargo install cross --git https://github.com/cross-rs/cross"
+    exit 1
+fi
+CARGO_TARGET_DIR=./target cross build --features ssr --release --target {{ rust_target }}
+{% else %}
+# Use native cross-compilation for SSR binary
 CARGO_TARGET_DIR=./target cargo build --features ssr --release --target {{ rust_target }} --config "target.{{ rust_target }}.linker = '{{toolchain.cc}}'"
+{% endif %}
 {% endif %}

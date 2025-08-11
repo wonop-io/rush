@@ -260,6 +260,7 @@ mod tests {
             domains,
             env,
             secrets: HashMap::new(),
+            cross_compile: "native".to_string(),
         }
     }
 

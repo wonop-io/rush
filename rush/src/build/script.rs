@@ -132,6 +132,7 @@ mod tests {
             domains: HashMap::new(),
             env: HashMap::new(),
             secrets: HashMap::new(),
+            cross_compile: "native".to_string(),
         }
     }
 

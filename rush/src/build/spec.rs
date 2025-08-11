@@ -94,6 +94,9 @@ pub struct ComponentBuildSpec {
 
     /// Computed domain for the component
     pub domain: String,
+
+    /// Cross-compilation method for Rust builds ("native" or "cross-rs")
+    pub cross_compile: String,
 }
 
 /// Represents a service specification for a component
@@ -546,6 +549,10 @@ impl ComponentBuildSpec {
             dotenv_secrets,
             domain,
             domains: None,
+            cross_compile: yaml_section
+                .get("cross_compile")
+                .map(|v| v.as_str().unwrap().to_string())
+                .unwrap_or_else(|| "native".to_string()),
         }
     }
 
@@ -649,6 +656,8 @@ impl ComponentBuildSpec {
             secrets,
             domains,
             env: self.dotenv.clone(),
+            cross_compile: self.cross_compile.clone(),
         }
     }
 }
+

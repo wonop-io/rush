@@ -429,6 +429,11 @@ impl ImageBuilder {
                 domains: HashMap::new(),
                 env: HashMap::new(),
                 secrets,
+                cross_compile: if let Some(spec_arc) = &self.spec {
+                    spec_arc.lock().unwrap().cross_compile.clone()
+                } else {
+                    "native".to_string()
+                },
             };
 
             Ok(context)
@@ -452,6 +457,7 @@ impl ImageBuilder {
     /// Builds the Docker image
     pub async fn build(&mut self) -> Result<()> {
         use log::info;
+        use crate::utils::DockerCrossCompileGuard;
 
         // Ensure we have a git tag computed
         if self.git_tag.is_none() {
@@ -475,6 +481,29 @@ impl ImageBuilder {
         // Use the tagged image name with git hash
         let image_tag = self.tagged_image_name();
         info!("Building Docker image: {}", image_tag);
+
+        // Set up cross-compilation environment if needed
+        let (cross_compile, target) = if let Some(spec_arc) = &self.spec {
+            let spec = spec_arc.lock().unwrap();
+            let cross_compile = spec.cross_compile.clone();
+            let target = if let Some(toolchain) = &self.toolchain {
+                toolchain.target().to_docker_target()
+            } else {
+                "linux/amd64".to_string() // Default target
+            };
+            (cross_compile, target)
+        } else {
+            // Default values if spec is not available
+            ("native".to_string(), "linux/amd64".to_string())
+        };
+        
+        // Create cross-compilation guard for native compilation only
+        // cross-rs handles its own Docker environment
+        let _cross_guard = if cross_compile == "native" {
+            Some(DockerCrossCompileGuard::new(&target))
+        } else {
+            None
+        };
 
         // Get the dockerfile and context paths
         let dockerfile_path = self

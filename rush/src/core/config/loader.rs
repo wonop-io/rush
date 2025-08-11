@@ -80,6 +80,13 @@ impl ConfigLoader {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RushdConfig {
     pub env: std::collections::HashMap<String, String>,
+    /// Cross-compilation method: "native" (default) or "cross-rs"
+    #[serde(default = "default_cross_compile")]
+    pub cross_compile: String,
+}
+
+fn default_cross_compile() -> String {
+    "native".to_string()
 }
 
 /// Applies environment variables from rushd.yaml
@@ -92,4 +99,41 @@ pub fn apply_rushd_config(config: &RushdConfig) {
     }
 
     trace!("Rushd configuration applied");
+}
+
+#[cfg(test)]
+mod rushd_config_tests {
+    use super::*;
+
+    #[test]
+    fn test_rushd_config_default_cross_compile() {
+        let yaml_str = r#"
+env:
+  TEST_VAR: test_value
+"#;
+        let config: RushdConfig = serde_yaml::from_str(yaml_str).unwrap();
+        assert_eq!(config.cross_compile, "native");
+    }
+
+    #[test]
+    fn test_rushd_config_cross_rs() {
+        let yaml_str = r#"
+env:
+  TEST_VAR: test_value
+cross_compile: cross-rs
+"#;
+        let config: RushdConfig = serde_yaml::from_str(yaml_str).unwrap();
+        assert_eq!(config.cross_compile, "cross-rs");
+    }
+
+    #[test]
+    fn test_rushd_config_native_explicit() {
+        let yaml_str = r#"
+env:
+  TEST_VAR: test_value
+cross_compile: native
+"#;
+        let config: RushdConfig = serde_yaml::from_str(yaml_str).unwrap();
+        assert_eq!(config.cross_compile, "native");
+    }
 }

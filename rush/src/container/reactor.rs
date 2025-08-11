@@ -1021,7 +1021,53 @@ impl ContainerReactor {
         }
 
         info!("All container images built successfully");
+        
+        // Update services with the actual built image names
+        self.update_service_images()?;
+        
         self.rebuild_in_progress = false;
+        Ok(())
+    }
+    
+    /// Updates the services collection with the actual built image names
+    fn update_service_images(&mut self) -> Result<()> {
+        // Create a new services collection with updated image names
+        let mut updated_services: ServiceCollection = HashMap::new();
+        
+        for (domain, service_list) in &self.services {
+            let mut updated_list = Vec::new();
+            
+            for service in service_list {
+                // Check if we have a built image for this service
+                let updated_image = if let Some(built_image) = self.built_images.get(&service.name) {
+                    built_image.clone()
+                } else {
+                    // Keep the original image name (e.g., for PureDockerImage)
+                    service.image.clone()
+                };
+                
+                // Create a new service with the updated image
+                let updated_service = Arc::new(ContainerService {
+                    id: service.id.clone(),
+                    name: service.name.clone(),
+                    image: updated_image,
+                    host: service.host.clone(),
+                    port: service.port,
+                    target_port: service.target_port,
+                    mount_point: service.mount_point.clone(),
+                    domain: service.domain.clone(),
+                    docker_host: service.docker_host.clone(),
+                });
+                
+                updated_list.push(updated_service);
+            }
+            
+            updated_services.insert(domain.clone(), updated_list);
+        }
+        
+        // Replace the services collection with the updated one
+        self.services = updated_services;
+        
         Ok(())
     }
 
@@ -1868,6 +1914,7 @@ impl ContainerReactor {
             domains: Default::default(),
             env: spec.dotenv.clone(),
             secrets: Default::default(),
+            cross_compile: spec.cross_compile.clone(),
         };
 
         // Create output directory for artifacts
@@ -2024,6 +2071,7 @@ impl ContainerReactor {
             domains: Default::default(),
             env: spec.dotenv.clone(),
             secrets: Default::default(),
+            cross_compile: spec.cross_compile.clone(),
         };
 
         // Check if we're attempting cross-compilation
