@@ -876,7 +876,7 @@ impl ContainerReactor {
             let _tagged_image_name = format!("{image_name}:{image_tag}");
 
             // Check if image already exists before running expensive build operations
-            let needs_rebuild = {
+            let (needs_rebuild, actual_tagged_image) = {
                 // Create a temporary ImageBuilder just to check cache status
                 let service_config = DockerServiceConfig {
                     name: image_name.clone(),
@@ -936,24 +936,28 @@ impl ContainerReactor {
                     image_builder = image_builder.with_toolchain(toolchain.clone());
                 }
 
-                match image_builder.evaluate_rebuild_needed().await {
+                let rebuild_needed = match image_builder.evaluate_rebuild_needed().await {
                     Ok(needed) => needed,
                     Err(e) => {
                         warn!("Failed to evaluate cache status: {}, will rebuild", e);
                         true
                     }
-                }
+                };
+                
+                // Get the actual tagged image name with the computed git tag
+                let actual_image = image_builder.tagged_image_name();
+                
+                (rebuild_needed, actual_image)
             };
 
             if !needs_rebuild {
                 info!(
                     "Image {} already exists with clean git tag, skipping build and build script",
-                    image_name
+                    actual_tagged_image
                 );
-                // Store the image name for later use
-                let tagged_image_name = format!("{}:{}", image_name, image_tag);
+                // Store the actual image name with the correct computed tag for later use
                 self.built_images
-                    .insert(component_name.clone(), tagged_image_name.clone());
+                    .insert(component_name.clone(), actual_tagged_image.clone());
                 continue; // Skip to next component
             }
 
