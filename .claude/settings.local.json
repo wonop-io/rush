@@ -5,7 +5,15 @@
       "Bash(cargo build:*)",
       "Bash(cargo run:*)",
       "Bash(./target/debug/rush:*)",
-      "Bash(rustup target:*)"
+      "Bash(rustup target:*)",
+      "Bash(mv:*)",
+      "Bash(./target/release/rush:*)",
+      "Bash(../rush/target/release/rush io.wonop.helloworld secrets init)",
+      "Bash(../../../rush/target/release/rush io.wonop.helloworld secrets init)",
+      "Bash(touch:*)",
+      "Bash(RUST_LOG=debug ../../../rush/target/release/rush io.wonop.helloworld secrets init)",
+      "Bash(RUST_LOG=trace ../../../rush/target/release/rush:*)",
+      "Bash(RUST_LOG=debug ./rush/target/release/rush io.wonop.helloworld secrets init)"
     ],
     "deny": []
   }
