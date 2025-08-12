@@ -1,0 +1,28 @@
+[package]
+name = "rush-container"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rush-core = { workspace = true }
+rush-config = { workspace = true }
+rush-build = { workspace = true }
+rush-toolchain = { workspace = true }
+rush-security = { workspace = true }
+rush-output = { workspace = true }
+rush-utils = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+bollard = { workspace = true }
+notify = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = "0.4"

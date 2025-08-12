@@ -1,0 +1,19 @@
+[package]
+name = "rush-toolchain"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rush-core = { workspace = true }
+rush-utils = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+which = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

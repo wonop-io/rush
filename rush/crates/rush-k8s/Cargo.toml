@@ -1,0 +1,25 @@
+[package]
+name = "rush-k8s"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rush-core = { workspace = true }
+rush-config = { workspace = true }
+rush-build = { workspace = true }
+rush-container = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+k8s-openapi = { workspace = true }
+kube = { workspace = true }
+handlebars = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,36 @@
+[package]
+name = "rush-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rush"
+path = "src/main.rs"
+
+[dependencies]
+rush-core = { workspace = true }
+rush-utils = { workspace = true }
+rush-config = { workspace = true }
+rush-toolchain = { workspace = true }
+rush-security = { workspace = true }
+rush-build = { workspace = true }
+rush-output = { workspace = true }
+rush-container = { workspace = true }
+rush-k8s = { workspace = true }
+
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+console = { workspace = true }
+dialoguer = { workspace = true }
+directories = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
