@@ -3,6 +3,7 @@ use rush_core::constants::*;
 use rush_container::ContainerReactor;
 use rush_config::{Config, ConfigLoader};
 use rush_config::environment::EnvironmentGenerator;
+use rush_security::EnvironmentDefinitions;
 use rush_core::error::Result;
 use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
 use rush_security::{SecretsDefinitions, SecretsEncoder, Vault};
@@ -255,7 +256,8 @@ fn create_vault(
 }
 
 fn setup_environment_files(config: &Config, product_name: &str, environment: &str) -> Result<()> {
-    let public_environment = EnvironmentGenerator::new(
+    // Use EnvironmentDefinitions for component-level .env generation
+    let env_definitions = EnvironmentDefinitions::new(
         product_name.to_string(),
         &format!("{}/stack.env.base.yaml", config.product_path().display()),
         &format!(
@@ -265,12 +267,32 @@ fn setup_environment_files(config: &Config, product_name: &str, environment: &st
         ),
     );
 
-    match public_environment.generate_dotenv_files() {
-        Ok(_) => Ok(()),
+    match env_definitions.generate_dotenv_files() {
+        Ok(_) => {
+            debug!("Generated component-level .env files");
+            Ok(())
+        }
         Err(e) => {
-            error!("Unable to generate dotenv files: {}", e);
-            eprintln!("{e:#?}");
-            process::exit(1);
+            // Fallback to simple generator if component-level fails
+            warn!("Component-level env generation failed, trying simple generator: {}", e);
+            let simple_generator = EnvironmentGenerator::new(
+                product_name.to_string(),
+                &format!("{}/stack.env.base.yaml", config.product_path().display()),
+                &format!(
+                    "{}/stack.env.{}.yaml",
+                    config.product_path().display(),
+                    environment
+                ),
+            );
+            
+            match simple_generator.generate_dotenv_files() {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    error!("Unable to generate dotenv files: {}", e);
+                    eprintln!("{e:#?}");
+                    process::exit(1);
+                }
+            }
         }
     }
 }

@@ -10,3 +10,4 @@ pub use vault::{Vault, FileVault, DotenvVault};
 // Re-export common types
 pub use secrets::definitions::*;
 pub use secrets::encoder::{SecretsEncoder, Base64SecretsEncoder, NoopEncoder};
+pub use env_defs::EnvironmentDefinitions;
