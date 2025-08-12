@@ -55,17 +55,57 @@ Before installing `rush`, ensure that you have the following prerequisites insta
 
 ### Installing `rush`
 
-To install `rush`, run the following command:
+#### Option 1: Install from crates.io
+
+To install the latest published version of `rush` from crates.io:
 ```bash
 cargo install rush-cli
 ```
+
+To update an existing installation to the latest version:
+```bash
+cargo install rush-cli --force
+```
+
+#### Option 2: Install from Source
+
+To build and install `rush` from the source code:
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/wonop-io/rush.git
+   cd rush
+   ```
+
+2. Build and install from the local source:
+   ```bash
+   cargo install --path rush/crates/rush-cli
+   ```
+
+3. For development with automatic rebuilds on code changes:
+   ```bash
+   cd rush/crates/rush-cli
+   cargo watch -x 'install --path .'
+   ```
+
+#### Option 3: Install a Specific Version
+
+To install a specific version of `rush-cli`:
+```bash
+cargo install rush-cli --version 0.1.0
+```
+
+#### Post-Installation
 
 Make sure that the cargo binary directory is in your `PATH`:
 ```sh
 source $HOME/.cargo/env
 ```
 
-If you have already installed `rush`, you can update it by running the installation command again.
+Verify the installation:
+```bash
+rush --version
+```
 
 ---
 

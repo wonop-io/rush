@@ -2371,7 +2371,7 @@ dependencies = [
 
 [[package]]
 name = "rush-build"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "handlebars",
@@ -2392,7 +2392,7 @@ dependencies = [
 
 [[package]]
 name = "rush-cli"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2428,7 +2428,7 @@ dependencies = [
 
 [[package]]
 name = "rush-config"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -2447,7 +2447,7 @@ dependencies = [
 
 [[package]]
 name = "rush-container"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2473,7 +2473,7 @@ dependencies = [
 
 [[package]]
 name = "rush-core"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2488,7 +2488,7 @@ dependencies = [
 
 [[package]]
 name = "rush-k8s"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "handlebars",
@@ -2512,7 +2512,7 @@ dependencies = [
 
 [[package]]
 name = "rush-output"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2531,7 +2531,7 @@ dependencies = [
 
 [[package]]
 name = "rush-security"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2557,7 +2557,7 @@ dependencies = [
 
 [[package]]
 name = "rush-toolchain"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -2572,7 +2572,7 @@ dependencies = [
 
 [[package]]
 name = "rush-utils"
-version = "0.0.21"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
