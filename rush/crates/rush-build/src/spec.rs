@@ -4,15 +4,15 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::build::Artefact;
-use crate::build::BuildContext;
-use crate::build::BuildScript;
-use crate::build::BuildType;
-use crate::build::Variables;
-use crate::core::config::Config;
-use crate::core::dotenv::load_dotenv;
-use crate::toolchain::ToolchainContext;
-use crate::utils::PathMatcher;
+use crate::Artefact;
+use crate::BuildContext;
+use crate::BuildScript;
+use crate::BuildType;
+use crate::Variables;
+use rush_config::Config;
+use rush_core::dotenv::load_dotenv;
+use rush_toolchain::ToolchainContext;
+use rush_utils::PathMatcher;
 
 /// Represents the build specification for a component
 #[derive(Debug, Clone)]

@@ -3,9 +3,9 @@
 //! This module provides utilities for creating, checking, and managing Docker networks
 //! that are used to connect containers.
 
-use crate::container::DockerClient;
-use rush_core::error::Result;
-use crate::utils::run_command;
+use crate::DockerClient;
+use rush_core::error::{Error, Result};
+use rush_utils::run_command;
 use colored::Colorize;
 use log::{debug, trace, warn};
 use std::process::Command;
@@ -78,7 +78,8 @@ impl DockerNetwork {
             &self.docker_cmd,
             vec!["network", "create", "-d", "bridge", &self.name],
         )
-        .await?;
+        .await
+        .map_err(|e| Error::Docker(e.to_string()))?;
         Ok(())
     }
 
@@ -103,7 +104,8 @@ impl DockerNetwork {
             &self.docker_cmd,
             vec!["network", "rm", &self.name],
         )
-        .await?;
+        .await
+        .map_err(|e| Error::Docker(e.to_string()))?;
         Ok(())
     }
 

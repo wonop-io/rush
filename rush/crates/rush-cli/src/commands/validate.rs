@@ -1,5 +1,5 @@
 use rush_core::error::{Error, Result};
-use crate::k8s::{K8sValidator, KubeconformValidator, KubevalValidator};
+use rush_k8s::validation::{K8sValidator, KubeconformValidator, KubevalValidator};
 use log::{error, info};
 use std::path::Path;
 

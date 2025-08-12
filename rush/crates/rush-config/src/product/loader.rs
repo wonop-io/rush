@@ -6,9 +6,9 @@ use std::sync::Arc;
 use log::{debug, error, trace, warn};
 use serde_yaml::Value;
 
-use crate::core::config::Config;
-use crate::core::product::{Product, ProductComponent};
-use crate::utils::read_to_string;
+use crate::types::Config;
+use crate::product::types::{Product, ProductComponent};
+use rush_utils::read_to_string;
 
 /// Loads product definitions from a product directory
 pub struct ProductLoader {

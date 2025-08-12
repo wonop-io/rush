@@ -1,5 +1,5 @@
-use crate::toolchain::Platform;
-use crate::utils::{first_which, resolve_toolchain_path};
+use crate::platform::Platform;
+use rush_utils::{first_which, resolve_toolchain_path};
 use log::{debug, trace, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

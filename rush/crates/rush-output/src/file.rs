@@ -27,7 +27,7 @@ impl FileOutputDirector {
         if !output_dir.exists() {
             tokio::fs::create_dir_all(&output_dir)
                 .await
-                .map_err(rush_core::error::Error::Io)?;
+                .map_err(rush_core::Error::Io)?;
         }
 
         Ok(Self {
@@ -61,7 +61,7 @@ impl FileOutputDirector {
                 .append(true)
                 .open(&file_path)
                 .await
-                .map_err(rush_core::error::Error::Io)?;
+                .map_err(rush_core::Error::Io)?;
 
             let writer = BufWriter::new(file);
             self.writers.insert(source.name.clone(), writer);
@@ -128,7 +128,7 @@ impl OutputDirector for FileOutputDirector {
             writer
                 .write_all(line.as_bytes())
                 .await
-                .map_err(rush_core::error::Error::Io)?;
+                .map_err(rush_core::Error::Io)?;
         }
 
         Ok(())
@@ -139,7 +139,7 @@ impl OutputDirector for FileOutputDirector {
             writer
                 .flush()
                 .await
-                .map_err(rush_core::error::Error::Io)?;
+                .map_err(rush_core::Error::Io)?;
         }
         Ok(())
     }
@@ -167,7 +167,7 @@ fn sanitize_filename(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::output::{OutputSource, OutputStream};
+    use crate::{OutputSource, OutputStream};
     use tempfile::TempDir;
     use tokio::fs;
 

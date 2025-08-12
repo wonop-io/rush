@@ -3,9 +3,9 @@
 //! This module provides functionality for generating, processing, and managing
 //! Kubernetes manifests, including templating, validation, and transformation.
 
-use crate::build::BuildContext;
+use rush_build::BuildContext;
 use rush_core::error::{Error, Result};
-use crate::k8s::context::KubernetesContext;
+use crate::context::KubernetesContext;
 use log::{debug, info, warn};
 use serde_yaml::{self, Value};
 use std::collections::HashMap;

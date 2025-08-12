@@ -4,10 +4,20 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Rush Deployment: A tool to bring the development experience as close to the production experience as possible."
+readme = "../../README.md"
+keywords = ["yew", "axum", "docker", "kubernetes", "cross-compilation"]
+categories = ["command-line-utilities", "development-tools", "web-programming"]
 
 [[bin]]
 name = "rush"
 path = "src/main.rs"
+
+[lib]
+name = "rush_cli"
+path = "src/lib.rs"
 
 [dependencies]
 rush-core = { workspace = true }
@@ -21,16 +31,25 @@ rush-container = { workspace = true }
 rush-k8s = { workspace = true }
 
 anyhow = { workspace = true }
-thiserror = { workspace = true }
+async-trait = { workspace = true }
 clap = { workspace = true }
-tokio = { workspace = true }
-log = { workspace = true }
+console-subscriber = { workspace = true }
 env_logger = { workspace = true }
+log = { workspace = true }
+colored = { workspace = true }
+directories = { workspace = true }
+dotenv = { workspace = true }
+futures = { workspace = true }
+notify = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-console = { workspace = true }
-dialoguer = { workspace = true }
-directories = { workspace = true }
+serde_yaml = { workspace = true }
+tera = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
+ctor = "0.2.6"
+serial_test = "3.2.0"
+tempfile = "3.12.0"
+tokio-test = "0.4"

@@ -7,12 +7,20 @@ use tera::{try_get_value, Context, Result};
 
 lazy_static! {
     pub static ref TEMPLATES: Tera = {
-        let template_path = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), "templates/**/*");
+        // Get the workspace root by going up from the crate directory
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let workspace_root = std::path::Path::new(manifest_dir)
+            .parent()  // rush-utils -> crates
+            .and_then(|p| p.parent())  // crates -> workspace root
+            .unwrap_or_else(|| std::path::Path::new("."));
+        
+        let template_path = format!("{}/templates/**/*", workspace_root.display());
 
         let mut tera = match Tera::new(&template_path) {
             Ok(t) => t,
             Err(e) => {
                 println!("Parsing error(s): {e}");
+                println!("Looking for templates at: {}", template_path);
                 ::std::process::exit(1);
             }
         };

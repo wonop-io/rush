@@ -3,7 +3,7 @@
 //! This module provides functionality for managing container services, including
 //! configuration, launch parameters, and runtime state.
 
-use crate::build::ServiceSpec;
+pub use rush_build::ServiceSpec;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;

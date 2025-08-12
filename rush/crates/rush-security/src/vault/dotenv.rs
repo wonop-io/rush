@@ -1,5 +1,5 @@
-use crate::core::dotenv::{load_dotenv, save_dotenv};
-use crate::security::vault::vault_trait::Vault;
+use rush_core::dotenv::{load_dotenv, save_dotenv};
+use crate::vault::vault_trait::Vault;
 use async_trait::async_trait;
 use log::{debug, warn};
 use serde_yaml::Value;

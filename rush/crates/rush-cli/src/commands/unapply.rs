@@ -1,8 +1,8 @@
-use crate::cli::CommonCliArgs;
-use crate::container::ContainerReactor;
-use crate::core::config::Config;
+use crate::args::CommonCliArgs;
+use rush_container::ContainerReactor;
+use rush_config::Config;
 use rush_core::error::{Error, Result};
-use crate::k8s::ContextManager;
+use rush_k8s::ContextManager;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -39,7 +39,7 @@ pub async fn execute(_args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
     let manifest_path = config.output_path().join("k8s");
     let output_dir = manifest_path.display().to_string();
 
-    match crate::utils::run_command(
+    match rush_utils::run_command(
         "kubectl delete",
         &kubectl_path,
         vec!["delete", "-R", "-f", &output_dir],

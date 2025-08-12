@@ -2,6 +2,7 @@ use log::{debug, error, trace};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::env;
 
 /// Reads the contents of a file to a string
 ///
@@ -213,5 +214,32 @@ pub fn read_to_string_or_default<P: AsRef<Path>>(path: P, default: String) -> St
             error!("Failed to read file {:?}: {}", path.as_ref(), e);
             default
         }
+    }
+}
+
+/// Find the project root by looking for specific marker files
+///
+/// Searches upward from the current directory for files that indicate
+/// a project root (rush.yaml, .git, Cargo.toml, package.json, etc.)
+///
+/// # Returns
+///
+/// Returns an Option containing the project root path if found
+pub fn find_project_root() -> Option<PathBuf> {
+    let current_dir = env::current_dir().ok()?;
+    let mut path = current_dir.as_path();
+    
+    loop {
+        // Check for various project root indicators
+        if path.join("rush.yaml").exists() 
+            || path.join("rush.yml").exists()
+            || path.join(".git").exists()
+            || path.join("Cargo.toml").exists()
+            || path.join("package.json").exists() {
+            return Some(path.to_path_buf());
+        }
+        
+        // Move up to parent directory
+        path = path.parent()?;
     }
 }

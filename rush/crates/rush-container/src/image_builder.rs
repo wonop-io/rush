@@ -1,12 +1,12 @@
-use crate::build::ComponentBuildSpec;
-use crate::build::{BuildContext, BuildType};
+use rush_build::ComponentBuildSpec;
+use rush_build::{BuildContext, BuildType};
 use rush_core::constants::*;
-use crate::container::docker::{DockerClient, DockerService, DockerServiceConfig};
-use crate::container::DockerImage;
+use crate::docker::{DockerClient, DockerService, DockerServiceConfig};
+use crate::DockerImage;
 use rush_core::error::{Error, Result};
-use crate::security::Vault;
-use crate::toolchain::{Platform, ToolchainContext};
-use crate::utils::PathMatcher;
+use rush_security::Vault;
+use rush_toolchain::{Platform, ToolchainContext};
+use rush_utils::PathMatcher;
 use log::warn;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -493,7 +493,7 @@ impl ImageBuilder {
 
     /// Builds the Docker image
     pub async fn build(&mut self) -> Result<()> {
-        use crate::utils::DockerCrossCompileGuard;
+        use rush_utils::DockerCrossCompileGuard;
         use log::info;
 
         // Ensure we have a git tag computed
@@ -698,13 +698,13 @@ impl ImageBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::container::docker::DockerService;
-    use crate::container::image_builder::ImageBuilder;
+    use crate::docker::DockerService;
+    use crate::image_builder::ImageBuilder;
     use std::sync::Arc;
 
     #[test]
     fn test_image_builder_creation() {
-        let mock_client = Arc::new(crate::container::docker::DockerCliClient::new(
+        let mock_client = Arc::new(crate::docker::DockerCliClient::new(
             "docker".to_string(),
         ));
         let config = DockerServiceConfig {

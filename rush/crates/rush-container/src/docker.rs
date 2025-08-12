@@ -4,7 +4,7 @@
 //! manage, and monitor containers.
 
 use rush_core::error::{Error, Result};
-use crate::output::{OutputDirector, OutputSource, OutputStream};
+use rush_output::{OutputDirector, OutputSource, OutputStream};
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::fmt;
@@ -261,7 +261,7 @@ impl DockerClient for DockerCliClient {
         );
 
         // Use the Directory guard to change to the build context directory
-        let _dir_guard = crate::utils::Directory::chdir(context);
+        let _dir_guard = rush_utils::Directory::chdir(context);
 
         let output = Command::new(&self.docker_path)
             .args([
@@ -864,7 +864,7 @@ impl DockerService {
 }
 
 // Type alias for backward compatibility with old code
-pub type DockerImage = crate::container::image_builder::ImageBuilder;
+pub type DockerImage = crate::image_builder::ImageBuilder;
 
 #[cfg(test)]
 mod tests {

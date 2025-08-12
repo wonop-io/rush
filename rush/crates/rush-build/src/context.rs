@@ -1,7 +1,6 @@
-use crate::build::BuildType;
-use crate::container::ServicesSpec;
-use crate::toolchain::Platform;
-use crate::toolchain::ToolchainContext;
+use crate::{BuildType, ServiceSpec};
+use rush_toolchain::Platform;
+use rush_toolchain::ToolchainContext;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str;
@@ -29,7 +28,7 @@ pub struct BuildContext {
     pub toolchain: ToolchainContext,
 
     /// Services specification for container coordination
-    pub services: ServicesSpec,
+    pub services: HashMap<String, Vec<ServiceSpec>>,
 
     /// Current environment (dev, prod, etc.)
     pub environment: String,

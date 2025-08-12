@@ -6,9 +6,9 @@
 use std::error::Error;
 use tera::Context;
 
-use crate::build::build_type::BuildType;
-use crate::build::context::BuildContext;
-use crate::utils::TEMPLATES;
+use crate::build_type::BuildType;
+use crate::context::BuildContext;
+use rush_utils::TEMPLATES;
 use log::{debug, trace};
 
 /// Represents a build script that can be generated for a component
@@ -98,10 +98,10 @@ impl BuildScript {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::build::build_type::BuildType;
-    use crate::build::context::BuildContext;
-    use crate::toolchain::Platform;
-    use crate::toolchain::ToolchainContext;
+    use crate::build_type::BuildType;
+    use crate::context::BuildContext;
+    use rush_toolchain::Platform;
+    use rush_toolchain::ToolchainContext;
     use std::collections::HashMap;
 
     fn create_test_context() -> BuildContext {

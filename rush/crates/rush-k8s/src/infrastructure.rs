@@ -4,8 +4,8 @@
 //! including operations like cloning repositories, copying manifests, and committing changes.
 
 use rush_core::error::{Error, Result};
-use crate::k8s::context::KubernetesContext;
-use crate::toolchain::ToolchainContext;
+use crate::context::KubernetesContext;
+use rush_toolchain::ToolchainContext;
 use log::{debug, info};
 use std::fs;
 use std::path::{Path, PathBuf};

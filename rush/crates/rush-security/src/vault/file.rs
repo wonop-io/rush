@@ -1,4 +1,4 @@
-use crate::security::Vault;
+use crate::vault::vault_trait::Vault;
 use async_trait::async_trait;
 use log::{debug, trace};
 use serde_json::{json, Value};

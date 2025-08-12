@@ -2,19 +2,19 @@
 //!
 //! The reactor is responsible for orchestrating container lifecycle events,
 //! monitoring containers, and handling file change events that trigger rebuilds.
-use crate::build::{BuildType, ComponentBuildSpec, Variables};
+use rush_build::{BuildType, ComponentBuildSpec, Variables};
 use rush_core::constants::DOCKER_TAG_LATEST;
-use crate::container::DockerCliClient;
-use crate::container::Status;
-use crate::container::{
+use crate::DockerCliClient;
+use crate::Status;
+use crate::{
     docker::{ContainerStatus, DockerClient, DockerService, DockerServiceConfig},
     network::setup_network,
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
     BuildProcessor, ContainerService, ServiceCollection,
 };
-use crate::core::config::Config;
+use rush_config::Config;
 use rush_core::error::{Error, Result};
-use crate::security::{FileVault, SecretsEncoder, Vault};
+use rush_security::{FileVault, SecretsEncoder, Vault};
 use rush_core::shutdown;
 use notify::RecommendedWatcher;
 
@@ -53,7 +53,7 @@ pub struct ContainerReactor {
     vault: Arc<Mutex<dyn Vault + Send>>,
 
     /// Toolchain for build operations
-    toolchain: Option<Arc<crate::toolchain::ToolchainContext>>,
+    toolchain: Option<Arc<rush_toolchain::ToolchainContext>>,
 
     /// Running container services
     running_services: Vec<DockerService>,
@@ -74,7 +74,7 @@ pub struct ContainerReactor {
     secrets_encoder: Arc<dyn SecretsEncoder>,
 
     /// Output director for handling container logs
-    output_director: Option<crate::output::SharedOutputDirector>,
+    output_director: Option<rush_output::SharedOutputDirector>,
 
     /// Mapping of component names to their actual built image names (with git tags)
     built_images: HashMap<String, String>,
@@ -129,9 +129,9 @@ enum WaitResult {
 
 impl ContainerReactor {
     /// Sets the output director for handling container logs
-    pub fn set_output_director(&mut self, director: Box<dyn crate::output::OutputDirector>) {
+    pub fn set_output_director(&mut self, director: Box<dyn rush_output::OutputDirector>) {
         eprintln!("DEBUG: ContainerReactor::set_output_director called");
-        self.output_director = Some(crate::output::SharedOutputDirector::new(director));
+        self.output_director = Some(rush_output::SharedOutputDirector::new(director));
         eprintln!("DEBUG: Output director has been set");
     }
     /// Creates a new ContainerReactor
@@ -158,7 +158,7 @@ impl ContainerReactor {
         let (shutdown_sender, _) = broadcast::channel(8);
 
         // Create the toolchain for build operations
-        let toolchain = Some(Arc::new(crate::toolchain::ToolchainContext::default()));
+        let toolchain = Some(Arc::new(rush_toolchain::ToolchainContext::default()));
 
         Ok(Self {
             config,
@@ -197,7 +197,7 @@ impl ContainerReactor {
             PathBuf::from("/tmp/vault"),
             None,
         )));
-        let secrets_encoder = Arc::new(crate::security::NoopEncoder);
+        let secrets_encoder = Arc::new(rush_security::NoopEncoder);
 
         // Create reactor config
         let reactor_config = ContainerReactorConfig {
@@ -611,7 +611,7 @@ impl ContainerReactor {
     /// 4. Handling shutdowns and rebuilds
     async fn launch_loop(&mut self) -> Result<()> {
         let working_dir = self.config.product_dir.clone();
-        let _dir_guard = crate::utils::Directory::chpath(&working_dir);
+        let _dir_guard = rush_utils::Directory::chpath(&working_dir);
 
         let shutdown_token = shutdown::global_shutdown().cancellation_token();
         let mut should_continue = true;
@@ -908,7 +908,7 @@ impl ContainerReactor {
                     component_dir.join(&context_dir)
                 };
 
-                let build_config = crate::container::BuildConfig {
+                let build_config = crate::BuildConfig {
                     build_type: spec.build_type.clone(),
                     dockerfile_path: Some(dockerfile.to_string_lossy().to_string()),
                     context_dir: Some(context.to_string_lossy().to_string()),
@@ -918,7 +918,7 @@ impl ContainerReactor {
                     mount_point: spec.mount_point.clone(),
                 };
 
-                let mut image_builder = crate::container::ImageBuilder::new(
+                let mut image_builder = crate::ImageBuilder::new(
                     service,
                     self.docker_client.clone(),
                     component_name.to_string(),
@@ -1060,7 +1060,7 @@ impl ContainerReactor {
 
             // Set up Docker cross-compilation environment
             let target_platform = "linux/amd64"; // TODO: Should be configurable based on target
-            let _docker_guard = crate::utils::DockerCrossCompileGuard::new(target_platform);
+            let _docker_guard = rush_utils::DockerCrossCompileGuard::new(target_platform);
 
             match self
                 .build_image(&image_name, image_tag, &context, &dockerfile, spec)
@@ -1303,7 +1303,7 @@ impl ContainerReactor {
                 let director = output_director.clone();
                 // Use component name for the output source label, not full container name
                 let source =
-                    crate::output::OutputSource::with_color(&component_name, "container", color);
+                    rush_output::OutputSource::with_color(&component_name, "container", color);
 
                 tokio::spawn(async move {
                     eprintln!("DEBUG: Starting log follower for {container_name}");
@@ -1958,9 +1958,9 @@ impl ContainerReactor {
 
     /// Renders artifacts for a component before Docker build
     async fn render_artifacts_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
-        use crate::build::{Artefact, BuildContext, ServiceSpec};
+        use rush_build::{Artefact, BuildContext, ServiceSpec};
         use rush_core::error::Error;
-        use crate::toolchain::{Platform, ToolchainContext};
+        use rush_toolchain::{Platform, ToolchainContext};
         use std::collections::HashMap;
         use std::fs;
         use std::path::{Path, PathBuf};
@@ -2138,10 +2138,10 @@ impl ContainerReactor {
 
     /// Runs the build script for a component before Docker build
     async fn run_build_script_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
-        use crate::build::{BuildContext, BuildScript};
+        use rush_build::{BuildContext, BuildScript};
         use rush_core::error::Error;
-        use crate::toolchain::{Platform, ToolchainContext};
-        use crate::utils::run_command;
+        use rush_toolchain::{Platform, ToolchainContext};
+        use rush_utils::run_command;
 
         // Skip components that don't need build scripts
         if !spec.build_type.requires_docker_build() {
@@ -2263,7 +2263,7 @@ impl ContainerReactor {
 
         // Use Directory guard to change to build directory and execute the script
         let output = {
-            let _dir_guard = crate::utils::Directory::chpath(&build_dir);
+            let _dir_guard = rush_utils::Directory::chpath(&build_dir);
             run_command("Build script", "bash", vec!["./build_script.sh"]).await
         };
 
@@ -2363,7 +2363,7 @@ impl ContainerReactor {
         );
 
         // Use the actual build type from the spec to preserve location information
-        let build_config = crate::container::BuildConfig {
+        let build_config = crate::BuildConfig {
             build_type: spec.build_type.clone(),
             dockerfile_path: Some(dockerfile.to_string_lossy().to_string()),
             context_dir: Some(context_dir.to_string_lossy().to_string()),
@@ -2373,7 +2373,7 @@ impl ContainerReactor {
             mount_point: spec.mount_point.clone(),
         };
 
-        let mut image_builder = crate::container::ImageBuilder::new(
+        let mut image_builder = crate::ImageBuilder::new(
             service,
             self.docker_client.clone(),
             component_name.to_string(),
@@ -2420,8 +2420,8 @@ fn get_git_folder_hash(subdirectory_path: &str) -> Result<String> {
 async fn follow_container_logs_with_shared_director(
     _docker_client: Arc<dyn DockerClient>,
     container_id: &str,
-    source: crate::output::OutputSource,
-    director: crate::output::SharedOutputDirector,
+    source: rush_output::OutputSource,
+    director: rush_output::SharedOutputDirector,
 ) -> Result<()> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -2463,7 +2463,7 @@ async fn follow_container_logs_with_shared_director(
                             eprintln!("DEBUG: stdout line {}: {}", line_count, line.trim());
                         }
                         let output_data = line.as_bytes().to_vec();
-                        let stream = crate::output::OutputStream::stdout(output_data);
+                        let stream = rush_output::OutputStream::stdout(output_data);
                         if let Err(e) = director_clone.write_output(&source_clone, &stream).await {
                             error!("Failed to write stdout output: {}", e);
                             break;
@@ -2507,7 +2507,7 @@ async fn follow_container_logs_with_shared_director(
                             eprintln!("DEBUG: stderr line {}: {}", line_count, line.trim());
                         }
                         let output_data = line.as_bytes().to_vec();
-                        let stream = crate::output::OutputStream::stderr(output_data);
+                        let stream = rush_output::OutputStream::stderr(output_data);
                         if let Err(e) = director_clone.write_output(&source_clone, &stream).await {
                             error!("Failed to write stderr output: {}", e);
                             break;

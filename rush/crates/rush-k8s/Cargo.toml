@@ -10,6 +10,8 @@ rush-core = { workspace = true }
 rush-config = { workspace = true }
 rush-build = { workspace = true }
 rush-container = { workspace = true }
+rush-toolchain = { workspace = true }
+rush-utils = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
@@ -20,6 +22,7 @@ tokio = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
 handlebars = { workspace = true }
+tera = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

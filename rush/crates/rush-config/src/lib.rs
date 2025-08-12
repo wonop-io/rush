@@ -1,11 +1,11 @@
 //! Rush Config - Configuration management
 
-pub mod config;
 pub mod dotenv;
 pub mod environment;
+pub mod loader;
 pub mod product;
 pub mod types;
+pub mod validator;
 
-pub use config::{Config, ConfigLoader};
-pub use environment::Environment;
-pub use product::Product;
+pub use loader::ConfigLoader;
+pub use types::Config;

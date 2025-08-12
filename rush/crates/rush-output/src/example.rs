@@ -1,5 +1,5 @@
 use rush_core::error::Result;
-use crate::output::{
+use crate::{
     BufferedOutputDirector, OutputDirector, OutputSource, OutputStream, StdOutputDirector,
 };
 

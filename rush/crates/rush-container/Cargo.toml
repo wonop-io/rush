@@ -16,12 +16,14 @@ rush-utils = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+serde_yaml = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 bollard = { workspace = true }
-notify = { workspace = true }
+colored = { workspace = true }
 futures = { workspace = true }
+notify = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

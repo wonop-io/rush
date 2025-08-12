@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust
-/// use rush_cli::utils::Directory;
+/// use rush_utils::Directory;
 ///
 /// // The directory is changed when the guard is created
 /// {
@@ -46,7 +46,7 @@ impl Directory {
     /// # Examples
     ///
     /// ```rust
-    /// use rush_cli::utils::Directory;
+    /// use rush_utils::Directory;
     /// let _guard = Directory::chdir("/tmp");
     /// // Work in /tmp
     /// // Directory is restored when _guard is dropped
@@ -78,7 +78,7 @@ impl Directory {
     /// # Examples
     ///
     /// ```rust
-    /// use rush_cli::utils::Directory;
+    /// use rush_utils::Directory;
     /// use std::path::Path;
     /// let path = Path::new("/tmp");
     /// let _guard = Directory::chpath(path);

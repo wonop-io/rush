@@ -119,10 +119,10 @@ impl OutputDirector for StdOutputDirector {
         use std::io::{self, Write};
         io::stdout()
             .flush()
-            .map_err(rush_core::error::Error::Io)?;
+            .map_err(rush_core::Error::Io)?;
         io::stderr()
             .flush()
-            .map_err(rush_core::error::Error::Io)?;
+            .map_err(rush_core::Error::Io)?;
         Ok(())
     }
 
@@ -138,7 +138,7 @@ impl OutputDirector for StdOutputDirector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::output::{OutputSource, OutputStream};
+    use crate::{OutputSource, OutputStream};
 
     #[tokio::test]
     async fn test_std_output_director() {

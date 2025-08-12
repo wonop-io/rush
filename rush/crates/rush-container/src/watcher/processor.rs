@@ -12,7 +12,7 @@ use log::{debug, info};
 use tokio::time;
 
 use rush_core::error::Result;
-use crate::utils::PathMatcher;
+use rush_utils::PathMatcher;
 
 /// Processes file changes and determines rebuild needs
 #[derive(Debug, Clone)]

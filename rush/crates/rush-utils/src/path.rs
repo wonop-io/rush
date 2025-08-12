@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```
-/// use rush_cli::utils::expand_path;
+/// use rush_utils::expand_path;
 ///
 /// let expanded = expand_path("~/projects");
 /// // This will expand to the user's home directory + "/projects"

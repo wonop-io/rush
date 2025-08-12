@@ -4,8 +4,8 @@
 //! SecretsProvider trait, enabling a consistent interface for accessing secrets across
 //! different storage backends.
 
-use crate::security::secrets::{Environment, SecretError, SecretsProvider};
-use crate::security::vault::vault_trait::Vault;
+use crate::secrets::{Environment, SecretError, SecretsProvider};
+use crate::vault::vault_trait::Vault;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};

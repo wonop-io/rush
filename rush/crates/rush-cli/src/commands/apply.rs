@@ -1,7 +1,7 @@
-use crate::container::ContainerService;
-use crate::core::config::Config;
+use rush_container::ContainerService;
+use rush_config::Config;
 use rush_core::error::Result;
-use crate::k8s::ContextManager;
+use rush_k8s::ContextManager;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -36,7 +36,7 @@ pub async fn execute(
     // Use recursive apply on the directory
     let output_dir = manifest_path.display().to_string();
 
-    let result = crate::utils::run_command(
+    let result = rush_utils::run_command(
         "kubectl apply",
         &kubectl,
         vec!["apply", "-R", "-f", &output_dir],

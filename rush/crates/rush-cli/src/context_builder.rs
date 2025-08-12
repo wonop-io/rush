@@ -1,13 +1,13 @@
-use crate::cli::context::CliContext;
+use crate::context::CliContext;
 use rush_core::constants::*;
-use crate::container::ContainerReactor;
-use crate::core::config::{Config, ConfigLoader};
-use crate::core::environment::EnvironmentGenerator;
+use rush_container::ContainerReactor;
+use rush_config::{Config, ConfigLoader};
+use rush_config::environment::EnvironmentGenerator;
 use rush_core::error::Result;
-use crate::k8s::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
-use crate::security::{Base64SecretsEncoder, SecretsDefinitions, SecretsEncoder, Vault};
-use crate::toolchain::{Platform, ToolchainContext};
-use crate::utils::Directory;
+use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
+use rush_security::{SecretsDefinitions, SecretsEncoder, Vault};
+use rush_toolchain::{Platform, ToolchainContext};
+use rush_utils::Directory;
 use clap::ArgMatches;
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
@@ -222,7 +222,8 @@ fn create_vault(
     config: &Config,
     name: &str,
 ) -> Arc<Mutex<dyn Vault + Send>> {
-    use crate::security::{DotenvVault, FileVault, OnePassword};
+    use rush_security::{DotenvVault, FileVault};
+    use rush_security::vault::OnePassword;
 
     match name {
         ".env" => {
@@ -289,7 +290,7 @@ fn create_reactor(
     silence_components: Vec<String>,
 ) -> Result<ContainerReactor> {
     // TODO: Resolve conflicting name for NoopEncoder
-    let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(crate::security::NoopEncoder);
+    let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
     // TODO: Fix k8s encoding - also this seems redudant or at least very similar to dev
     let _k8s_encoder = match config.k8s_encoder() {
         "kubeseal" => {

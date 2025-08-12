@@ -1,7 +1,7 @@
-use crate::container::ContainerService;
-use crate::core::config::Config;
+use rush_container::ContainerService;
+use rush_config::Config;
 use rush_core::error::{Error, Result};
-use crate::k8s::ContextManager;
+use rush_k8s::ContextManager;
 use log::{debug, info};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -49,7 +49,7 @@ pub async fn execute(
 
     let output_dir = manifest_path.display().to_string();
 
-    let result = crate::utils::run_command(
+    let result = rush_utils::run_command(
         "kubectl apply",
         &kubectl,
         vec!["apply", "-R", "-f", &output_dir],

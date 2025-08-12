@@ -4,6 +4,7 @@
 //! all other Rush crates.
 
 pub mod constants;
+pub mod dotenv;
 pub mod error;
 pub mod shutdown;
 pub mod types;

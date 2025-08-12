@@ -2,13 +2,13 @@ use colored::Colorize;
 use log::{debug, error, info, warn};
 use std::path::Path;
 
-use crate::build::BuildContext;
-use crate::build::BuildScript;
-use crate::build::BuildType;
-use crate::container::ImageBuilder;
+use rush_build::BuildContext;
+use rush_build::BuildScript;
+use rush_build::BuildType;
+use crate::ImageBuilder;
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
-use crate::utils::{run_command_in_window, Directory};
+use rush_utils::{run_command_in_window, Directory};
 
 /// Manages the build process for containers
 pub struct BuildProcessor {

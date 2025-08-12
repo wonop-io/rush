@@ -15,6 +15,8 @@ serde_yaml = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 log = { workspace = true }
+slug = { workspace = true }
+tera = { workspace = true }
 directories = { workspace = true }
 
 [dev-dependencies]

@@ -2,12 +2,11 @@
 
 pub mod context;
 pub mod deployment;
+pub mod encoder;
 pub mod infrastructure;
 pub mod manifests;
-pub mod types;
 pub mod validation;
 
-pub use context::K8sContext;
-pub use deployment::K8sDeployment;
-pub use manifests::ManifestGenerator;
-pub use validation::K8sValidator;
+pub use context::{KubernetesContext, ContextManager};
+pub use deployment::{Manifest as DeploymentManifest, ManifestCollection as DeploymentManifestCollection};
+pub use manifests::{Manifest, ManifestCollection};

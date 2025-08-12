@@ -10,9 +10,9 @@ use notify::{
     Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
 
-use crate::container::watcher::processor::ChangeProcessor;
+use crate::watcher::processor::ChangeProcessor;
 use rush_core::error::Result;
-use crate::utils::PathMatcher;
+use rush_utils::PathMatcher;
 
 /// Configuration for file watching
 #[derive(Debug, Clone)]

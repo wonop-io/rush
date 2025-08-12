@@ -1,8 +1,8 @@
-use crate::cli::context::CliContext;
-use crate::core::config::Config;
+use crate::context::CliContext;
+use rush_config::Config;
 use rush_core::error::{Error, Result};
-use crate::security::Vault;
-use crate::security::{Environment, SecretsProvider};
+use rush_security::Vault;
+use rush_security::{SecretsProvider, secrets::Environment};
 use clap::ArgMatches;
 use log::{error, trace};
 use std::collections::HashMap;

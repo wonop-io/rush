@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
-use crate::container::ContainerHandle;
+use crate::ContainerHandle;
 use rush_core::error::Result;
 
 /// Handles the graceful shutdown of containers.

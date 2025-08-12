@@ -131,7 +131,7 @@ impl<T: OutputDirector> OutputDirector for BufferedOutputDirector<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::output::director::StdOutputDirector;
+    use crate::director::StdOutputDirector;
 
     #[tokio::test]
     async fn test_buffered_output_director_complete_lines() {

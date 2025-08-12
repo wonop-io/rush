@@ -3,9 +3,9 @@
 //! This module provides functionality for generating, validating, and manipulating
 //! Kubernetes resource manifests for deployment.
 
-use crate::build::BuildContext;
+use rush_build::BuildContext;
 use rush_core::error::{Error, Result};
-use crate::k8s::context::KubernetesContext;
+use crate::context::KubernetesContext;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{self, Value};

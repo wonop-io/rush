@@ -6,14 +6,18 @@ pub mod image_builder;
 pub mod lifecycle;
 pub mod network;
 pub mod reactor;
+pub mod service;
+pub mod status;
 pub mod watcher;
 
-pub use docker::{DockerClient, DockerCliClient, DockerService};
-pub use image_builder::ImageBuilder;
+pub use docker::{DockerClient, DockerCliClient, DockerImage, DockerService};
+pub use image_builder::{BuildConfig, ImageBuilder};
 pub use reactor::{ContainerReactor, ContainerReactorConfig};
+pub use service::{ContainerService, ServiceCollection, ServiceConfig, ServicesSpec};
+pub use status::Status;
 
 // Re-export build types
-pub use build::processor::BuildProcessor;
+pub use build::BuildProcessor;
 
-pub type ContainerService = docker::ContainerService;
-pub type ServiceCollection = std::collections::HashMap<String, Vec<std::sync::Arc<ContainerService>>>;
+// Type aliases
+pub type ContainerHandle = docker::DockerService;

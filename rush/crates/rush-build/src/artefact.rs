@@ -1,4 +1,4 @@
-use crate::build::context::BuildContext;
+use crate::context::BuildContext;
 use log::{debug, error, trace};
 use std::error::Error;
 use std::fs;
@@ -220,8 +220,8 @@ impl Artefact {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::build::build_type::BuildType;
-    use crate::toolchain::Platform;
+    use crate::build_type::BuildType;
+    use rush_toolchain::Platform;
     use std::collections::HashMap;
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -245,7 +245,7 @@ mod tests {
             target: Platform::new("linux", "x86_64"),
             host: Platform::new("linux", "x86_64"),
             rust_target: "x86_64-unknown-linux-gnu".to_string(),
-            toolchain: crate::toolchain::ToolchainContext::new(
+            toolchain: rush_toolchain::ToolchainContext::new(
                 Platform::new("linux", "x86_64"),
                 Platform::new("linux", "x86_64"),
             ),

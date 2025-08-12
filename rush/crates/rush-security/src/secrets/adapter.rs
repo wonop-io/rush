@@ -4,7 +4,7 @@
 //! Vault trait, enabling a consistent interface for accessing secrets across
 //! different storage backends.
 
-use crate::security::secrets::provider::{Environment, SecretError, SecretsProvider};
+use crate::secrets::{Environment, SecretError, SecretsProvider};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};

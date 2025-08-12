@@ -1,14 +1,11 @@
+//! Secret definitions and provider interfaces
+//!
+//! This module provides interfaces and implementations for managing secrets
+//! across different backends and environments.
+
 pub mod adapter;
 pub mod definitions;
 pub mod encoder;
+pub mod provider;
 
-pub use definitions::*;
-pub use encoder::{SecretsEncoder, Base64SecretsEncoder, NoopEncoder};
-
-use async_trait::async_trait;
-use std::collections::HashMap;
-
-#[async_trait]
-pub trait SecretsProvider: Send + Sync {
-    async fn get_secrets(&self, context: &str) -> Result<HashMap<String, String>, anyhow::Error>;
-}
+pub use provider::{Environment, SecretError, SecretsProvider};

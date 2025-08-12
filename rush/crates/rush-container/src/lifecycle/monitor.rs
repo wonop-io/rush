@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time;
 
-use crate::container::DockerService as Container;
+use crate::DockerService as Container;
 use rush_core::error::Result;
 
 /// Monitors container lifecycle and status
@@ -186,7 +186,7 @@ mod tests {
     #[tokio::test]
     async fn test_monitor_detects_container_stopping() {
         // Create a proper DockerService for testing
-        use crate::container::docker::{DockerCliClient, DockerService, DockerServiceConfig};
+        use crate::docker::{DockerCliClient, DockerService, DockerServiceConfig};
         use std::collections::HashMap;
 
         let docker_client = Arc::new(DockerCliClient::new("docker".to_string()));

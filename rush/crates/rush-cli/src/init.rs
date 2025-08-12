@@ -1,7 +1,7 @@
-use crate::core::config::{apply_rushd_config, RushdConfig};
-use crate::core::environment::setup_environment;
+use rush_config::loader::{apply_rushd_config, RushdConfig};
+use rush_config::environment::setup_environment;
 use rush_core::error::Result;
-use crate::utils::{check_version, find_project_root, Directory};
+use rush_utils::{find_project_root, Directory, version::check_version};
 use log::{debug, trace};
 use std::env;
 use std::fs::File;
@@ -15,11 +15,11 @@ pub async fn init_application() -> Result<()> {
     setup_environment();
 
     // Find and set the project root
-    let current_dir = env::current_dir().map_err(|e| {
+    let _current_dir = env::current_dir().map_err(|e| {
         rush_core::error::Error::Filesystem(format!("Failed to get current directory: {e}"))
     })?;
 
-    let root_path = find_project_root(current_dir).ok_or_else(|| {
+    let root_path = find_project_root().ok_or_else(|| {
         rush_core::error::Error::Filesystem("Failed to find project root".to_string())
     })?;
 

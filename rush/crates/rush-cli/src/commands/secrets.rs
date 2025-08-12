@@ -1,4 +1,4 @@
-use crate::cli::context::CliContext;
+use crate::context::CliContext;
 use rush_core::error::Result;
 use clap::ArgMatches;
 use log::{error, trace};

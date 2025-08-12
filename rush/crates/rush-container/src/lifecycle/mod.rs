@@ -46,7 +46,7 @@ impl LifecycleManager {
     /// Result indicating success or failure
     pub async fn shutdown_services(
         &self,
-        services: &[crate::container::service::ContainerService],
+        services: &[crate::service::ContainerService],
         _timeout: std::time::Duration,
     ) -> rush_core::error::Result<()> {
         // Shutdown services in reverse order of their creation
