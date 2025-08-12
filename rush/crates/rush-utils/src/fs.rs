@@ -231,11 +231,24 @@ pub fn find_project_root() -> Option<PathBuf> {
     
     loop {
         // Check for various project root indicators
-        if path.join("rush.yaml").exists() 
-            || path.join("rush.yml").exists()
-            || path.join(".git").exists()
-            || path.join("Cargo.toml").exists()
-            || path.join("package.json").exists() {
+        // rushd.yaml is the definitive marker for rush projects
+        if path.join("rushd.yaml").exists() {
+            return Some(path.to_path_buf());
+        }
+        // For backwards compatibility
+        if path.join("rush.yaml").exists() || path.join("rush.yml").exists() {
+            return Some(path.to_path_buf());
+        }
+        // Fallback to common project root indicators only if no rush files found
+        if path.join(".git").exists() {
+            // But check if there's a rushd.yaml higher up
+            let mut parent_path = path;
+            while let Some(parent) = parent_path.parent() {
+                if parent.join("rushd.yaml").exists() {
+                    return Some(parent.to_path_buf());
+                }
+                parent_path = parent;
+            }
             return Some(path.to_path_buf());
         }
         

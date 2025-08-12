@@ -230,7 +230,8 @@ impl Config {
             .rev()
             .collect::<Vec<&str>>()
             .join(".");
-        let products_dir = std::env::current_dir().unwrap().join(PRODUCTS_DIR);
+        // Use the root_path that was passed in instead of current_dir
+        let products_dir = PathBuf::from(root_path).join(PRODUCTS_DIR);
         trace!("Products directory: {:?}", products_dir);
 
         // To support the Apple quirk that ".app" is an "App", we allow for using _ in the product name
