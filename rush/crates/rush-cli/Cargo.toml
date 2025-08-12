@@ -29,6 +29,7 @@ rush-build = { workspace = true }
 rush-output = { workspace = true }
 rush-container = { workspace = true }
 rush-k8s = { workspace = true }
+rush-helper = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }

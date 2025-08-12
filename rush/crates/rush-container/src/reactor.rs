@@ -2059,15 +2059,6 @@ impl ContainerReactor {
             })?;
         }
 
-        // Create rushd subdirectory if needed (for ingress nginx.conf)
-        let rushd_dir = output_dir.join("rushd");
-        if !rushd_dir.exists() {
-            fs::create_dir_all(&rushd_dir).map_err(|e| Error::FileSystem {
-                path: rushd_dir.clone(),
-                message: format!("Failed to create rushd directory: {e}"),
-            })?;
-        }
-
         // Render each artifact
         // Note: The artifacts come with relative paths, we need to make them absolute
         if let Some(artefacts) = &spec.artefacts {
@@ -2093,13 +2084,9 @@ impl ContainerReactor {
                     absolute_input_path.display()
                 );
 
-                // For ingress, output goes to rushd/nginx.conf in the context directory
-                let absolute_output_path =
-                    if spec.component_name == "ingress" && output_name == "nginx.conf" {
-                        rushd_dir.join("nginx.conf")
-                    } else {
-                        output_dir.join(output_name)
-                    };
+                // For ingress, nginx.conf goes directly to the output directory
+                // (which is already "target/rushd" by default)
+                let absolute_output_path = output_dir.join(output_name);
 
                 info!(
                     "Rendering artifact: {} -> {}",

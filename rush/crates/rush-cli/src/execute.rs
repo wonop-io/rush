@@ -5,6 +5,7 @@ use rush_output::OutputDirectorFactory;
 use clap::ArgMatches;
 use log::{error, trace};
 use std::process;
+use colored::Colorize;
 
 /// Execute the appropriate command based on command line arguments
 pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
