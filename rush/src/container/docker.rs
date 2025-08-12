@@ -962,7 +962,6 @@ mod tests {
             env_vars: HashMap::new(),
             ports: vec![],
             volumes: vec![],
-            working_dir: None,
         };
 
         let service = DockerService {
@@ -1068,7 +1067,6 @@ mod tests {
             env_vars: HashMap::new(),
             ports: vec![],
             volumes: vec![],
-            working_dir: None,
         };
 
         let service = DockerService {

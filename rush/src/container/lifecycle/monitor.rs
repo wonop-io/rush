@@ -197,7 +197,6 @@ mod tests {
             env_vars: HashMap::new(),
             ports: vec![],
             volumes: vec![],
-            working_dir: None,
         };
         let docker_service = DockerService::new("test-id".to_string(), config, docker_client);
         let mock_container = Arc::new(Mutex::new(docker_service));

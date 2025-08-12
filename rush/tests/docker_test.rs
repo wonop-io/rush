@@ -62,6 +62,7 @@ mod tests {
             domains: None,
             tagged_image_name: None,
             dotenv: HashMap::new(),
+            cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
             domain: "test.test.app".to_string(),
         };
@@ -220,6 +221,7 @@ mod tests {
             domains: None,
             tagged_image_name: None,
             dotenv: HashMap::new(),
+            cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
             domain: "test1.test.app".to_string(),
         };
@@ -256,6 +258,7 @@ mod tests {
             domains: None,
             tagged_image_name: None,
             dotenv: HashMap::new(),
+            cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
             domain: "test2.test.app".to_string(),
         };
