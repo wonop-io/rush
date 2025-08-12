@@ -833,6 +833,11 @@ impl DockerService {
     pub fn id(&self) -> &str {
         &self.id
     }
+    
+    /// Returns the service name
+    pub fn name(&self) -> Option<String> {
+        Some(self.config.name.clone())
+    }
 
     /// Sends a signal to the container
     pub async fn send_signal(&mut self, signal: i32) -> Result<()> {

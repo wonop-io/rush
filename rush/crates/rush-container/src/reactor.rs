@@ -1623,16 +1623,18 @@ impl ContainerReactor {
                     for service in &self.running_services {
                         match service.status().await {
                             Ok(ContainerStatus::Exited(code)) => {
-                                warn!("Container {} exited with code {}", service.id(), code);
+                                let container_name = service.name().unwrap_or_else(|| service.id().to_string());
                                 if code != 0 {
-                                    error!("Container failed with non-zero exit code");
-                                    // Wait for changes before restarting
-                                    match self.wait_for_changes_or_termination().await {
-                                        WaitResult::FileChanged => return Ok(true),
-                                        WaitResult::Terminated => return Ok(false),
-                                        WaitResult::Timeout => return Ok(true),
-                                    }
+                                    error!("Container '{}' failed with exit code {} - shutting down all containers", container_name, code);
+                                } else {
+                                    warn!("Container '{}' exited with code 0 - shutting down all containers", container_name);
                                 }
+                                
+                                info!("Initiating graceful shutdown of all containers due to container exit");
+                                
+                                // Trigger shutdown of all containers
+                                self.cleanup_containers().await?;
+                                return Ok(false); // Signal to stop the reactor
                             }
                             Ok(ContainerStatus::Unknown) => {
                                 warn!("Container {} status unknown", service.id());
