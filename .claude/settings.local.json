@@ -13,7 +13,9 @@
       "Bash(touch:*)",
       "Bash(RUST_LOG=debug ../../../rush/target/release/rush io.wonop.helloworld secrets init)",
       "Bash(RUST_LOG=trace ../../../rush/target/release/rush:*)",
-      "Bash(RUST_LOG=debug ./rush/target/release/rush io.wonop.helloworld secrets init)"
+      "Bash(RUST_LOG=debug ./rush/target/release/rush io.wonop.helloworld secrets init)",
+      "Bash(rm:*)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   }
