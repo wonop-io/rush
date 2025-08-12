@@ -2494,6 +2494,7 @@ dependencies = [
  "rush-build",
  "rush-config",
  "rush-core",
+ "rush-local-services",
  "rush-output",
  "rush-security",
  "rush-toolchain",
@@ -2555,6 +2556,25 @@ dependencies = [
  "tera",
  "thiserror 1.0.63",
  "tokio",
+]
+
+[[package]]
+name = "rush-local-services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bollard",
+ "log",
+ "rush-core",
+ "rush-utils",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 1.0.63",
+ "tokio",
+ "tokio-test",
+ "uuid",
 ]
 
 [[package]]

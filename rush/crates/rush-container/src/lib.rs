@@ -2,6 +2,7 @@
 
 pub mod build;
 pub mod docker;
+pub mod docker_adapter;
 pub mod image_builder;
 pub mod lifecycle;
 pub mod network;

@@ -631,6 +631,7 @@ impl ComponentBuildSpec {
             BuildType::PureDockerImage { .. } => (None, None),
             BuildType::PureKubernetes => (None, None),
             BuildType::KubernetesInstallation { .. } => (None, None),
+            BuildType::LocalService { .. } => (None, None),
         };
 
         let toolchain = toolchain.clone().expect("No toolchain available");

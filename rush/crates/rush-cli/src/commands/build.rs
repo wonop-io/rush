@@ -214,6 +214,10 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
             // Nothing to build for Kubernetes installation
             debug!("No build steps for KubernetesInstallation component");
         }
+        BuildType::LocalService { .. } => {
+            // Nothing to build for local services (uses pre-built images)
+            debug!("No build steps for LocalService component");
+        }
         BuildType::Ingress { components, .. } => {
             // Build Docker image for ingress
             debug!(

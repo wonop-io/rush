@@ -59,7 +59,8 @@ impl BuildScript {
             | BuildType::PureKubernetes
             | BuildType::KubernetesInstallation { .. }
             | BuildType::Ingress { .. }
-            | BuildType::PureDockerImage { .. } => {
+            | BuildType::PureDockerImage { .. }
+            | BuildType::LocalService { .. } => {
                 trace!("No build script needed for {:?}", self.build_type);
                 "".to_string()
             }

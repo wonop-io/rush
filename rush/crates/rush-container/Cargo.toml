@@ -13,6 +13,7 @@ rush-toolchain = { workspace = true }
 rush-security = { workspace = true }
 rush-output = { workspace = true }
 rush-utils = { workspace = true }
+rush-local-services = { path = "../rush-local-services" }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

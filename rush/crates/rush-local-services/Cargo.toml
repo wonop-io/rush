@@ -1,0 +1,28 @@
+[package]
+name = "rush-local-services"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Local service management for Rush development environments"
+
+[dependencies]
+rush-core = { workspace = true }
+rush-utils = { workspace = true }
+# Removed rush-container dependency to avoid circular dependency
+
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bollard = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }

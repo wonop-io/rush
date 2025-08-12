@@ -16,6 +16,7 @@ use rush_config::Config;
 use rush_core::error::{Error, Result};
 use rush_security::{FileVault, SecretsEncoder, Vault};
 use rush_core::shutdown;
+use rush_local_services::LocalServiceManager;
 use notify::RecommendedWatcher;
 
 use log::{debug, error, info, trace, warn};
@@ -78,6 +79,9 @@ pub struct ContainerReactor {
 
     /// Mapping of component names to their actual built image names (with git tags)
     built_images: HashMap<String, String>,
+
+    /// Manager for local development services
+    local_service_manager: Option<LocalServiceManager>,
 }
 
 /// Configuration for the ContainerReactor
@@ -177,6 +181,7 @@ impl ContainerReactor {
             secrets_encoder,
             output_director: None,
             built_images: HashMap::new(),
+            local_service_manager: None,
         })
     }
 
@@ -339,6 +344,9 @@ impl ContainerReactor {
         reactor.available_components = available_components;
         reactor.component_specs = component_specs;
 
+        // Initialize LocalServiceManager if we have LocalService components
+        reactor.initialize_local_services()?;
+
         // Build services collection
         let services = reactor.build_services_collection()?;
         reactor.set_services(services);
@@ -347,16 +355,137 @@ impl ContainerReactor {
         Ok(reactor)
     }
 
+    /// Initialize LocalServiceManager if there are LocalService components
+    fn initialize_local_services(&mut self) -> Result<()> {
+        // Check if we have any LocalService components
+        let has_local_services = self.component_specs.iter().any(|spec| {
+            matches!(spec.build_type, BuildType::LocalService { .. })
+        });
+
+        if !has_local_services {
+            return Ok(());
+        }
+
+        // Create LocalServiceManager with adapter
+        let data_dir = self.config.product_dir.join("target").join("local-services");
+        let docker_adapter = Arc::new(crate::docker_adapter::LocalServicesDockerAdapter::new(
+            self.docker_client.clone(),
+        ));
+        let mut manager = LocalServiceManager::new(
+            docker_adapter,
+            data_dir,
+            self.config.network_name.clone(),
+        );
+
+        // Register each LocalService component
+        for spec in &self.component_specs {
+            if let BuildType::LocalService {
+                service_type,
+                image,
+                ports,
+                env,
+                volumes,
+                persist_data,
+                health_check,
+                init_scripts,
+                depends_on,
+                docker_args,
+                command,
+            } = &spec.build_type {
+                // Parse service type
+                let service_type_enum = match service_type.as_str() {
+                    "postgresql" | "postgres" => rush_local_services::LocalServiceType::PostgreSQL,
+                    "redis" => rush_local_services::LocalServiceType::Redis,
+                    "minio" => rush_local_services::LocalServiceType::MinIO,
+                    "localstack" => rush_local_services::LocalServiceType::LocalStack,
+                    "stripe-cli" => rush_local_services::LocalServiceType::StripeCLI,
+                    _ => rush_local_services::LocalServiceType::Custom(service_type.clone()),
+                };
+
+                // Parse ports
+                let parsed_ports: Vec<rush_local_services::PortMapping> = ports
+                    .as_ref()
+                    .map(|p| {
+                        p.iter()
+                            .filter_map(|port_str| {
+                                // Parse port mapping format "host:container"
+                                let parts: Vec<&str> = port_str.split(':').collect();
+                                if parts.len() == 2 {
+                                    if let (Ok(host), Ok(container)) = (
+                                        parts[0].parse::<u16>(),
+                                        parts[1].parse::<u16>(),
+                                    ) {
+                                        return Some(rush_local_services::PortMapping {
+                                            host_port: host,
+                                            container_port: container,
+                                        });
+                                    }
+                                }
+                                None
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Parse volumes
+                let parsed_volumes: Vec<rush_local_services::VolumeMapping> = volumes
+                    .as_ref()
+                    .map(|v| {
+                        v.iter()
+                            .filter_map(|volume_str| {
+                                // Parse volume mapping format "host:container[:ro]"
+                                let parts: Vec<&str> = volume_str.split(':').collect();
+                                if parts.len() >= 2 {
+                                    let read_only = parts.get(2).map_or(false, |&p| p == "ro");
+                                    return Some(rush_local_services::VolumeMapping {
+                                        host_path: parts[0].to_string(),
+                                        container_path: parts[1].to_string(),
+                                        read_only,
+                                    });
+                                }
+                                None
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                // Create LocalServiceConfig
+                let service_config = rush_local_services::LocalServiceConfig {
+                    name: spec.component_name.clone(),
+                    service_type: service_type_enum,
+                    image: image.clone(),
+                    ports: parsed_ports,
+                    env: env.clone().unwrap_or_default(),
+                    volumes: parsed_volumes,
+                    persist_data: *persist_data,
+                    health_check: health_check.clone(),
+                    init_scripts: init_scripts.clone().unwrap_or_default(),
+                    depends_on: depends_on.clone().unwrap_or_default(),
+                    docker_args: docker_args.clone().unwrap_or_default(),
+                    command: command.clone(),
+                    network_mode: Some(self.config.network_name.clone()),
+                    resources: None,
+                    container_name: None, // Use default container name
+                };
+
+                manager.register(service_config);
+            }
+        }
+
+        self.local_service_manager = Some(manager);
+        Ok(())
+    }
+
     /// Builds a collection of services from component specs
     fn build_services_collection(&self) -> Result<ServiceCollection> {
         let mut services: ServiceCollection = HashMap::new();
         let mut next_port = self.config.start_port;
 
         for spec in &self.component_specs {
-            // Skip pure Kubernetes specs
+            // Skip pure Kubernetes specs and LocalServices
             if matches!(
                 spec.build_type,
-                BuildType::PureKubernetes | BuildType::KubernetesInstallation { .. }
+                BuildType::PureKubernetes | BuildType::KubernetesInstallation { .. } | BuildType::LocalService { .. }
             ) {
                 continue;
             }
@@ -755,6 +884,14 @@ impl ContainerReactor {
             Ok(Ok(())) => info!("Container cleanup completed successfully"),
             Ok(Err(e)) => warn!("Container cleanup failed: {}", e),
             Err(_) => warn!("Container cleanup timed out"),
+        }
+
+        // Stop local services on final shutdown
+        if let Some(ref manager) = self.local_service_manager {
+            info!("Stopping local development services");
+            if let Err(e) = manager.stop_all().await {
+                warn!("Failed to stop local services: {}", e);
+            }
         }
 
         Ok(())
@@ -1168,6 +1305,19 @@ impl ContainerReactor {
     async fn launch_containers(&mut self) -> Result<()> {
         info!("Launching containers");
 
+        // Start local services first if configured
+        if let Some(ref manager) = self.local_service_manager {
+            info!("Starting local development services");
+            manager.start_all().await
+                .map_err(|e| Error::Docker(format!("Failed to start local services: {}", e)))?;
+            
+            // Get connection strings and add them to environment
+            let connections = manager.get_connection_strings().await;
+            for (key, value) in connections {
+                info!("Local service connection: {} = {}", key, value);
+            }
+        }
+
         let (_status_sender, _status_receiver) = mpsc::channel::<Status>(100);
 
         // Create service configs for each service
@@ -1524,7 +1674,8 @@ impl ContainerReactor {
             }
             BuildType::PureDockerImage { .. }
             | BuildType::PureKubernetes
-            | BuildType::KubernetesInstallation { .. } => {
+            | BuildType::KubernetesInstallation { .. }
+            | BuildType::LocalService { .. } => {
                 // These types don't have a build context for file watching
                 debug!("    Build type doesn't support file watching");
                 return false;
@@ -1662,6 +1813,10 @@ impl ContainerReactor {
         self.change_processor.clear();
         debug!("Cleared pending file changes");
 
+        // Stop local services if configured (they persist between rebuilds)
+        // Note: We're not stopping them here because they should persist
+        // Only stop them on final shutdown
+        
         // Broadcast shutdown signal to all services
         let _ = self.shutdown_sender.send(());
 

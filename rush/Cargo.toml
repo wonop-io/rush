@@ -10,6 +10,7 @@ members = [
     "crates/rush-container",
     "crates/rush-k8s",
     "crates/rush-helper",
+    "crates/rush-local-services",
     "crates/rush-cli",
 ]
 resolver = "2"
@@ -34,6 +35,7 @@ rush-output = { path = "crates/rush-output" }
 rush-container = { path = "crates/rush-container" }
 rush-k8s = { path = "crates/rush-k8s" }
 rush-helper = { path = "crates/rush-helper" }
+rush-local-services = { path = "crates/rush-local-services" }
 
 # External dependencies
 anyhow = "1.0"

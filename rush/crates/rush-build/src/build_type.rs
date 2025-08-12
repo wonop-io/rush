@@ -4,6 +4,7 @@
 //! web applications, binary applications, and container-based deployments.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Represents the different types of component builds supported by Rush
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -107,6 +108,32 @@ pub enum BuildType {
         /// Target namespace for the installation
         namespace: String,
     },
+
+    /// A persistent local service for development
+    LocalService {
+        /// Service type identifier
+        service_type: String,
+        /// Optional Docker image override
+        image: Option<String>,
+        /// Port mappings
+        ports: Option<Vec<String>>,
+        /// Environment variables
+        env: Option<HashMap<String, String>>,
+        /// Volume mappings for persistence
+        volumes: Option<Vec<String>>,
+        /// Whether to persist data between runs
+        persist_data: bool,
+        /// Health check command
+        health_check: Option<String>,
+        /// Initialization scripts or commands
+        init_scripts: Option<Vec<String>>,
+        /// Dependencies on other local services
+        depends_on: Option<Vec<String>>,
+        /// Additional Docker run arguments
+        docker_args: Option<Vec<String>>,
+        /// Command override
+        command: Option<String>,
+    },
 }
 
 impl BuildType {
@@ -157,6 +184,7 @@ impl BuildType {
             BuildType::PureKubernetes => false,
             BuildType::KubernetesInstallation { .. } => false,
             BuildType::PureDockerImage { .. } => false,
+            BuildType::LocalService { .. } => false, // LocalServices use pre-built images
             _ => true,
         }
     }
