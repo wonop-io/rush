@@ -6,6 +6,7 @@
 pub mod constants;
 pub mod dotenv;
 pub mod error;
+pub mod service_constants;
 pub mod shutdown;
 pub mod types;
 

@@ -350,53 +350,7 @@ impl ComponentBuildSpec {
                     .unwrap()
                     .to_string(),
             },
-            "LocalService" => BuildType::LocalService {
-                service_type: yaml_section
-                    .get("service_type")
-                    .expect("service_type is required for LocalService")
-                    .as_str()
-                    .unwrap()
-                    .to_string(),
-                version: yaml_section
-                    .get("version")
-                    .map(|v| v.as_str().unwrap().to_string()),
-                env: yaml_section.get("env").map(|v| {
-                    v.as_mapping()
-                        .unwrap()
-                        .iter()
-                        .map(|(k, val)| {
-                            (
-                                k.as_str().unwrap().to_string(),
-                                val.as_str().unwrap().to_string(),
-                            )
-                        })
-                        .collect()
-                }),
-                persist_data: yaml_section
-                    .get("persist_data")
-                    .map(|v| v.as_bool().unwrap())
-                    .unwrap_or(false),
-                health_check: yaml_section
-                    .get("health_check")
-                    .map(|v| v.as_str().unwrap().to_string()),
-                init_scripts: yaml_section.get("init_scripts").map(|v| {
-                    v.as_sequence()
-                        .unwrap()
-                        .iter()
-                        .map(|item| item.as_str().unwrap().to_string())
-                        .collect()
-                }),
-                depends_on: yaml_section.get("depends_on").map(|v| {
-                    v.as_sequence()
-                        .unwrap()
-                        .iter()
-                        .map(|item| item.as_str().unwrap().to_string())
-                        .collect()
-                }),
-                command: yaml_section
-                    .get("command")
-                    .map(|v| v.as_str().unwrap().to_string()),
-            },
+            "LocalService" => Self::parse_local_service(yaml_section, &variables),
             _ => panic!("Invalid build_type"),
         };
 
@@ -601,6 +555,105 @@ impl ComponentBuildSpec {
                 .map(|v| v.as_str().unwrap().to_string())
                 .unwrap_or_else(|| "native".to_string()),
         }
+    }
+
+    /// Parse a LocalService build type from YAML
+    fn parse_local_service(yaml_section: &Value, _variables: &Arc<Variables>) -> BuildType {
+        use log::{warn, debug};
+        use rush_core::service_constants::version_validation;
+        
+        let service_type = yaml_section
+            .get("service_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                "service_type is required for LocalService and must be a string"
+            })
+            .unwrap()
+            .to_string();
+        
+        debug!("Parsing LocalService with service_type: {}", service_type);
+        
+        // Parse and validate version
+        let version = yaml_section
+            .get("version")
+            .and_then(|v| v.as_str())
+            .map(|v| {
+                if let Err(e) = version_validation::validate_version(v) {
+                    warn!("Version validation warning for LocalService '{}': {}", 
+                          yaml_section.get("component_name")
+                              .and_then(|n| n.as_str())
+                              .unwrap_or("unknown"),
+                          e);
+                }
+                v.to_string()
+            });
+        
+        // Parse environment variables with error handling
+        let env = Self::parse_env_variables(yaml_section);
+        
+        // Parse persist_data with default
+        let persist_data = yaml_section
+            .get("persist_data")
+            .and_then(|v| v.as_bool())
+            .unwrap_or_else(|| {
+                debug!("persist_data not specified for LocalService, defaulting to false");
+                false
+            });
+        
+        BuildType::LocalService {
+            service_type,
+            version,
+            env,
+            persist_data,
+            health_check: yaml_section
+                .get("health_check")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            init_scripts: Self::parse_string_sequence(yaml_section, "init_scripts"),
+            depends_on: Self::parse_string_sequence(yaml_section, "depends_on"),
+            command: yaml_section
+                .get("command")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        }
+    }
+    
+    /// Parse environment variables from YAML with error handling
+    fn parse_env_variables(yaml_section: &Value) -> Option<HashMap<String, String>> {
+        use log::warn;
+        
+        yaml_section.get("env").map(|v| {
+            match v.as_mapping() {
+                Some(map) => {
+                    map.iter()
+                        .filter_map(|(k, val)| {
+                            match (k.as_str(), val.as_str()) {
+                                (Some(key), Some(value)) => Some((key.to_string(), value.to_string())),
+                                _ => {
+                                    warn!("Skipping invalid environment variable in LocalService");
+                                    None
+                                }
+                            }
+                        })
+                        .collect()
+                }
+                None => {
+                    warn!("Environment variables for LocalService should be a mapping");
+                    HashMap::new()
+                }
+            }
+        })
+    }
+    
+    /// Parse a sequence of strings from YAML
+    fn parse_string_sequence(yaml_section: &Value, field_name: &str) -> Option<Vec<String>> {
+        yaml_section.get(field_name)
+            .and_then(|v| v.as_sequence())
+            .map(|seq| {
+                seq.iter()
+                    .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
     }
 
     /// Process a template string with variables

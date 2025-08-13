@@ -389,47 +389,47 @@ impl ContainerReactor {
                 depends_on,
                 command,
             } = &spec.build_type {
-                // Parse service type
+                // Parse service type using constants
+                use rush_core::service_constants::service_types;
                 let service_type_enum = match service_type.as_str() {
-                    "postgresql" | "postgres" => rush_local_services::LocalServiceType::PostgreSQL,
-                    "redis" => rush_local_services::LocalServiceType::Redis,
-                    "minio" => rush_local_services::LocalServiceType::MinIO,
-                    "localstack" => rush_local_services::LocalServiceType::LocalStack,
-                    "stripe-cli" => rush_local_services::LocalServiceType::StripeCLI,
+                    service_types::POSTGRESQL | service_types::POSTGRES => rush_local_services::LocalServiceType::PostgreSQL,
+                    service_types::REDIS => rush_local_services::LocalServiceType::Redis,
+                    service_types::MINIO => rush_local_services::LocalServiceType::MinIO,
+                    service_types::LOCALSTACK => rush_local_services::LocalServiceType::LocalStack,
+                    service_types::STRIPE_CLI => rush_local_services::LocalServiceType::StripeCLI,
                     _ => rush_local_services::LocalServiceType::Custom(service_type.clone()),
                 };
 
                 // Extract ports from environment variables based on service type
+                use rush_core::service_constants::port_env_vars;
+                use log::warn;
+                
                 let parsed_ports: Vec<rush_local_services::PortMapping> = {
                     let mut ports = Vec::new();
                     if let Some(env_vars) = env {
-                        // Extract port based on service type conventions
-                        let port = match service_type.as_str() {
-                            "postgresql" | "postgres" => env_vars.get("POSTGRES_PORT")
-                                .and_then(|p| p.parse::<u16>().ok()),
-                            "redis" => env_vars.get("REDIS_PORT")
-                                .and_then(|p| p.parse::<u16>().ok()),
-                            "minio" => env_vars.get("MINIO_PORT")
-                                .and_then(|p| p.parse::<u16>().ok()),
-                            "mongodb" => env_vars.get("MONGO_PORT")
-                                .and_then(|p| p.parse::<u16>().ok()),
-                            _ => None,
-                        };
-                        
-                        if let Some(port) = port {
-                            ports.push(rush_local_services::PortMapping {
-                                host_port: port,
-                                container_port: port,
-                            });
+                        // Get main port environment variable
+                        if let Some(port_var) = port_env_vars::get_port_var(service_type) {
+                            match env_vars.get(port_var).and_then(|p| p.parse::<u16>().ok()) {
+                                Some(port) => {
+                                    ports.push(rush_local_services::PortMapping {
+                                        host_port: port,
+                                        container_port: port,
+                                    });
+                                }
+                                None => {
+                                    warn!("LocalService '{}': Expected port in {} environment variable", 
+                                         spec.component_name, port_var);
+                                }
+                            }
                         }
                         
-                        // Handle additional ports (e.g., MinIO console)
-                        if service_type == "minio" {
-                            if let Some(console_port) = env_vars.get("MINIO_CONSOLE_PORT")
+                        // Handle additional ports
+                        for additional_var in port_env_vars::get_additional_port_vars(service_type) {
+                            if let Some(port) = env_vars.get(additional_var)
                                 .and_then(|p| p.parse::<u16>().ok()) {
                                 ports.push(rush_local_services::PortMapping {
-                                    host_port: console_port,
-                                    container_port: console_port,
+                                    host_port: port,
+                                    container_port: port,
                                 });
                             }
                         }
@@ -441,25 +441,8 @@ impl ContainerReactor {
                 let parsed_volumes: Vec<rush_local_services::VolumeMapping> = Vec::new();
 
                 // Determine image based on service type and version
-                let image = match service_type.as_str() {
-                    "postgresql" | "postgres" => {
-                        version.as_ref().map(|v| format!("postgres:{}", v))
-                            .or_else(|| Some("postgres:latest".to_string()))
-                    }
-                    "redis" => {
-                        version.as_ref().map(|v| format!("redis:{}", v))
-                            .or_else(|| Some("redis:latest".to_string()))
-                    }
-                    "minio" => {
-                        version.as_ref().map(|v| format!("minio/minio:{}", v))
-                            .or_else(|| Some("minio/minio:latest".to_string()))
-                    }
-                    "mongodb" => {
-                        version.as_ref().map(|v| format!("mongo:{}", v))
-                            .or_else(|| Some("mongo:latest".to_string()))
-                    }
-                    _ => None,
-                };
+                use rush_core::service_constants::docker_images;
+                let image = docker_images::get_default_image(service_type, version.as_deref());
 
                 // Create LocalServiceConfig
                 let service_config = rush_local_services::LocalServiceConfig {

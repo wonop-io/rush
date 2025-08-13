@@ -17,7 +17,8 @@
       "Bash(rm:*)",
       "Bash(timeout:*)",
       "Bash(rustc:*)",
-      "Bash(./test_parse)"
+      "Bash(./test_parse)",
+      "Bash(find:*)"
     ],
     "deny": []
   }
