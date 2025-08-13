@@ -381,15 +381,12 @@ impl ContainerReactor {
         for spec in &self.component_specs {
             if let BuildType::LocalService {
                 service_type,
-                image,
-                ports,
+                version,
                 env,
-                volumes,
                 persist_data,
                 health_check,
                 init_scripts,
                 depends_on,
-                docker_args,
                 command,
             } = &spec.build_type {
                 // Parse service type
@@ -402,58 +399,73 @@ impl ContainerReactor {
                     _ => rush_local_services::LocalServiceType::Custom(service_type.clone()),
                 };
 
-                // Parse ports
-                let parsed_ports: Vec<rush_local_services::PortMapping> = ports
-                    .as_ref()
-                    .map(|p| {
-                        p.iter()
-                            .filter_map(|port_str| {
-                                // Parse port mapping format "host:container"
-                                let parts: Vec<&str> = port_str.split(':').collect();
-                                if parts.len() == 2 {
-                                    if let (Ok(host), Ok(container)) = (
-                                        parts[0].parse::<u16>(),
-                                        parts[1].parse::<u16>(),
-                                    ) {
-                                        return Some(rush_local_services::PortMapping {
-                                            host_port: host,
-                                            container_port: container,
-                                        });
-                                    }
-                                }
-                                None
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                // Extract ports from environment variables based on service type
+                let parsed_ports: Vec<rush_local_services::PortMapping> = {
+                    let mut ports = Vec::new();
+                    if let Some(env_vars) = env {
+                        // Extract port based on service type conventions
+                        let port = match service_type.as_str() {
+                            "postgresql" | "postgres" => env_vars.get("POSTGRES_PORT")
+                                .and_then(|p| p.parse::<u16>().ok()),
+                            "redis" => env_vars.get("REDIS_PORT")
+                                .and_then(|p| p.parse::<u16>().ok()),
+                            "minio" => env_vars.get("MINIO_PORT")
+                                .and_then(|p| p.parse::<u16>().ok()),
+                            "mongodb" => env_vars.get("MONGO_PORT")
+                                .and_then(|p| p.parse::<u16>().ok()),
+                            _ => None,
+                        };
+                        
+                        if let Some(port) = port {
+                            ports.push(rush_local_services::PortMapping {
+                                host_port: port,
+                                container_port: port,
+                            });
+                        }
+                        
+                        // Handle additional ports (e.g., MinIO console)
+                        if service_type == "minio" {
+                            if let Some(console_port) = env_vars.get("MINIO_CONSOLE_PORT")
+                                .and_then(|p| p.parse::<u16>().ok()) {
+                                ports.push(rush_local_services::PortMapping {
+                                    host_port: console_port,
+                                    container_port: console_port,
+                                });
+                            }
+                        }
+                    }
+                    ports
+                };
 
-                // Parse volumes
-                let parsed_volumes: Vec<rush_local_services::VolumeMapping> = volumes
-                    .as_ref()
-                    .map(|v| {
-                        v.iter()
-                            .filter_map(|volume_str| {
-                                // Parse volume mapping format "host:container[:ro]"
-                                let parts: Vec<&str> = volume_str.split(':').collect();
-                                if parts.len() >= 2 {
-                                    let read_only = parts.get(2).map_or(false, |&p| p == "ro");
-                                    return Some(rush_local_services::VolumeMapping {
-                                        host_path: parts[0].to_string(),
-                                        container_path: parts[1].to_string(),
-                                        read_only,
-                                    });
-                                }
-                                None
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                // LocalService manages volumes internally based on persist_data flag
+                let parsed_volumes: Vec<rush_local_services::VolumeMapping> = Vec::new();
+
+                // Determine image based on service type and version
+                let image = match service_type.as_str() {
+                    "postgresql" | "postgres" => {
+                        version.as_ref().map(|v| format!("postgres:{}", v))
+                            .or_else(|| Some("postgres:latest".to_string()))
+                    }
+                    "redis" => {
+                        version.as_ref().map(|v| format!("redis:{}", v))
+                            .or_else(|| Some("redis:latest".to_string()))
+                    }
+                    "minio" => {
+                        version.as_ref().map(|v| format!("minio/minio:{}", v))
+                            .or_else(|| Some("minio/minio:latest".to_string()))
+                    }
+                    "mongodb" => {
+                        version.as_ref().map(|v| format!("mongo:{}", v))
+                            .or_else(|| Some("mongo:latest".to_string()))
+                    }
+                    _ => None,
+                };
 
                 // Create LocalServiceConfig
                 let service_config = rush_local_services::LocalServiceConfig {
                     name: spec.component_name.clone(),
                     service_type: service_type_enum,
-                    image: image.clone(),
+                    image,
                     ports: parsed_ports,
                     env: env.clone().unwrap_or_default(),
                     volumes: parsed_volumes,
@@ -461,7 +473,7 @@ impl ContainerReactor {
                     health_check: health_check.clone(),
                     init_scripts: init_scripts.clone().unwrap_or_default(),
                     depends_on: depends_on.clone().unwrap_or_default(),
-                    docker_args: docker_args.clone().unwrap_or_default(),
+                    docker_args: Vec::new(), // LocalService doesn't expose docker args
                     command: command.clone(),
                     network_mode: Some(self.config.network_name.clone()),
                     resources: None,

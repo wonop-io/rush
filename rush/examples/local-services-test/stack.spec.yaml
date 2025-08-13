@@ -2,50 +2,46 @@
 
 # PostgreSQL database service (persistent)
 postgres:
-  build_type:
-    LocalService:
-      service_type: postgresql
-      persist_data: true
-      ports:
-        - "5432:5432"
-      env:
-        POSTGRES_USER: testuser
-        POSTGRES_PASSWORD: testpass
-        POSTGRES_DB: testdb
-      health_check: "pg_isready -U testuser"
-      init_scripts:
-        - "echo 'Database initialized'"
+  build_type: "LocalService"
+  service_type: "postgresql"
+  version: "15"
+  persist_data: true
+  env:
+    POSTGRES_USER: "testuser"
+    POSTGRES_PASSWORD: "testpass"
+    POSTGRES_DB: "testdb"
+    POSTGRES_PORT: "5432"
+  health_check: "pg_isready -U testuser -p 5432"
+  init_scripts:
+    - "echo 'Database initialized'"
 
 # Redis cache service (persistent)  
 redis:
-  build_type:
-    LocalService:
-      service_type: redis
-      persist_data: true
-      ports:
-        - "6379:6379"
-      health_check: "redis-cli ping"
+  build_type: "LocalService"
+  service_type: "redis"
+  version: "7.2"
+  persist_data: true
+  env:
+    REDIS_PORT: "6379"
+  health_check: "redis-cli -p 6379 ping"
 
 # MinIO S3-compatible storage (persistent)
 minio:
-  build_type:
-    LocalService:
-      service_type: minio
-      persist_data: true
-      ports:
-        - "9000:9000"
-        - "9001:9001"
-      env:
-        MINIO_ROOT_USER: minioadmin
-        MINIO_ROOT_PASSWORD: minioadmin
-      health_check: "curl -f http://localhost:9000/minio/health/live"
+  build_type: "LocalService"
+  service_type: "minio"
+  persist_data: true
+  env:
+    MINIO_ROOT_USER: "minioadmin"
+    MINIO_ROOT_PASSWORD: "minioadmin"
+    MINIO_PORT: "9000"
+    MINIO_CONSOLE_PORT: "9001"
+  health_check: "curl -f http://localhost:9000/minio/health/live"
 
 # Example application that uses the local services
 app:
-  build_type:
-    RustBinary:
-      location: ./app
-      dockerfile_path: ./app/Dockerfile
+  build_type: "RustBinary"
+  location: "./app"
+  dockerfile: "./app/Dockerfile"
   port: 8080
   target_port: 8080
   env:

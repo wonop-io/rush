@@ -113,14 +113,10 @@ pub enum BuildType {
     LocalService {
         /// Service type identifier
         service_type: String,
-        /// Optional Docker image override
-        image: Option<String>,
-        /// Port mappings
-        ports: Option<Vec<String>>,
-        /// Environment variables
+        /// Optional version specification
+        version: Option<String>,
+        /// Environment variables (including port configuration)
         env: Option<HashMap<String, String>>,
-        /// Volume mappings for persistence
-        volumes: Option<Vec<String>>,
         /// Whether to persist data between runs
         persist_data: bool,
         /// Health check command
@@ -129,8 +125,6 @@ pub enum BuildType {
         init_scripts: Option<Vec<String>>,
         /// Dependencies on other local services
         depends_on: Option<Vec<String>>,
-        /// Additional Docker run arguments
-        docker_args: Option<Vec<String>>,
         /// Command override
         command: Option<String>,
     },
