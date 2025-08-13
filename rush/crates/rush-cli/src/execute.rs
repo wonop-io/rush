@@ -1,7 +1,6 @@
 use crate::commands;
 use crate::context::CliContext;
 use rush_core::error::Result;
-use rush_output::OutputDirectorFactory;
 use clap::ArgMatches;
 use log::{error, trace};
 use std::process;
@@ -38,32 +37,19 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
     } else if let Some(dev_matches) = matches.subcommand_matches("dev") {
         trace!("Executing dev command");
 
-        // Parse output director configuration from command line arguments
-        let output_config = OutputDirectorFactory::parse_from_args(
-            dev_matches.get_one::<String>("output").map(|s| s.as_str()),
-            dev_matches
-                .get_one::<String>("output-dir")
-                .map(|s| s.as_str()),
-            dev_matches.get_flag("no-color"),
-            dev_matches.get_flag("no-timestamps"),
-            dev_matches.get_flag("no-source-names"),
-            dev_matches.get_flag("no-buffering"),
-        );
-
-        // Create output director
-        let output_director = OutputDirectorFactory::create(output_config.clone())
-            .await
+        // Create output session from CLI arguments
+        let output_session = rush_output::cli::create_session_from_cli(dev_matches)
             .map_err(|e| {
-                error!("Failed to create output director: {}", e);
+                error!("Failed to create output session: {}", e);
                 e
             })?;
 
         // Debug: Log the output configuration
-        eprintln!("DEBUG: Output configuration: {output_config:?}");
-        eprintln!("DEBUG: Setting output director on reactor");
+        eprintln!("DEBUG: Output session created with CLI arguments");
+        eprintln!("DEBUG: Setting output session on reactor");
 
-        // Set the output director on the reactor
-        ctx.reactor.set_output_director(output_director);
+        // Set the output session on the reactor
+        ctx.reactor.set_output_session(output_session);
 
         match ctx.reactor.launch().await {
             Ok(_) => {

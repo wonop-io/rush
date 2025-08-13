@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 /// Represents the source of output data
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutputSource {
     /// The name/label of the source (e.g., "helloworld.wonop.io-database")
     pub name: String,

@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// Type of output stream
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OutputStreamType {
     Stdout,
     Stderr,
@@ -7,7 +9,7 @@ pub enum OutputStreamType {
 }
 
 /// Represents an output stream with its data
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputStream {
     /// Type of stream
     pub stream_type: OutputStreamType,
