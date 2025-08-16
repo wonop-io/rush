@@ -383,6 +383,7 @@ impl DockerClient for DockerCliClient {
         let mut args = vec![
             "run",
             "-d",
+            "-i", // Keep STDIN open
             "-t", // Allocate a pseudo-TTY to preserve colors
             "--platform",
             "linux/amd64", // Always run as x86_64

@@ -9,6 +9,7 @@ license.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bollard = { workspace = true }
+chrono = { workspace = true }
 colored = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }

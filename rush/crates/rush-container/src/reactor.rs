@@ -7,6 +7,7 @@ use crate::Status;
 use crate::{
     docker::{ContainerStatus, DockerClient, DockerService, DockerServiceConfig},
     network::setup_network,
+    stripe_handler::StripeCliHandler,
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
     BuildProcessor, ContainerService, ServiceCollection,
 };
@@ -82,6 +83,9 @@ pub struct ContainerReactor {
 
     /// Manager for local development services
     local_service_manager: Option<LocalServiceManager>,
+    
+    /// Stripe CLI handler (runs as local process)
+    stripe_handler: Option<StripeCliHandler>,
 }
 
 /// Configuration for the ContainerReactor
@@ -183,6 +187,7 @@ impl ContainerReactor {
             )),
             built_images: HashMap::new(),
             local_service_manager: None,
+            stripe_handler: None,
         })
     }
 
@@ -380,7 +385,7 @@ impl ContainerReactor {
         let mut manager =
             LocalServiceManager::new(docker_adapter, data_dir, self.config.network_name.clone());
 
-        // Register each LocalService component
+        // Register each LocalService component (except Stripe which we handle separately)
         for spec in &self.component_specs {
             if let BuildType::LocalService {
                 service_type,
@@ -393,6 +398,25 @@ impl ContainerReactor {
                 command,
             } = &spec.build_type
             {
+                // Skip Stripe CLI - it will be handled separately as a local process
+                if service_type == "stripe-cli" || service_type == "stripe" {
+                    info!("Found Stripe CLI service, will handle as local process");
+                    // Initialize Stripe handler
+                    let webhook_url = env
+                        .as_ref()
+                        .and_then(|e| e.get("STRIPE_WEBHOOK_URL"))
+                        .cloned()
+                        .unwrap_or_else(|| "http://localhost:8080/api/stripe/webhook".to_string());
+                    
+                    let stripe_handler = StripeCliHandler::new(
+                        spec.component_name.clone(),
+                        self.output_sink.clone(),
+                    );
+                    self.stripe_handler = Some(stripe_handler);
+                    info!("Stripe CLI handler initialized");
+                    continue;
+                }
+                
                 // Parse service type using constants
                 use rush_core::service_constants::service_types;
                 let service_type_enum = match service_type.as_str() {
@@ -901,6 +925,14 @@ impl ContainerReactor {
             Err(_) => warn!("Container cleanup timed out"),
         }
 
+        // Stop Stripe CLI if running
+        if let Some(ref mut stripe_handler) = self.stripe_handler {
+            info!("Stopping Stripe CLI");
+            if let Err(e) = stripe_handler.stop().await {
+                warn!("Failed to stop Stripe CLI: {}", e);
+            }
+        }
+
         // Stop local services on final shutdown
         if let Some(ref manager) = self.local_service_manager {
             info!("Stopping local development services");
@@ -1335,7 +1367,39 @@ impl ContainerReactor {
                 info!("Local service connection: {} = {}", key, value);
             }
 
-            // Follow logs for local services
+        }
+
+        // Start Stripe CLI if configured
+        info!("Checking for Stripe handler: {:?}", self.stripe_handler.is_some());
+        if let Some(ref mut stripe_handler) = self.stripe_handler {
+            info!("Starting Stripe CLI webhook forwarding");
+            
+            // Get webhook URL and API key from component specs
+            let (webhook_url, api_key) = self.component_specs
+                .iter()
+                .find_map(|spec| {
+                    if let BuildType::LocalService { service_type, env, .. } = &spec.build_type {
+                        if service_type == "stripe-cli" || service_type == "stripe" {
+                            let url = env.as_ref()
+                                .and_then(|e| e.get("STRIPE_WEBHOOK_URL"))
+                                .cloned()
+                                .unwrap_or_else(|| "http://localhost:8080/api/stripe/webhook".to_string());
+                            let key = env.as_ref()
+                                .and_then(|e| e.get("STRIPE_API_KEY"))
+                                .cloned();
+                            return Some((url, key));
+                        }
+                    }
+                    None
+                })
+                .unwrap_or_else(|| ("http://localhost:8080/api/stripe/webhook".to_string(), None));
+            
+            stripe_handler.start(&webhook_url, api_key.as_deref()).await
+                .map_err(|e| Error::Docker(format!("Failed to start Stripe CLI: {e}")))?;
+        }
+
+        // Follow logs for local services  
+        if let Some(ref manager) = self.local_service_manager {
             let container_ids = manager.get_container_ids().await;
             for (name, container_id) in container_ids {
                 let docker_client = self.docker_client.clone();

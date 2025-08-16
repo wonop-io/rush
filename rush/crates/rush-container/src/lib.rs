@@ -10,6 +10,7 @@ pub mod reactor;
 pub mod service;
 pub mod simple_output;
 pub mod status;
+pub mod stripe_handler;
 pub mod watcher;
 
 #[cfg(test)]
