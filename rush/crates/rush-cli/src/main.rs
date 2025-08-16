@@ -1,5 +1,5 @@
 use colored::Colorize;
-use rush_cli::{args, context_builder, execute, init};
+use rush_cli::{args, context_builder, execute, init, logging};
 use rush_core::shutdown;
 use rush_helper::{run_preflight_checks, HelperError};
 
@@ -11,8 +11,15 @@ async fn main() -> Result<(), std::io::Error> {
     // Parse command line arguments
     let matches = args::parse_args();
 
-    // Set up logging based on command line arguments
-    context_builder::setup_logging(&matches);
+    // Create the global output sink
+    let output_sink = logging::create_output_sink(&matches);
+
+    // Set up logging to route through the sink
+    if let Err(e) = logging::setup_logging_with_sink(&matches, output_sink.clone()) {
+        // Fallback to env_logger if sink setup fails
+        eprintln!("Failed to setup sink-based logging: {}, falling back to env_logger", e);
+        context_builder::setup_logging(&matches);
+    }
 
     // Handle check-deps command early (doesn't need context)
     if matches.subcommand_matches("check-deps").is_some() {
@@ -95,7 +102,7 @@ async fn main() -> Result<(), std::io::Error> {
     }
 
     // Initialize CLI context with common resources
-    let mut ctx = match context_builder::create_context(&matches).await {
+    let mut ctx = match context_builder::create_context(&matches, output_sink.clone()).await {
         Ok(ctx) => ctx,
         Err(e) => {
             eprintln!("Failed to create context: {e}");

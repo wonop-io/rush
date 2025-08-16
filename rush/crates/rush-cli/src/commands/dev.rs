@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use log::{debug, error, info, trace};
+use rush_output::simple::Sink as OutputSink;
+use tokio::sync::Mutex as TokioMutex;
 
 use rush_config::Config;
 use rush_container::{ContainerReactor, ContainerReactorConfig, DockerCliClient};
@@ -24,6 +26,7 @@ pub struct DevCommand {
     redirect_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
     _output_config: OutputDirectorConfig,
+    output_sink: Option<Arc<TokioMutex<Box<dyn OutputSink>>>>,
 }
 
 impl DevCommand {
@@ -43,7 +46,14 @@ impl DevCommand {
             redirect_components,
             silence_components,
             _output_config,
+            output_sink: None,
         }
+    }
+
+    /// Set the output sink for this command
+    pub fn with_output_sink(mut self, sink: Arc<TokioMutex<Box<dyn OutputSink>>>) -> Self {
+        self.output_sink = Some(sink);
+        self
     }
 
     pub async fn execute(&self) -> Result<()> {
@@ -105,10 +115,19 @@ impl DevCommand {
 
         debug!("Container reactor initialized successfully");
 
-        // Legacy output director creation removed - now handled by execute.rs
-        // let _output_director = OutputDirectorFactory::create(self.output_config.clone())
-        //     .await
-        //     .map_err(|e| Error::Setup(format!("Failed to create output director: {e}")))?;
+        // Set the output sink if provided
+        if let Some(ref sink) = self.output_sink {
+            // Clone the sink and convert to the format expected by the reactor
+            let sink_clone = sink.clone();
+            tokio::spawn(async move {
+                let sink_guard = sink_clone.lock().await;
+                // Note: We need to clone the inner sink to pass it to the reactor
+                // This is a limitation of the current design
+                drop(sink_guard);
+            });
+            // For now, we'll log a message - the reactor will use its own sink
+            debug!("Output sink configured for development environment");
+        }
 
         debug!("Output system initialized");
 

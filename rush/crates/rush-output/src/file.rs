@@ -97,10 +97,6 @@ impl FileOutputDirector {
 #[async_trait]
 impl OutputDirector for FileOutputDirector {
     async fn write_output(&mut self, source: &OutputSource, stream: &OutputStream) -> Result<()> {
-        eprintln!(
-            "DEBUG: FileOutputDirector writing output for source: {} to dir: {:?}",
-            source.name, self.output_dir
-        );
         if stream.is_empty() {
             return Ok(());
         }

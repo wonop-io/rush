@@ -186,21 +186,6 @@ impl Default for TerminalSink {
 #[async_trait]
 impl OutputSink for TerminalSink {
     async fn write(&mut self, event: OutputEvent) -> Result<()> {
-        // Debug: Log which layout is being used for each write
-        static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| {
-            eprintln!(
-                "DEBUG sink.rs: First write using layout: {:?}",
-                match &self.layout {
-                    TerminalLayout::Linear => "Linear",
-                    TerminalLayout::Split { .. } => "Split",
-                    TerminalLayout::Dashboard { .. } => "Dashboard",
-                    TerminalLayout::Tree => "Tree",
-                    TerminalLayout::Web => "Web",
-                }
-            );
-        });
-
         match &self.layout {
             TerminalLayout::Linear => self.write_linear(&event),
             TerminalLayout::Split { .. } => self.write_split(&event),

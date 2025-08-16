@@ -154,20 +154,43 @@ impl StdoutSink {
             String::new()
         };
 
-        let component_color = self.get_component_color(&entry.component);
-        let component = entry.component.color(component_color);
-
-        let content = if entry.is_error {
-            entry.content.red().to_string()
-        } else {
-            // Preserve any existing ANSI codes in the content
-            entry.content.clone()
+        // Get phase label
+        let phase_label = match entry.phase {
+            LogPhase::Build => "[BUILDING]".yellow().to_string(),
+            LogPhase::Runtime => "[RUNNING] ".green().to_string(),
+            LogPhase::System => "[SYSTEM]  ".cyan().to_string(),
         };
 
-        if self.show_timestamp {
-            format!("{timestamp} {component} | {content}")
+        // Special formatting for system messages from the "system" component
+        if entry.phase == LogPhase::System && entry.component == "system" {
+            let content = if entry.is_error {
+                entry.content.red().to_string()
+            } else {
+                // System messages in dim white
+                entry.content.bright_black().to_string()
+            };
+            
+            if self.show_timestamp {
+                format!("{timestamp} {phase_label} {content}")
+            } else {
+                format!("{phase_label} {content}")
+            }
         } else {
-            format!("{component} | {content}")
+            let component_color = self.get_component_color(&entry.component);
+            let component = entry.component.color(component_color);
+
+            let content = if entry.is_error {
+                entry.content.red().to_string()
+            } else {
+                // Preserve any existing ANSI codes in the content
+                entry.content.clone()
+            };
+
+            if self.show_timestamp {
+                format!("{timestamp} {phase_label} {component} | {content}")
+            } else {
+                format!("{phase_label} {component} | {content}")
+            }
         }
     }
 }
@@ -225,12 +248,19 @@ impl NoColorStdoutSink {
             String::new()
         };
 
+        // Get phase label without colors
+        let phase_label = match entry.phase {
+            LogPhase::Build => "[BUILDING]",
+            LogPhase::Runtime => "[RUNNING] ",
+            LogPhase::System => "[SYSTEM]  ",
+        };
+
         let content = entry.content.trim_end();
 
         if self.show_timestamp {
-            format!("{} {} | {}", timestamp, entry.component, content)
+            format!("{} {} {} | {}", timestamp, phase_label, entry.component, content)
         } else {
-            format!("{} | {}", entry.component, content)
+            format!("{} {} | {}", phase_label, entry.component, content)
         }
     }
 }
@@ -315,9 +345,9 @@ impl SplitSink {
         };
 
         let phase_label = match entry.phase {
-            LogPhase::Build => "[BUILD]  ".yellow().to_string(),
-            LogPhase::Runtime => "[RUNTIME]".green().to_string(),
-            LogPhase::System => "[SYSTEM] ".magenta().to_string(),
+            LogPhase::Build => "[BUILDING]".yellow().to_string(),
+            LogPhase::Runtime => "[RUNNING] ".green().to_string(),
+            LogPhase::System => "[SYSTEM]  ".cyan().to_string(),
         };
 
         let component_color = self.get_component_color(&entry.component);

@@ -7,6 +7,8 @@ use rush_container::ContainerReactor;
 use rush_core::constants::*;
 use rush_core::error::Result;
 use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
+use rush_output::simple::Sink;
+use rush_output::sink_proxy::SinkProxy;
 use rush_security::EnvironmentDefinitions;
 use rush_security::{SecretsDefinitions, SecretsEncoder, Vault};
 use rush_toolchain::{Platform, ToolchainContext};
@@ -16,8 +18,12 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 
-pub async fn create_context(matches: &ArgMatches) -> Result<CliContext> {
+pub async fn create_context(
+    matches: &ArgMatches,
+    output_sink: Arc<TokioMutex<Box<dyn Sink>>>,
+) -> Result<CliContext> {
     let start_port = *matches.get_one::<u16>("start_port").unwrap();
     let redirected_components = parse_redirected_components(matches);
     let silence_components = parse_silence_components(matches);
@@ -53,13 +59,23 @@ pub async fn create_context(matches: &ArgMatches) -> Result<CliContext> {
     let toolchain = create_toolchain(&target_os, &target_arch);
 
     // Create reactor
-    let reactor = create_reactor(
+    let mut reactor = create_reactor(
         config.clone(),
         toolchain.clone(),
         vault.clone(),
         redirected_components,
         silence_components,
     )?;
+    
+    // Set the output sink on the reactor
+    {
+        // Clone the Arc to get a reference we can use
+        let sink_clone = output_sink.clone();
+        // We need to extract the inner sink to pass to the reactor
+        // This is a temporary solution - ideally the reactor would accept Arc<Mutex<Box<dyn Sink>>>
+        let sink_for_reactor = Box::new(SinkProxy::new(sink_clone));
+        reactor.set_output_sink(sink_for_reactor);
+    }
 
     Ok(CliContext::new(
         config,
@@ -69,6 +85,7 @@ pub async fn create_context(matches: &ArgMatches) -> Result<CliContext> {
         reactor,
         vault,
         secrets_context,
+        output_sink,
     ))
 }
 

@@ -2647,6 +2647,7 @@ dependencies = [
  "regex",
  "rush-config",
  "rush-core",
+ "scopeguard",
  "serde",
  "serde_json",
  "serde_yaml",

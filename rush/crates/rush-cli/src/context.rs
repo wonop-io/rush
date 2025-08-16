@@ -1,8 +1,10 @@
 use rush_config::Config;
 use rush_container::ContainerReactor;
+use rush_output::simple::Sink;
 use rush_security::{SecretsDefinitions, Vault};
 use rush_toolchain::ToolchainContext;
 use std::sync::{Arc, Mutex};
+use tokio::sync::Mutex as TokioMutex;
 
 pub struct CliContext {
     pub config: Arc<Config>,
@@ -12,6 +14,7 @@ pub struct CliContext {
     pub reactor: ContainerReactor,
     pub vault: Arc<Mutex<dyn Vault + Send>>,
     pub secrets_context: SecretsDefinitions,
+    pub output_sink: Arc<TokioMutex<Box<dyn Sink>>>,
 }
 
 impl CliContext {
@@ -23,6 +26,7 @@ impl CliContext {
         reactor: ContainerReactor,
         vault: Arc<Mutex<dyn Vault + Send>>,
         secrets_context: SecretsDefinitions,
+        output_sink: Arc<TokioMutex<Box<dyn Sink>>>,
     ) -> Self {
         Self {
             config,
@@ -32,6 +36,7 @@ impl CliContext {
             reactor,
             vault,
             secrets_context,
+            output_sink,
         }
     }
 }

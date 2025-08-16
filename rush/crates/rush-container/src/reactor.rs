@@ -134,9 +134,7 @@ enum WaitResult {
 impl ContainerReactor {
     /// Sets the output sink for handling container logs
     pub fn set_output_sink(&mut self, sink: Box<dyn rush_output::simple::Sink>) {
-        eprintln!("DEBUG: ContainerReactor::set_output_sink called");
         self.output_sink = Arc::new(tokio::sync::Mutex::new(sink));
-        eprintln!("DEBUG: Output sink has been set");
     }
     /// Creates a new ContainerReactor
     ///
@@ -425,7 +423,7 @@ impl ContainerReactor {
                                     });
                                 }
                                 None => {
-                                    warn!("LocalService '{}': Expected port in {} environment variable", 
+                                    warn!("LocalService '{}': Expected port in {} environment variable",
                                          spec.component_name, port_var);
                                 }
                             }
@@ -1471,15 +1469,12 @@ impl ContainerReactor {
 
             // Start following logs immediately to capture all output from the beginning
             // Use docker logs --follow to ensure we get everything from container start
-            eprintln!("DEBUG: Starting log capture for container {container_name}");
             let sink = self.output_sink.clone();
             let component_name_for_sink = component_name.clone();
             let container_id_clone = container_id.clone();
 
             // Start log following task immediately with minimal delay
             tokio::spawn(async move {
-                eprintln!("DEBUG: Following logs for container {container_name} from start");
-
                 // Very small delay to ensure container process has started
                 // This is much faster than the previous attach approach
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;

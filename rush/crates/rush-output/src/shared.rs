@@ -25,10 +25,6 @@ impl SharedOutputDirector {
 
     /// Write output through the shared director
     pub async fn write_output(&self, source: &OutputSource, stream: &OutputStream) -> Result<()> {
-        eprintln!(
-            "DEBUG: SharedOutputDirector writing output for source: {}",
-            source.name
-        );
         let mut director = self.inner.lock().await;
         director.write_output(source, stream).await
     }

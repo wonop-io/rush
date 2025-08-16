@@ -3,7 +3,9 @@
 //! This crate provides a simplified output system for Rush with a clean Sink abstraction.
 
 pub mod cli;
+pub mod log_bridge;
 pub mod simple;
+pub mod sink_proxy;
 
 // Keep minimal exports for backward compatibility
 pub mod event;

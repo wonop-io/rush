@@ -19,6 +19,7 @@ log = { workspace = true }
 regex = { workspace = true }
 rush-config = { workspace = true }
 rush-core = { workspace = true }
+scopeguard = "1.2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
