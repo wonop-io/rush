@@ -1,11 +1,11 @@
 use crate::context::CliContext;
-use rush_container::ContainerReactor;
-use rush_config::Config;
-use rush_config::environment::setup_environment;
-use rush_core::error::Error;
-use rush_core::error::Result;
 use colored::Colorize;
 use log::{error, trace};
+use rush_config::environment::setup_environment;
+use rush_config::Config;
+use rush_container::ContainerReactor;
+use rush_core::error::Error;
+use rush_core::error::Result;
 use std::process;
 use std::sync::Arc;
 

@@ -14,16 +14,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         ("Dashboard", OutputMode::Dashboard),
         ("Web", OutputMode::Web),
     ];
-    
+
     for (name, mode) in modes {
         println!("\n{}", "=".repeat(60));
         println!("Testing {} Mode", name);
         println!("{}\n", "=".repeat(60));
-        
-        let mut session = SessionBuilder::new()
-            .mode(mode)
-            .build()?;
-        
+
+        let mut session = SessionBuilder::new().mode(mode).build()?;
+
         // Simulate build phase
         let backend_source = OutputSource::new("backend", "build");
         let build_event = OutputEvent::compile_time(
@@ -33,7 +31,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             OutputStream::stdout(b"Compiling backend service...\n".to_vec()),
         );
         session.submit(build_event).await?;
-        
+
         // Simulate another build event
         let frontend_source = OutputSource::new("frontend", "build");
         let frontend_build = OutputEvent::compile_time(
@@ -43,7 +41,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             OutputStream::stdout(b"Building frontend assets...\n".to_vec()),
         );
         session.submit(frontend_build).await?;
-        
+
         // Simulate runtime phase
         let backend_runtime = OutputEvent::runtime(
             OutputSource::new("backend", "container"),
@@ -51,7 +49,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             Some("container_123".to_string()),
         );
         session.submit(backend_runtime).await?;
-        
+
         // Simulate system event
         let system_event = OutputEvent::system(
             OutputSource::new("rush", "system"),
@@ -59,27 +57,26 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             OutputStream::stdout(b"Docker network created\n".to_vec()),
         );
         session.submit(system_event).await?;
-        
+
         // Simulate an error
         let mut error_event = OutputEvent::runtime(
             OutputSource::new("database", "container"),
             OutputStream::stderr(b"ERROR: Connection refused\n".to_vec()),
             None,
         );
-        error_event.metadata = OutputMetadata::default()
-            .with_level(LogLevel::Error);
+        error_event.metadata = OutputMetadata::default().with_level(LogLevel::Error);
         session.submit(error_event).await?;
-        
+
         session.flush().await?;
-        
+
         // Small delay to see the output
         sleep(Duration::from_millis(500)).await;
     }
-    
+
     println!("\n{}", "=".repeat(60));
     println!("All layout modes tested successfully!");
     println!("{}", "=".repeat(60));
-    
+
     Ok(())
 }
 

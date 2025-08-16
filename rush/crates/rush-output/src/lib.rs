@@ -1,5 +1,5 @@
 //! Rush Output - Terminal output and logging
-//! 
+//!
 //! This crate provides a simplified output system for Rush with a clean Sink abstraction.
 
 pub mod cli;

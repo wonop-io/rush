@@ -11,37 +11,37 @@ readme = "../../README.md"
 keywords = ["yew", "axum", "docker", "kubernetes", "cross-compilation"]
 categories = ["command-line-utilities", "development-tools", "web-programming"]
 
-[[bin]]
-name = "rush"
-path = "src/main.rs"
-
 [lib]
 name = "rush_cli"
 path = "src/lib.rs"
 
+[[bin]]
+name = "rush"
+path = "src/main.rs"
+
 [dependencies]
-rush-core = { workspace = true }
-rush-utils = { workspace = true }
-rush-config = { workspace = true }
-rush-toolchain = { workspace = true }
-rush-security = { workspace = true }
-rush-build = { workspace = true }
-rush-output = { workspace = true }
-rush-container = { workspace = true }
-rush-k8s = { workspace = true }
-rush-helper = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
-console-subscriber = { workspace = true }
-env_logger = { workspace = true }
-log = { workspace = true }
 colored = { workspace = true }
+console-subscriber = { workspace = true }
 directories = { workspace = true }
 dotenv = { workspace = true }
+env_logger = { workspace = true }
 futures = { workspace = true }
+log = { workspace = true }
 notify = { workspace = true }
+rush-build = { workspace = true }
+rush-config = { workspace = true }
+rush-container = { workspace = true }
+rush-core = { workspace = true }
+rush-helper = { workspace = true }
+rush-k8s = { workspace = true }
+rush-output = { workspace = true }
+rush-security = { workspace = true }
+rush-toolchain = { workspace = true }
+rush-utils = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -50,7 +50,7 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-ctor = "0.2.6"
-serial_test = "3.2.0"
-tempfile = "3.12.0"
-tokio-test = "0.4"
+ctor = { workspace = true }
+serial_test = { workspace = true }
+tempfile = { workspace = true }
+tokio-test = { workspace = true }

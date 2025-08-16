@@ -1,7 +1,7 @@
 pub mod checks;
 pub mod error;
 
-pub use checks::{check_all_requirements, check_rust_targets, check_docker, check_trunk};
+pub use checks::{check_all_requirements, check_docker, check_rust_targets, check_trunk};
 pub use error::{HelperError, HelperResult};
 
 use std::process::Command;
@@ -18,10 +18,10 @@ pub fn is_apple_silicon() -> bool {
             .output()
             .ok()
             .and_then(|o| String::from_utf8(o.stdout).ok());
-        
+
         output.map_or(false, |s| s.trim() == "arm64")
     }
-    
+
     #[cfg(not(target_os = "macos"))]
     {
         false

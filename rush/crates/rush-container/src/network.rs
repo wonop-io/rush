@@ -4,10 +4,10 @@
 //! that are used to connect containers.
 
 use crate::DockerClient;
-use rush_core::error::{Error, Result};
-use rush_utils::run_command;
 use colored::Colorize;
 use log::{debug, trace, warn};
+use rush_core::error::{Error, Result};
+use rush_utils::run_command;
 use std::process::Command;
 use std::sync::Arc;
 

@@ -9,8 +9,8 @@ use rush_output::simple::{LogEntry, Sink};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tempfile::TempDir;
+use tokio::sync::Mutex;
 
 /// Test sink that captures all output for assertions
 #[derive(Clone)]
@@ -79,10 +79,7 @@ pub struct TestReactor {
 }
 
 /// Creates a test component build spec
-pub fn create_test_component(
-    name: &str, 
-    build_type: BuildType,
-) -> ComponentBuildSpec {
+pub fn create_test_component(name: &str, build_type: BuildType) -> ComponentBuildSpec {
     ComponentBuildSpec {
         build_type,
         product_name: "test-product".to_string(),
@@ -157,22 +154,28 @@ pub fn reset_shutdown() {
 /// Assert that a graceful shutdown occurred without errors
 pub async fn assert_graceful_shutdown(docker_client: &MockDockerClient) {
     let history = docker_client.get_call_history().await;
-    
+
     // Check that containers were stopped
     let stop_calls: Vec<_> = history
         .iter()
         .filter(|call| call.starts_with("stop_container"))
         .collect();
-    
-    assert!(!stop_calls.is_empty(), "Expected containers to be stopped during shutdown");
-    
+
+    assert!(
+        !stop_calls.is_empty(),
+        "Expected containers to be stopped during shutdown"
+    );
+
     // Check that containers were removed
     let remove_calls: Vec<_> = history
         .iter()
         .filter(|call| call.starts_with("remove_container"))
         .collect();
-    
-    assert!(!remove_calls.is_empty(), "Expected containers to be removed during shutdown");
+
+    assert!(
+        !remove_calls.is_empty(),
+        "Expected containers to be removed during shutdown"
+    );
 }
 
 /// Creates a mock Docker image spec

@@ -6,19 +6,19 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-rush-config = { workspace = true }
-rush-core = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-atty = "0.2"
+atty = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 console = { workspace = true }
-crossterm = "0.28"
+crossterm = { workspace = true }
 indicatif = { workspace = true }
 log = { workspace = true }
-regex = "1.11"
+regex = { workspace = true }
+rush-config = { workspace = true }
+rush-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -26,5 +26,5 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.12.0"
-tokio-test = "0.4"
+tempfile = { workspace = true }
+tokio-test = { workspace = true }

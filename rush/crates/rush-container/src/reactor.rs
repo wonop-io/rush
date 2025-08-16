@@ -2,8 +2,6 @@
 //!
 //! The reactor is responsible for orchestrating container lifecycle events,
 //! monitoring containers, and handling file change events that trigger rebuilds.
-use rush_build::{BuildType, ComponentBuildSpec, Variables};
-use rush_core::constants::DOCKER_TAG_LATEST;
 use crate::DockerCliClient;
 use crate::Status;
 use crate::{
@@ -12,12 +10,14 @@ use crate::{
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
     BuildProcessor, ContainerService, ServiceCollection,
 };
+use notify::RecommendedWatcher;
+use rush_build::{BuildType, ComponentBuildSpec, Variables};
 use rush_config::Config;
+use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_core::error::{Error, Result};
-use rush_security::{FileVault, SecretsEncoder, Vault};
 use rush_core::shutdown;
 use rush_local_services::LocalServiceManager;
-use notify::RecommendedWatcher;
+use rush_security::{FileVault, SecretsEncoder, Vault};
 
 use log::{debug, error, info, trace, warn};
 use serde_yaml;
@@ -181,7 +181,7 @@ impl ContainerReactor {
             secrets_encoder,
             output_sink: Arc::new(tokio::sync::Mutex::new(
                 // Create a default stdout sink
-                Box::new(rush_output::simple::StdoutSink::new())
+                Box::new(rush_output::simple::StdoutSink::new()),
             )),
             built_images: HashMap::new(),
             local_service_manager: None,
@@ -361,24 +361,26 @@ impl ContainerReactor {
     /// Initialize LocalServiceManager if there are LocalService components
     fn initialize_local_services(&mut self) -> Result<()> {
         // Check if we have any LocalService components
-        let has_local_services = self.component_specs.iter().any(|spec| {
-            matches!(spec.build_type, BuildType::LocalService { .. })
-        });
+        let has_local_services = self
+            .component_specs
+            .iter()
+            .any(|spec| matches!(spec.build_type, BuildType::LocalService { .. }));
 
         if !has_local_services {
             return Ok(());
         }
 
         // Create LocalServiceManager with adapter
-        let data_dir = self.config.product_dir.join("target").join("local-services");
+        let data_dir = self
+            .config
+            .product_dir
+            .join("target")
+            .join("local-services");
         let docker_adapter = Arc::new(crate::docker_adapter::LocalServicesDockerAdapter::new(
             self.docker_client.clone(),
         ));
-        let mut manager = LocalServiceManager::new(
-            docker_adapter,
-            data_dir,
-            self.config.network_name.clone(),
-        );
+        let mut manager =
+            LocalServiceManager::new(docker_adapter, data_dir, self.config.network_name.clone());
 
         // Register each LocalService component
         for spec in &self.component_specs {
@@ -391,11 +393,14 @@ impl ContainerReactor {
                 init_scripts,
                 depends_on,
                 command,
-            } = &spec.build_type {
+            } = &spec.build_type
+            {
                 // Parse service type using constants
                 use rush_core::service_constants::service_types;
                 let service_type_enum = match service_type.as_str() {
-                    service_types::POSTGRESQL | service_types::POSTGRES => rush_local_services::LocalServiceType::PostgreSQL,
+                    service_types::POSTGRESQL | service_types::POSTGRES => {
+                        rush_local_services::LocalServiceType::PostgreSQL
+                    }
                     service_types::REDIS => rush_local_services::LocalServiceType::Redis,
                     service_types::MINIO => rush_local_services::LocalServiceType::MinIO,
                     service_types::LOCALSTACK => rush_local_services::LocalServiceType::LocalStack,
@@ -404,9 +409,9 @@ impl ContainerReactor {
                 };
 
                 // Extract ports from environment variables based on service type
-                use rush_core::service_constants::port_env_vars;
                 use log::warn;
-                
+                use rush_core::service_constants::port_env_vars;
+
                 let parsed_ports: Vec<rush_local_services::PortMapping> = {
                     let mut ports = Vec::new();
                     if let Some(env_vars) = env {
@@ -425,11 +430,14 @@ impl ContainerReactor {
                                 }
                             }
                         }
-                        
+
                         // Handle additional ports
-                        for additional_var in port_env_vars::get_additional_port_vars(service_type) {
-                            if let Some(port) = env_vars.get(additional_var)
-                                .and_then(|p| p.parse::<u16>().ok()) {
+                        for additional_var in port_env_vars::get_additional_port_vars(service_type)
+                        {
+                            if let Some(port) = env_vars
+                                .get(additional_var)
+                                .and_then(|p| p.parse::<u16>().ok())
+                            {
                                 ports.push(rush_local_services::PortMapping {
                                     host_port: port,
                                     container_port: port,
@@ -483,7 +491,9 @@ impl ContainerReactor {
             // Skip pure Kubernetes specs and LocalServices
             if matches!(
                 spec.build_type,
-                BuildType::PureKubernetes | BuildType::KubernetesInstallation { .. } | BuildType::LocalService { .. }
+                BuildType::PureKubernetes
+                    | BuildType::KubernetesInstallation { .. }
+                    | BuildType::LocalService { .. }
             ) {
                 continue;
             }
@@ -827,7 +837,7 @@ impl ContainerReactor {
 
                 info!("Waiting for file changes to retry build...");
                 info!("💡 Tip: Fix the build error and save a file to trigger rebuild");
-                
+
                 // Wait indefinitely for file changes - don't retry on timeout
                 loop {
                     match self.wait_for_changes_or_termination().await {
@@ -846,7 +856,7 @@ impl ContainerReactor {
                         }
                     }
                 }
-                
+
                 // Continue with the outer loop to retry the build
                 continue;
             }
@@ -1318,9 +1328,11 @@ impl ContainerReactor {
         // Start local services first if configured
         if let Some(ref manager) = self.local_service_manager {
             info!("Starting local development services");
-            manager.start_all().await
+            manager
+                .start_all()
+                .await
                 .map_err(|e| Error::Docker(format!("Failed to start local services: {}", e)))?;
-            
+
             // Get connection strings and add them to environment
             let connections = manager.get_connection_strings().await;
             for (key, value) in connections {
@@ -1464,12 +1476,15 @@ impl ContainerReactor {
 
             // Start log following task immediately with minimal delay
             tokio::spawn(async move {
-                eprintln!("DEBUG: Following logs for container {} from start", container_name);
-                
+                eprintln!(
+                    "DEBUG: Following logs for container {} from start",
+                    container_name
+                );
+
                 // Very small delay to ensure container process has started
                 // This is much faster than the previous attach approach
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                
+
                 // Use docker logs --follow to get ALL logs from the beginning
                 if let Err(e) = crate::simple_output::follow_container_logs_from_start(
                     docker_client,
@@ -1482,9 +1497,15 @@ impl ContainerReactor {
                     // Only log errors if we're not shutting down
                     let shutdown_token = shutdown::global_shutdown().cancellation_token();
                     if !shutdown_token.is_cancelled() {
-                        error!("Error following logs for container {}: {}", container_name, e);
+                        error!(
+                            "Error following logs for container {}: {}",
+                            container_name, e
+                        );
                     } else {
-                        debug!("Container {} log following stopped during shutdown", container_name);
+                        debug!(
+                            "Container {} log following stopped during shutdown",
+                            container_name
+                        );
                     }
                 }
             });
@@ -1779,12 +1800,12 @@ impl ContainerReactor {
                                 } else {
                                     warn!("Container '{}' exited with code 0 - shutting down all containers", container_name);
                                 }
-                                
+
                                 info!("Initiating graceful shutdown of all containers due to container exit");
-                                
+
                                 // Trigger global shutdown so all parts of the system know we're shutting down
                                 shutdown::global_shutdown().shutdown(shutdown::ShutdownReason::ContainerExit);
-                                
+
                                 // Clean up containers
                                 self.cleanup_containers().await?;
                                 return Ok(false); // Signal to stop the reactor
@@ -1794,13 +1815,13 @@ impl ContainerReactor {
                                 // Check if we expected this container to be running
                                 let container_name = service.name().unwrap_or_else(|| service.id().to_string());
                                 warn!("Container '{}' status unknown - it may have crashed or been removed", container_name);
-                                
+
                                 // Treat unknown status as a potential crash
                                 info!("Container '{}' is no longer accessible - shutting down all containers", container_name);
-                                
+
                                 // Trigger global shutdown
                                 shutdown::global_shutdown().shutdown(shutdown::ShutdownReason::ContainerExit);
-                                
+
                                 // Clean up containers
                                 self.cleanup_containers().await?;
                                 return Ok(false); // Signal to stop the reactor
@@ -1831,7 +1852,7 @@ impl ContainerReactor {
         // Stop local services if configured (they persist between rebuilds)
         // Note: We're not stopping them here because they should persist
         // Only stop them on final shutdown
-        
+
         // Broadcast shutdown signal to all services
         let _ = self.shutdown_sender.send(());
 
@@ -2424,17 +2445,19 @@ impl ContainerReactor {
         // Use Directory guard to change to build directory and execute the script
         let output = {
             let _dir_guard = rush_utils::Directory::chpath(&build_dir);
-            
+
             // Use the sink for build output
             let sink = self.output_sink.clone();
             let component_name = spec.component_name.clone();
-            
+
             // Run the build command and capture output through our sink
             crate::simple_output::follow_build_output_simple(
                 component_name,
                 vec!["bash".to_string(), "./build_script.sh".to_string()],
                 sink,
-            ).await.map(|_| String::new())
+            )
+            .await
+            .map(|_| String::new())
         };
 
         // Clean up the script file
@@ -2559,21 +2582,25 @@ impl ContainerReactor {
         // Compute the git tag to get the final image name
         image_builder.compute_git_tag()?;
         let image_tag = image_builder.tagged_image_name();
-        
+
         // Get the dockerfile and context paths from the image builder
-        let dockerfile_path = image_builder.build_config().dockerfile_path
+        let dockerfile_path = image_builder
+            .build_config()
+            .dockerfile_path
             .as_ref()
             .ok_or_else(|| Error::Setup("No dockerfile path specified".into()))?;
-        let context_path = image_builder.build_config().context_dir
+        let context_path = image_builder
+            .build_config()
+            .context_dir
             .as_ref()
             .map(|s| s.as_str())
             .unwrap_or(".");
-        
+
         // Build the image using proper stream capture
         // Always build for linux/amd64 regardless of host architecture
         // This ensures compatibility with deployment environments
         let platform = Some("linux/amd64".to_string());
-        
+
         crate::simple_output::capture_docker_build(
             &image_tag,
             dockerfile_path,
@@ -2581,7 +2608,8 @@ impl ContainerReactor {
             component_name.to_string(),
             self.output_sink.clone(),
             platform.as_deref(),
-        ).await?;
+        )
+        .await?;
 
         // Return the actual tagged image name that was built
         Ok(image_tag)

@@ -31,11 +31,7 @@ pub struct OutputEvent {
 
 impl OutputEvent {
     /// Create a new output event
-    pub fn new(
-        source: OutputSource,
-        phase: ExecutionPhase,
-        stream: OutputStream,
-    ) -> Self {
+    pub fn new(source: OutputSource, phase: ExecutionPhase, stream: OutputStream) -> Self {
         Self {
             id: Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -99,10 +95,7 @@ impl OutputEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ExecutionPhase {
     /// Build/compilation phase
-    CompileTime {
-        stage: CompileStage,
-        target: String,
-    },
+    CompileTime { stage: CompileStage, target: String },
 
     /// Runtime/execution phase
     Runtime {
@@ -184,10 +177,10 @@ impl LogLevel {
 pub struct PerformanceMetrics {
     /// CPU usage percentage (0-100)
     pub cpu_usage: Option<f32>,
-    
+
     /// Memory usage in bytes
     pub memory_bytes: Option<u64>,
-    
+
     /// Duration in milliseconds
     pub duration_ms: Option<u64>,
 }
@@ -295,7 +288,10 @@ mod tests {
             .with_retry(2);
 
         assert_eq!(metadata.level, Some(LogLevel::Info));
-        assert_eq!(metadata.tags.get("component"), Some(&"frontend".to_string()));
+        assert_eq!(
+            metadata.tags.get("component"),
+            Some(&"frontend".to_string())
+        );
         assert_eq!(metadata.retry_count, 2);
     }
 }

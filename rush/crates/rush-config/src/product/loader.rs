@@ -6,8 +6,8 @@ use std::sync::Arc;
 use log::{debug, error, trace, warn};
 use serde_yaml::Value;
 
-use crate::types::Config;
 use crate::product::types::{Product, ProductComponent};
+use crate::types::Config;
 use rush_utils::read_to_string;
 
 /// Loads product definitions from a product directory

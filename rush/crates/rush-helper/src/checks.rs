@@ -5,38 +5,38 @@ use which::which;
 pub fn check_all_requirements() -> HelperResult<()> {
     let mut errors = Vec::new();
     let mut commands = Vec::new();
-    
+
     // Check Rust and required targets
     if let Err(e) = check_rust_targets() {
         errors.push(e.get_message());
         commands.extend(e.get_fix_commands());
     }
-    
+
     // Check Docker
     if let Err(e) = check_docker() {
         errors.push(e.get_message());
         commands.extend(e.get_fix_commands());
     }
-    
+
     // Check trunk for WASM builds
     if let Err(e) = check_trunk() {
         errors.push(e.get_message());
         commands.extend(e.get_fix_commands());
     }
-    
+
     // Check platform-specific tools
     if let Err(e) = check_platform_specific() {
         errors.push(e.get_message());
         commands.extend(e.get_fix_commands());
     }
-    
+
     if !errors.is_empty() {
         return Err(HelperError::MultipleIssues {
             issues: errors.join("\n"),
             commands,
         });
     }
-    
+
     Ok(())
 }
 
@@ -57,37 +57,37 @@ pub fn check_rust_targets() -> HelperResult<()> {
             ],
         ));
     }
-    
+
     // Get list of installed targets
     let output = Command::new("rustup")
         .args(&["target", "list", "--installed"])
         .output()
         .map_err(|e| HelperError::CommandFailed(format!("Failed to list rustup targets: {}", e)))?;
-    
+
     let installed_targets = String::from_utf8_lossy(&output.stdout);
-    
+
     // Check for required targets
     let mut missing_targets = Vec::new();
-    
+
     // Always need wasm target for frontend
     if !installed_targets.contains("wasm32-unknown-unknown") {
         missing_targets.push("wasm32-unknown-unknown");
     }
-    
+
     // Check for x86_64 Linux target (needed for cross-compilation)
     if !installed_targets.contains("x86_64-unknown-linux-gnu") {
         missing_targets.push("x86_64-unknown-linux-gnu");
     }
-    
+
     // On Apple Silicon, also check for x86_64 Darwin target
     if crate::is_apple_silicon() && !installed_targets.contains("x86_64-apple-darwin") {
         missing_targets.push("x86_64-apple-darwin");
     }
-    
+
     if !missing_targets.is_empty() {
         let mut errors = Vec::new();
         let mut commands = Vec::new();
-        
+
         for target in missing_targets {
             errors.push(format!("Missing Rust target: {}", target));
             commands.push(vec![
@@ -97,13 +97,13 @@ pub fn check_rust_targets() -> HelperResult<()> {
                 target.to_string(),
             ]);
         }
-        
+
         return Err(HelperError::MultipleIssues {
             issues: errors.join("\n"),
             commands,
         });
     }
-    
+
     Ok(())
 }
 
@@ -115,31 +115,28 @@ pub fn check_docker() -> HelperResult<()> {
             command: vec![],
         });
     }
-    
+
     // Check if Docker daemon is running
-    let output = Command::new("docker")
-        .arg("info")
-        .output();
-    
+    let output = Command::new("docker").arg("info").output();
+
     if output.is_err() || !output.unwrap().status.success() {
         return Err(HelperError::ConfigurationError {
             message: "Docker daemon is not running. Please start Docker Desktop".to_string(),
             command: vec![],
         });
     }
-    
+
     // Check for buildx
-    let buildx_output = Command::new("docker")
-        .args(&["buildx", "version"])
-        .output();
-    
+    let buildx_output = Command::new("docker").args(&["buildx", "version"]).output();
+
     if buildx_output.is_err() || !buildx_output.unwrap().status.success() {
         return Err(HelperError::MissingTool {
-            message: "Docker buildx is not available. It should come with Docker Desktop".to_string(),
+            message: "Docker buildx is not available. It should come with Docker Desktop"
+                .to_string(),
             command: vec![],
         });
     }
-    
+
     Ok(())
 }
 
@@ -147,7 +144,7 @@ pub fn check_trunk() -> HelperResult<()> {
     // Check for trunk or wasm-trunk
     let trunk_exists = which("trunk").is_ok();
     let wasm_trunk_exists = which("wasm-trunk").is_ok();
-    
+
     if !trunk_exists && !wasm_trunk_exists {
         return Err(HelperError::MissingTool {
             message: "trunk is not installed (required for WASM frontend builds)".to_string(),
@@ -158,7 +155,7 @@ pub fn check_trunk() -> HelperResult<()> {
             ],
         });
     }
-    
+
     Ok(())
 }
 
@@ -172,10 +169,8 @@ pub fn check_platform_specific() -> HelperResult<()> {
 
 fn check_apple_silicon_toolchain() -> HelperResult<()> {
     // Check for x86_64-unknown-linux-gnu toolchain
-    let output = Command::new("brew")
-        .args(&["list", "--formula"])
-        .output();
-    
+    let output = Command::new("brew").args(&["list", "--formula"]).output();
+
     if output.is_err() {
         return Err(HelperError::MissingTool {
             message: "Homebrew is not installed (required for cross-compilation toolchain)".to_string(),
@@ -186,10 +181,10 @@ fn check_apple_silicon_toolchain() -> HelperResult<()> {
             ],
         });
     }
-    
+
     let output = output.unwrap();
     let installed_formulae = String::from_utf8_lossy(&output.stdout);
-    
+
     if !installed_formulae.contains("x86_64-unknown-linux-gnu") {
         return Err(HelperError::MissingTool {
             message: "x86_64-unknown-linux-gnu toolchain not installed (required for cross-compilation on Apple Silicon)".to_string(),
@@ -202,16 +197,14 @@ fn check_apple_silicon_toolchain() -> HelperResult<()> {
             ],
         });
     }
-    
+
     // Rush handles linker configuration through environment variables, no need to check cargo config
     Ok(())
 }
 
 pub fn check_rush_version() -> HelperResult<String> {
-    let output = Command::new("rush")
-        .arg("--version")
-        .output();
-    
+    let output = Command::new("rush").arg("--version").output();
+
     match output {
         Ok(o) if o.status.success() => {
             let version = String::from_utf8_lossy(&o.stdout);
@@ -224,6 +217,6 @@ pub fn check_rush_version() -> HelperResult<String> {
                 "install".to_string(),
                 "rush-cli".to_string(),
             ],
-        })
+        }),
     }
 }

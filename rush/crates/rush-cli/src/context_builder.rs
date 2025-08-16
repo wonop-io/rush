@@ -1,16 +1,16 @@
 use crate::context::CliContext;
-use rush_core::constants::*;
-use rush_container::ContainerReactor;
-use rush_config::{Config, ConfigLoader};
+use clap::ArgMatches;
+use log::{debug, error, info, trace, warn};
 use rush_config::environment::EnvironmentGenerator;
-use rush_security::EnvironmentDefinitions;
+use rush_config::{Config, ConfigLoader};
+use rush_container::ContainerReactor;
+use rush_core::constants::*;
 use rush_core::error::Result;
 use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
+use rush_security::EnvironmentDefinitions;
 use rush_security::{SecretsDefinitions, SecretsEncoder, Vault};
 use rush_toolchain::{Platform, ToolchainContext};
 use rush_utils::Directory;
-use clap::ArgMatches;
-use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
@@ -26,7 +26,8 @@ pub async fn create_context(matches: &ArgMatches) -> Result<CliContext> {
     let target_os = get_target_os(matches);
     let environment = get_environment(matches);
     let docker_registry = get_docker_registry(matches);
-    let product_name = matches.get_one::<String>("product_name")
+    let product_name = matches
+        .get_one::<String>("product_name")
         .ok_or_else(|| "Product name is required. Usage: rush <product_name> <command>")
         .map_err(|e| rush_core::error::Error::Config(e.to_string()))?
         .clone();
@@ -226,8 +227,8 @@ fn create_vault(
     config: &Config,
     name: &str,
 ) -> Arc<Mutex<dyn Vault + Send>> {
-    use rush_security::{DotenvVault, FileVault};
     use rush_security::vault::OnePassword;
+    use rush_security::{DotenvVault, FileVault};
 
     match name {
         ".env" => {
@@ -274,7 +275,10 @@ fn setup_environment_files(config: &Config, product_name: &str, environment: &st
         }
         Err(e) => {
             // Fallback to simple generator if component-level fails
-            warn!("Component-level env generation failed, trying simple generator: {}", e);
+            warn!(
+                "Component-level env generation failed, trying simple generator: {}",
+                e
+            );
             let simple_generator = EnvironmentGenerator::new(
                 product_name.to_string(),
                 &format!("{}/stack.env.base.yaml", config.product_path().display()),
@@ -284,7 +288,7 @@ fn setup_environment_files(config: &Config, product_name: &str, environment: &st
                     environment
                 ),
             );
-            
+
             match simple_generator.generate_dotenv_files() {
                 Ok(_) => Ok(()),
                 Err(e) => {

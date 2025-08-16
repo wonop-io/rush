@@ -1,6 +1,6 @@
 use crate::args::DescribeCommand;
-use rush_container::ContainerService;
 use rush_config::Config;
+use rush_container::ContainerService;
 use rush_core::error::{Error, Result};
 use rush_security::SecretsProvider;
 use rush_toolchain::ToolchainContext;

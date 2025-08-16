@@ -1,8 +1,8 @@
 //! Adapter to make rush-container's DockerClient compatible with rush-local-services
 
 use crate::docker as container_docker;
-use rush_local_services::docker as local_docker;
 use rush_core::error::Result;
+use rush_local_services::docker as local_docker;
 use std::sync::Arc;
 
 /// Adapter that wraps rush-container's DockerClient for use with rush-local-services
@@ -34,7 +34,9 @@ impl local_docker::DockerClient for LocalServicesDockerAdapter {
         ports: &[String],
         volumes: &[String],
     ) -> Result<String> {
-        self.inner.run_container(image, name, network, env_vars, ports, volumes).await
+        self.inner
+            .run_container(image, name, network, env_vars, ports, volumes)
+            .await
     }
 
     async fn stop_container(&self, container_id: &str) -> Result<()> {
@@ -49,7 +51,9 @@ impl local_docker::DockerClient for LocalServicesDockerAdapter {
         let status = self.inner.container_status(container_id).await?;
         Ok(match status {
             container_docker::ContainerStatus::Running => local_docker::ContainerStatus::Running,
-            container_docker::ContainerStatus::Exited(code) => local_docker::ContainerStatus::Exited(code),
+            container_docker::ContainerStatus::Exited(code) => {
+                local_docker::ContainerStatus::Exited(code)
+            }
             container_docker::ContainerStatus::Unknown => local_docker::ContainerStatus::Unknown,
         })
     }
@@ -57,11 +61,11 @@ impl local_docker::DockerClient for LocalServicesDockerAdapter {
     async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String> {
         self.inner.container_logs(container_id, lines).await
     }
-    
+
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
         self.inner.exec_in_container(container_id, command).await
     }
-    
+
     async fn get_container_by_name(&self, name: &str) -> Result<String> {
         self.inner.get_container_by_name(name).await
     }

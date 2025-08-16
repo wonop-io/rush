@@ -1,5 +1,5 @@
-use rush_core::constants::*;
 use log::{debug, error, trace};
+use rush_core::constants::*;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,8 +22,8 @@ impl ConfigLoader {
 
     /// Creates a new ConfigLoader using the project root as the root path
     pub fn from_project_root() -> Result<Self, String> {
-        let project_root = find_project_root()
-            .ok_or_else(|| "Failed to find project root".to_string())?;
+        let project_root =
+            find_project_root().ok_or_else(|| "Failed to find project root".to_string())?;
 
         Ok(Self::new(project_root))
     }
@@ -66,8 +66,8 @@ impl ConfigLoader {
         let config_path = self.root_path.join(RUSHD_CONFIG_FILE);
         trace!("Loading rushd config from: {}", config_path.display());
 
-        let content = read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read rushd.yaml: {e}"))?;
+        let content =
+            read_to_string(&config_path).map_err(|e| format!("Failed to read rushd.yaml: {e}"))?;
 
         serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse rushd.yaml: {e}"))
     }
@@ -91,27 +91,27 @@ pub struct DevOutputConfig {
     /// Output mode
     #[serde(default = "default_output_mode")]
     pub mode: String,
-    
+
     /// Component filtering
     #[serde(default)]
     pub components: ComponentFilterConfig,
-    
+
     /// Phase filtering
     #[serde(default)]
     pub phases: PhaseFilterConfig,
-    
+
     /// Log level filtering
     #[serde(default = "default_log_level")]
     pub log_level: String,
-    
+
     /// Color configuration
     #[serde(default)]
     pub colors: ColorConfig,
-    
+
     /// File logging configuration
     #[serde(default)]
     pub file_log: Option<FileLogConfig>,
-    
+
     /// Web view configuration
     #[serde(default)]
     pub web: WebConfig,

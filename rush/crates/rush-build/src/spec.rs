@@ -528,9 +528,9 @@ impl ComponentBuildSpec {
             target_port: yaml_section.get("target_port").map(|v| {
                 if let Some(target_port_str) = v.as_str() {
                     let processed_str = Self::process_template_string(target_port_str, &variables);
-                    processed_str.parse::<u16>().unwrap_or_else(|_| {
-                        panic!("Could not parse target_port: {processed_str}")
-                    })
+                    processed_str
+                        .parse::<u16>()
+                        .unwrap_or_else(|_| panic!("Could not parse target_port: {processed_str}"))
                 } else {
                     v.as_u64().unwrap() as u16
                 }
@@ -559,38 +559,39 @@ impl ComponentBuildSpec {
 
     /// Parse a LocalService build type from YAML
     fn parse_local_service(yaml_section: &Value, _variables: &Arc<Variables>) -> BuildType {
-        use log::{warn, debug};
+        use log::{debug, warn};
         use rush_core::service_constants::version_validation;
-        
+
         let service_type = yaml_section
             .get("service_type")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                "service_type is required for LocalService and must be a string"
-            })
+            .ok_or_else(|| "service_type is required for LocalService and must be a string")
             .unwrap()
             .to_string();
-        
+
         debug!("Parsing LocalService with service_type: {}", service_type);
-        
+
         // Parse and validate version
         let version = yaml_section
             .get("version")
             .and_then(|v| v.as_str())
             .map(|v| {
                 if let Err(e) = version_validation::validate_version(v) {
-                    warn!("Version validation warning for LocalService '{}': {}", 
-                          yaml_section.get("component_name")
-                              .and_then(|n| n.as_str())
-                              .unwrap_or("unknown"),
-                          e);
+                    warn!(
+                        "Version validation warning for LocalService '{}': {}",
+                        yaml_section
+                            .get("component_name")
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("unknown"),
+                        e
+                    );
                 }
                 v.to_string()
             });
-        
+
         // Parse environment variables with error handling
         let env = Self::parse_env_variables(yaml_section);
-        
+
         // Parse persist_data with default
         let persist_data = yaml_section
             .get("persist_data")
@@ -599,7 +600,7 @@ impl ComponentBuildSpec {
                 debug!("persist_data not specified for LocalService, defaulting to false");
                 false
             });
-        
+
         BuildType::LocalService {
             service_type,
             version,
@@ -617,37 +618,33 @@ impl ComponentBuildSpec {
                 .map(|s| s.to_string()),
         }
     }
-    
+
     /// Parse environment variables from YAML with error handling
     fn parse_env_variables(yaml_section: &Value) -> Option<HashMap<String, String>> {
         use log::warn;
-        
-        yaml_section.get("env").map(|v| {
-            match v.as_mapping() {
-                Some(map) => {
-                    map.iter()
-                        .filter_map(|(k, val)| {
-                            match (k.as_str(), val.as_str()) {
-                                (Some(key), Some(value)) => Some((key.to_string(), value.to_string())),
-                                _ => {
-                                    warn!("Skipping invalid environment variable in LocalService");
-                                    None
-                                }
-                            }
-                        })
-                        .collect()
-                }
-                None => {
-                    warn!("Environment variables for LocalService should be a mapping");
-                    HashMap::new()
-                }
+
+        yaml_section.get("env").map(|v| match v.as_mapping() {
+            Some(map) => map
+                .iter()
+                .filter_map(|(k, val)| match (k.as_str(), val.as_str()) {
+                    (Some(key), Some(value)) => Some((key.to_string(), value.to_string())),
+                    _ => {
+                        warn!("Skipping invalid environment variable in LocalService");
+                        None
+                    }
+                })
+                .collect(),
+            None => {
+                warn!("Environment variables for LocalService should be a mapping");
+                HashMap::new()
             }
         })
     }
-    
+
     /// Parse a sequence of strings from YAML
     fn parse_string_sequence(yaml_section: &Value, field_name: &str) -> Option<Vec<String>> {
-        yaml_section.get(field_name)
+        yaml_section
+            .get(field_name)
             .and_then(|v| v.as_sequence())
             .map(|seq| {
                 seq.iter()
@@ -765,10 +762,10 @@ impl ComponentBuildSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{BuildType, Variables};
+    use rush_config::Config;
     use serde_yaml;
     use std::sync::Arc;
-    use rush_config::Config;
-    use crate::{BuildType, Variables};
 
     fn create_test_config() -> Arc<Config> {
         Config::test_default()
@@ -820,24 +817,27 @@ mod tests {
                 assert_eq!(service_type, "postgresql");
                 assert_eq!(version.as_deref(), Some("15"));
                 assert_eq!(*persist_data, true);
-                
+
                 // Check environment variables
                 let env = env.as_ref().unwrap();
                 assert_eq!(env.get("POSTGRES_USER"), Some(&"testuser".to_string()));
                 assert_eq!(env.get("POSTGRES_PASSWORD"), Some(&"testpass".to_string()));
                 assert_eq!(env.get("POSTGRES_DB"), Some(&"testdb".to_string()));
                 assert_eq!(env.get("POSTGRES_PORT"), Some(&"5432".to_string()));
-                
-                assert_eq!(health_check.as_deref(), Some("pg_isready -U testuser -p 5432"));
-                
+
+                assert_eq!(
+                    health_check.as_deref(),
+                    Some("pg_isready -U testuser -p 5432")
+                );
+
                 let init_scripts = init_scripts.as_ref().unwrap();
                 assert_eq!(init_scripts.len(), 1);
                 assert_eq!(init_scripts[0], "init.sql");
-                
+
                 let depends_on = depends_on.as_ref().unwrap();
                 assert_eq!(depends_on.len(), 1);
                 assert_eq!(depends_on[0], "redis");
-                
+
                 assert_eq!(command.as_deref(), Some("postgres -c max_connections=200"));
             }
             _ => panic!("Expected LocalService build type"),
@@ -914,7 +914,7 @@ mod tests {
                 assert_eq!(service_type, "mongodb");
                 assert_eq!(version.as_deref(), Some("6.0"));
                 assert_eq!(*persist_data, true);
-                
+
                 let env = env.as_ref().unwrap();
                 assert_eq!(env.get("MONGO_PORT"), Some(&"27017".to_string()));
             }
@@ -968,4 +968,3 @@ mod tests {
         ComponentBuildSpec::from_yaml(config, variables, &yaml_value);
     }
 }
-

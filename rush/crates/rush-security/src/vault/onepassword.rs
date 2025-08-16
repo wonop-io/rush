@@ -30,9 +30,7 @@ impl OnePassword {
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             debug!("1Password CLI command failed: {}", stderr);
-            Err(Box::new(std::io::Error::other(
-                stderr,
-            )))
+            Err(Box::new(std::io::Error::other(stderr)))
         }
     }
 }

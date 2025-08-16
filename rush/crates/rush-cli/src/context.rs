@@ -1,5 +1,5 @@
-use rush_container::ContainerReactor;
 use rush_config::Config;
+use rush_container::ContainerReactor;
 use rush_security::{SecretsDefinitions, Vault};
 use rush_toolchain::ToolchainContext;
 use std::sync::{Arc, Mutex};

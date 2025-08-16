@@ -4,7 +4,7 @@ mod common;
 
 #[cfg(test)]
 mod integration_tests {
-    
+
     use std::sync::Arc;
 
     use rush_container::{DockerCliClient, DockerImage};

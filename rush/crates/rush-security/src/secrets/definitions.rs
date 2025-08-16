@@ -481,10 +481,7 @@ impl SecretsDefinitions {
                             .references
                             .entry(component_name.to_string())
                             .or_default()
-                            .push((
-                                secret_name.clone(),
-                                format!("{ref_component}.{ref_secret}"),
-                            ));
+                            .push((secret_name.clone(), format!("{ref_component}.{ref_secret}")));
                     }
                     GenerationResult::None => {
                         warn!(

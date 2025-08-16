@@ -31,6 +31,7 @@ pub async fn run_command(
     command: &str,
     args: Vec<&str>,
 ) -> Result<String, anyhow::Error> {
-    command_runner::run_command(name, command, args).await
+    command_runner::run_command(name, command, args)
+        .await
         .map_err(|e| anyhow::anyhow!("Command failed: {}", e))
 }

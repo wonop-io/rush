@@ -1,6 +1,6 @@
+use log::{error, info};
 use rush_core::error::{Error, Result};
 use rush_k8s::validation::{K8sValidator, KubeconformValidator, KubevalValidator};
-use log::{error, info};
 use std::path::Path;
 
 /// Command implementation for validating Kubernetes manifests
@@ -57,9 +57,7 @@ pub async fn execute(
             }
             Err(e) => {
                 error!("Validation failed: {}", e);
-                Err(Error::Validation(format!(
-                    "Schema validation failed: {e}"
-                )))
+                Err(Error::Validation(format!("Schema validation failed: {e}")))
             }
         }
     }

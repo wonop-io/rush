@@ -54,7 +54,7 @@ impl Platform {
             arch: arch.to_string(),
         }
     }
-    
+
     pub fn current() -> Self {
         Platform {
             os: std::env::consts::OS.to_string(),

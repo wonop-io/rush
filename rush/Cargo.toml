@@ -1,17 +1,17 @@
 [workspace]
 members = [
-    "crates/rush-core",
-    "crates/rush-utils",
-    "crates/rush-config",
-    "crates/rush-toolchain",
-    "crates/rush-security",
     "crates/rush-build",
-    "crates/rush-output",
-    "crates/rush-container",
-    "crates/rush-k8s",
-    "crates/rush-helper",
-    "crates/rush-local-services",
     "crates/rush-cli",
+    "crates/rush-config",
+    "crates/rush-container",
+    "crates/rush-core",
+    "crates/rush-helper",
+    "crates/rush-k8s",
+    "crates/rush-local-services",
+    "crates/rush-output",
+    "crates/rush-security",
+    "crates/rush-toolchain",
+    "crates/rush-utils",
 ]
 resolver = "2"
 
@@ -24,18 +24,6 @@ repository = "https://github.com/wonop-io/rush"
 homepage = "https://github.com/wonop-io/rush"
 
 [workspace.dependencies]
-# Internal crates
-rush-core = { path = "crates/rush-core" }
-rush-utils = { path = "crates/rush-utils" }
-rush-config = { path = "crates/rush-config" }
-rush-toolchain = { path = "crates/rush-toolchain" }
-rush-security = { path = "crates/rush-security" }
-rush-build = { path = "crates/rush-build" }
-rush-output = { path = "crates/rush-output" }
-rush-container = { path = "crates/rush-container" }
-rush-k8s = { path = "crates/rush-k8s" }
-rush-helper = { path = "crates/rush-helper" }
-rush-local-services = { path = "crates/rush-local-services" }
 
 # External dependencies
 anyhow = "1.0"
@@ -47,9 +35,12 @@ clap = "4.5.3"
 colored = "2.1.0"
 console = "0.15"
 console-subscriber = "0.4.0"
+
+# Dev dependencies
+ctor = "0.2.6"
 dialoguer = "0.11"
-dirs = "6.0.0"
 directories = "5.0"
+dirs = "6.0.0"
 dotenv = "0.15.0"
 ed25519-dalek = "2.1.1"
 env_logger = "0.11.5"
@@ -68,10 +59,23 @@ rand = "0.8.5"
 regex = "1.10"
 reqwest = { version = "0.12.7", features = ["json"] }
 rpassword = "7.3.1"
+rush-build = { path = "crates/rush-build" }
+rush-config = { path = "crates/rush-config" }
+rush-container = { path = "crates/rush-container" }
+# Internal crates
+rush-core = { path = "crates/rush-core" }
+rush-helper = { path = "crates/rush-helper" }
+rush-k8s = { path = "crates/rush-k8s" }
+rush-local-services = { path = "crates/rush-local-services" }
+rush-output = { path = "crates/rush-output" }
+rush-security = { path = "crates/rush-security" }
+rush-toolchain = { path = "crates/rush-toolchain" }
+rush-utils = { path = "crates/rush-utils" }
 semver = "1.0.23"
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
 serde_yaml = "0.9.33"
+serial_test = "3.2.0"
 sha2 = "0.10.8"
 slug = "0.1.5"
 ssh-key = { version = "0.6.7", features = [
@@ -92,16 +96,15 @@ tempfile = "3.8"
 tera = "1.19.1"
 thiserror = "1.0"
 tokio = { version = "1.36.0", features = ["full"] }
+tokio-test = "0.4"
 tokio-util = "0.7.10"
 toml = "0.8"
 uuid = { version = "1.10.0", features = ["v4", "serde"] }
 walkdir = "2.4"
 which = "6.0"
-
-# Dev dependencies
-ctor = "0.2.6"
-serial_test = "3.2.0"
-tokio-test = "0.4"
+atty = "0.2"
+crossterm = "0.28"
+once_cell = "1.19"
 
 [profile.release]
 opt-level = 3

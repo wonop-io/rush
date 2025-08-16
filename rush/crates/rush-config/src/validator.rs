@@ -80,9 +80,7 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigValidationError> {
     let start_port = config.start_port();
     if start_port < 1024 {
         return Err(ConfigValidationError::with_field(
-            format!(
-                "Invalid start port: {start_port}. Port must be at least 1024"
-            ),
+            format!("Invalid start port: {start_port}. Port must be at least 1024"),
             "start_port",
         ));
     }

@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 use log::{debug, error, info, trace};
 
-use rush_core::constants::DOCKER_TAG_LATEST;
-use rush_container::{ContainerReactor, ContainerReactorConfig, DockerCliClient};
 use rush_config::Config;
+use rush_container::{ContainerReactor, ContainerReactorConfig, DockerCliClient};
+use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_core::error::{Error, Result};
 // Legacy imports removed - this module is deprecated
 // use rush_output::OutputDirectorFactory;

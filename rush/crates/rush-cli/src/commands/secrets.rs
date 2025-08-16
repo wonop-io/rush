@@ -1,7 +1,7 @@
 use crate::context::CliContext;
-use rush_core::error::Result;
 use clap::ArgMatches;
 use log::{error, trace};
+use rush_core::error::Result;
 use std::process;
 
 pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {

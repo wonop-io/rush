@@ -1,13 +1,13 @@
 //! Simplified output system for Rush
-//! 
+//!
 //! This module provides a clean, simple abstraction for handling output
 //! from containers and build processes.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Local, Utc};
 use colored::*;
-use std::io::{self, Write};
 use rush_core::error::Result;
+use std::io::{self, Write};
 
 /// A log entry from a container or build process
 #[derive(Debug, Clone)]
@@ -78,10 +78,10 @@ impl LogEntry {
 pub trait Sink: Send + Sync {
     /// Write a log entry to the sink
     async fn write(&mut self, entry: LogEntry) -> Result<()>;
-    
+
     /// Flush any buffered output
     async fn flush(&mut self) -> Result<()>;
-    
+
     /// Close the sink
     async fn close(&mut self) -> Result<()> {
         self.flush().await
@@ -137,7 +137,8 @@ impl StdoutSink {
     /// Format a log entry with colors
     fn format_entry(&mut self, entry: &LogEntry) -> String {
         let timestamp = if self.show_timestamp {
-            entry.timestamp
+            entry
+                .timestamp
                 .with_timezone(&Local)
                 .format("%H:%M:%S")
                 .to_string()
@@ -203,7 +204,8 @@ impl NoColorStdoutSink {
     /// Format a log entry without colors
     fn format_entry(&self, entry: &LogEntry) -> String {
         let timestamp = if self.show_timestamp {
-            entry.timestamp
+            entry
+                .timestamp
                 .with_timezone(&Local)
                 .format("%H:%M:%S")
                 .to_string()
@@ -283,7 +285,8 @@ impl SplitSink {
     /// Format a log entry for split view
     fn format_entry(&mut self, entry: &LogEntry) -> String {
         let timestamp = if self.show_timestamp {
-            entry.timestamp
+            entry
+                .timestamp
                 .with_timezone(&Local)
                 .format("%H:%M:%S")
                 .to_string()
@@ -373,10 +376,15 @@ impl Sink for FileSink {
             });
             writeln!(self.file, "{}", json)?;
         } else {
-            let timestamp = entry.timestamp
+            let timestamp = entry
+                .timestamp
                 .with_timezone(&Local)
                 .format("%Y-%m-%d %H:%M:%S");
-            writeln!(self.file, "{} {} | {}", timestamp, entry.component, entry.content)?;
+            writeln!(
+                self.file,
+                "{} {} | {}",
+                timestamp, entry.component, entry.content
+            )?;
         }
         Ok(())
     }

@@ -1,13 +1,13 @@
-use rush_build::{BuildContext, BuildType};
 use crate::context::CliContext;
-use rush_config::Config;
+use colored::Colorize;
+use log::{debug, error, info, trace};
+use rush_build::{BuildContext, BuildType};
 use rush_config::environment::{load_environment_variables, setup_environment};
 use rush_config::product::ProductLoader;
+use rush_config::Config;
 use rush_core::error::{Error, Result};
 use rush_toolchain::{Platform, ToolchainContext};
 use rush_utils::run_command;
-use colored::Colorize;
-use log::{debug, error, info, trace};
 use std::collections::HashMap;
 use std::path::Path;
 use std::process;

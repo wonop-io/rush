@@ -55,8 +55,9 @@ pub fn setup_file_watcher(config: WatcherConfig) -> Result<(RecommendedWatcher, 
     let (tx, rx) = std::sync::mpsc::channel();
 
     // Create watcher with default configuration
-    let mut watcher = RecommendedWatcher::new(tx, NotifyConfig::default())
-        .map_err(|e| rush_core::error::Error::Setup(format!("Failed to create file watcher: {e}")))?;
+    let mut watcher = RecommendedWatcher::new(tx, NotifyConfig::default()).map_err(|e| {
+        rush_core::error::Error::Setup(format!("Failed to create file watcher: {e}"))
+    })?;
 
     // Watch paths
     if config.watch_paths.is_empty() {

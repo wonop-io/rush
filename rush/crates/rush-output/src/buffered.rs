@@ -1,6 +1,6 @@
 use super::{OutputDirector, OutputSource, OutputStream, OutputStreamType};
-use rush_core::error::Result;
 use async_trait::async_trait;
+use rush_core::error::Result;
 use std::collections::HashMap;
 
 /// A buffered output director that accumulates partial lines before writing

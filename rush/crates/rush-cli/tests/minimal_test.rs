@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
-    
-    
+
     use std::sync::Arc;
 
     use rush_build::Variables;

@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    
+
     use std::sync::{Arc, Mutex};
 
     use rush_build::{BuildType, ComponentBuildSpec, Variables};
-    use rush_container::{DockerCliClient, DockerImage};
     use rush_config::Config;
+    use rush_container::{DockerCliClient, DockerImage};
     use rush_toolchain::{Platform, ToolchainContext};
 
     // Create a test config suitable for basic tests

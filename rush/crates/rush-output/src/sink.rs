@@ -58,16 +58,16 @@ pub struct TerminalSink {
 pub enum TerminalLayout {
     /// Traditional line-by-line output
     Linear,
-    
+
     /// Split screen with multiple panes
     Split { panes: Vec<PaneConfig> },
-    
+
     /// Dashboard-style with widgets
     Dashboard { widgets: Vec<WidgetConfig> },
-    
+
     /// Tree view for hierarchical output
     Tree,
-    
+
     /// Web view (placeholder)
     Web,
 }
@@ -130,7 +130,8 @@ impl TerminalSink {
 
     /// Set the layout
     pub fn with_layout(mut self, layout: TerminalLayout) -> Self {
-        eprintln!("DEBUG sink.rs: Setting layout to: {:?}", 
+        eprintln!(
+            "DEBUG sink.rs: Setting layout to: {:?}",
             match &layout {
                 TerminalLayout::Linear => "Linear",
                 TerminalLayout::Split { .. } => "Split",
@@ -146,8 +147,7 @@ impl TerminalSink {
     /// Write to linear layout
     fn write_linear(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
-        writeln!(self.stdout, "{}", formatted)
-            .map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{}", formatted).map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
@@ -159,8 +159,7 @@ impl TerminalSink {
             crate::event::ExecutionPhase::Runtime { .. } => "[RUNTIME]",
             crate::event::ExecutionPhase::System { .. } => "[SYSTEM] ",
         };
-        writeln!(self.stdout, "{} {}", phase_prefix, formatted)
-            .map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{} {}", phase_prefix, formatted).map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
@@ -168,8 +167,7 @@ impl TerminalSink {
     fn write_dashboard(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
         // Dashboard mode would normally show a TUI, for now just format nicely
-        writeln!(self.stdout, "{}", formatted)
-            .map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{}", formatted).map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
@@ -177,8 +175,7 @@ impl TerminalSink {
     fn write_tree(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
         let indent = "  "; // Simple indentation for now
-        writeln!(self.stdout, "{}{}", indent, formatted)
-            .map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{}{}", indent, formatted).map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
@@ -186,8 +183,7 @@ impl TerminalSink {
     fn write_web(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
         // Web mode would normally serve via HTTP, for now just output
-        writeln!(self.stdout, "{}", formatted)
-            .map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{}", formatted).map_err(|e| Error::Io(e))?;
         Ok(())
     }
 }
@@ -204,7 +200,8 @@ impl OutputSink for TerminalSink {
         // Debug: Log which layout is being used for each write
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
-            eprintln!("DEBUG sink.rs: First write using layout: {:?}", 
+            eprintln!(
+                "DEBUG sink.rs: First write using layout: {:?}",
                 match &self.layout {
                     TerminalLayout::Linear => "Linear",
                     TerminalLayout::Split { .. } => "Split",
@@ -214,7 +211,7 @@ impl OutputSink for TerminalSink {
                 }
             );
         });
-        
+
         match &self.layout {
             TerminalLayout::Linear => self.write_linear(&event),
             TerminalLayout::Split { .. } => self.write_split(&event),
@@ -225,14 +222,13 @@ impl OutputSink for TerminalSink {
     }
 
     async fn flush(&mut self) -> Result<()> {
-        self.stdout.flush()
-            .map_err(|e| Error::Io(e))?;
+        self.stdout.flush().map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
     fn capabilities(&self) -> SinkCapabilities {
         let (width, _height) = terminal::size().unwrap_or((80, 24));
-        
+
         SinkCapabilities {
             supports_color: self.color_enabled,
             supports_unicode: true, // Assume UTF-8 support
@@ -283,13 +279,13 @@ impl FileSink {
     /// Create a new file sink
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
-        
+
         // Create parent directories if needed
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| Error::Filesystem(format!("Failed to create log directory: {}", e)))?;
         }
-        
+
         Ok(Self {
             path,
             file: None,
@@ -321,11 +317,9 @@ impl FileSink {
                 .append(true)
                 .open(&self.path)
                 .map_err(|e| Error::Io(e))?;
-            
-            self.current_size = file.metadata()
-                .map(|m| m.len())
-                .unwrap_or(0);
-            
+
+            self.current_size = file.metadata().map(|m| m.len()).unwrap_or(0);
+
             self.file = Some(file);
         }
         Ok(())
@@ -344,8 +338,7 @@ impl FileSink {
     fn rotate(&mut self) -> Result<()> {
         // Close current file
         if let Some(mut file) = self.file.take() {
-            file.flush()
-                .map_err(|e| Error::Io(e))?;
+            file.flush().map_err(|e| Error::Io(e))?;
         }
 
         // Rename existing files
@@ -356,9 +349,9 @@ impl FileSink {
                 } else {
                     self.path.with_extension(format!("{}.log", i - 1))
                 };
-                
+
                 let to = self.path.with_extension(format!("{}.log", i));
-                
+
                 if from.exists() {
                     std::fs::rename(&from, &to).ok();
                 }
@@ -376,7 +369,7 @@ impl FileSink {
 impl OutputSink for FileSink {
     async fn write(&mut self, event: OutputEvent) -> Result<()> {
         self.ensure_file_open()?;
-        
+
         let formatted = match self.format {
             FileFormat::PlainText => self.formatter.format(&event),
             FileFormat::Json => serde_json::to_string_pretty(&event)
@@ -384,26 +377,24 @@ impl OutputSink for FileSink {
             FileFormat::JsonLines => serde_json::to_string(&event)
                 .map_err(|e| Error::Internal(format!("Failed to serialize event: {}", e)))?,
         };
-        
+
         let bytes = format!("{}\n", formatted).into_bytes();
         self.current_size += bytes.len() as u64;
-        
+
         if let Some(file) = &mut self.file {
-            file.write_all(&bytes)
-                .map_err(|e| Error::Io(e))?;
+            file.write_all(&bytes).map_err(|e| Error::Io(e))?;
         }
-        
+
         if self.should_rotate() {
             self.rotate()?;
         }
-        
+
         Ok(())
     }
 
     async fn flush(&mut self) -> Result<()> {
         if let Some(file) = &mut self.file {
-            file.flush()
-                .map_err(|e| Error::Io(e))?;
+            file.flush().map_err(|e| Error::Io(e))?;
         }
         Ok(())
     }
@@ -493,7 +484,7 @@ impl OutputSink for BufferSink {
                 }
             }
         }
-        
+
         self.events.push_back(event);
         Ok(())
     }
@@ -564,7 +555,7 @@ mod tests {
     #[tokio::test]
     async fn test_buffer_sink() {
         let mut sink = BufferSink::new(3);
-        
+
         for i in 0..5 {
             let source = OutputSource::new("test", "container");
             let event = OutputEvent::runtime(
@@ -574,7 +565,7 @@ mod tests {
             );
             sink.write(event).await.unwrap();
         }
-        
+
         // Should only have 3 events (oldest dropped)
         assert_eq!(sink.len(), 3);
     }
@@ -583,19 +574,19 @@ mod tests {
     async fn test_file_sink() {
         let temp_dir = tempfile::tempdir().unwrap();
         let log_path = temp_dir.path().join("test.log");
-        
+
         let mut sink = FileSink::new(&log_path).unwrap();
-        
+
         let source = OutputSource::new("test", "container");
         let event = OutputEvent::runtime(
             source,
             OutputStream::stdout(b"test log entry".to_vec()),
             None,
         );
-        
+
         sink.write(event).await.unwrap();
         sink.flush().await.unwrap();
-        
+
         // Verify file was created and contains data
         assert!(log_path.exists());
         let contents = std::fs::read_to_string(&log_path).unwrap();

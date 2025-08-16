@@ -3,8 +3,8 @@
 //! This module provides functionality for managing Kubernetes contexts, including
 //! setting the current context, retrieving available contexts, and validating contexts.
 
-use rush_core::error::{Error, Result};
 use log::{debug, trace, warn};
+use rush_core::error::{Error, Result};
 use std::process::Command;
 
 /// Represents a Kubernetes context configuration

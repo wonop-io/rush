@@ -1,8 +1,8 @@
-use rush_config::loader::{apply_rushd_config, RushdConfig};
-use rush_config::environment::setup_environment;
-use rush_core::error::Result;
-use rush_utils::{find_project_root, Directory, version::check_version};
 use log::{debug, trace};
+use rush_config::environment::setup_environment;
+use rush_config::loader::{apply_rushd_config, RushdConfig};
+use rush_core::error::Result;
+use rush_utils::{find_project_root, version::check_version, Directory};
 use std::env;
 use std::fs::File;
 use std::io::Read;

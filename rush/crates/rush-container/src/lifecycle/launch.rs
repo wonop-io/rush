@@ -3,13 +3,13 @@ use std::{collections::HashMap, sync::Arc};
 use log::{debug, error, info, trace};
 use tokio::sync::mpsc;
 
-use rush_build::BuildContext;
-use rush_core::error::{Error, Result};
 use crate::{
+    docker::DockerClient,
     network::setup_network,
     service::{ContainerService, ServiceConfig},
-    docker::DockerClient,
 };
+use rush_build::BuildContext;
+use rush_core::error::{Error, Result};
 
 /// Launches containers based on the provided build context and configuration.
 ///

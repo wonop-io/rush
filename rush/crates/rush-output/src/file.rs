@@ -1,6 +1,6 @@
 use super::{OutputDirector, OutputSource, OutputStream};
-use rush_core::error::Result;
 use async_trait::async_trait;
+use rush_core::error::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
@@ -136,10 +136,7 @@ impl OutputDirector for FileOutputDirector {
 
     async fn flush(&mut self) -> Result<()> {
         for writer in self.writers.values_mut() {
-            writer
-                .flush()
-                .await
-                .map_err(rush_core::Error::Io)?;
+            writer.flush().await.map_err(rush_core::Error::Io)?;
         }
         Ok(())
     }

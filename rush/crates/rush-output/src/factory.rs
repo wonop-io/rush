@@ -53,9 +53,7 @@ pub struct OutputDirectorFactory;
 impl OutputDirectorFactory {
     /// Create an output director based on configuration
     pub async fn create(config: OutputDirectorConfig) -> Result<Box<dyn OutputDirector + Send>> {
-        eprintln!(
-            "DEBUG: OutputDirectorFactory::create called with config: {config:?}"
-        );
+        eprintln!("DEBUG: OutputDirectorFactory::create called with config: {config:?}");
         match config {
             OutputDirectorConfig::Stdout { colored, buffered } => {
                 let mut std_director = StdOutputDirector::new();

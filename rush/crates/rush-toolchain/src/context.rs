@@ -1,6 +1,6 @@
 use crate::platform::Platform;
-use rush_utils::{first_which, resolve_toolchain_path};
 use log::{debug, trace, warn};
+use rush_utils::{first_which, resolve_toolchain_path};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -353,7 +353,12 @@ impl ToolchainContext {
         // The --porcelain flag gives us machine-readable output
         // We only care about tracked files that have changes
         let status_output = Command::new(&self.git)
-            .args(["status", "--porcelain", "--untracked-files=no", subdirectory_path])
+            .args([
+                "status",
+                "--porcelain",
+                "--untracked-files=no",
+                subdirectory_path,
+            ])
             .output()
             .map_err(|e| e.to_string())?;
 
@@ -479,7 +484,6 @@ mod tests {
 
         // Modify the file and check WIP state
         let mut file = fs::OpenOptions::new()
-            
             .append(true)
             .open(test_file_path)
             .unwrap();

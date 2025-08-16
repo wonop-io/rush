@@ -1,6 +1,6 @@
 use super::{OutputSource, OutputStream};
-use rush_core::error::Result;
 use async_trait::async_trait;
+use rush_core::error::Result;
 
 /// Trait for directing output streams to different destinations
 #[async_trait]
@@ -117,12 +117,8 @@ impl OutputDirector for StdOutputDirector {
 
     async fn flush(&mut self) -> Result<()> {
         use std::io::{self, Write};
-        io::stdout()
-            .flush()
-            .map_err(rush_core::Error::Io)?;
-        io::stderr()
-            .flush()
-            .map_err(rush_core::Error::Io)?;
+        io::stdout().flush().map_err(rush_core::Error::Io)?;
+        io::stderr().flush().map_err(rush_core::Error::Io)?;
         Ok(())
     }
 

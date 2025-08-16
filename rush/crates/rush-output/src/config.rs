@@ -60,7 +60,9 @@ fn parse_output_mode(mode: &str) -> OutputMode {
 }
 
 /// Create component filter from configuration
-fn create_component_filter(config: &rush_config::loader::ComponentFilterConfig) -> Option<Box<dyn OutputFilter>> {
+fn create_component_filter(
+    config: &rush_config::loader::ComponentFilterConfig,
+) -> Option<Box<dyn OutputFilter>> {
     if let Some(include) = &config.include {
         Some(Box::new(ComponentFilter::allowlist(include.clone())))
     } else if let Some(exclude) = &config.exclude {
@@ -89,12 +91,14 @@ fn create_level_filter(level_str: &str) -> LevelFilter {
 }
 
 /// Create terminal sink based on mode and color configuration
-fn create_terminal_sink(mode: OutputMode, color_config: &rush_config::loader::ColorConfig) -> TerminalSink {
+fn create_terminal_sink(
+    mode: OutputMode,
+    color_config: &rush_config::loader::ColorConfig,
+) -> TerminalSink {
     let formatter = create_formatter(color_config);
-    
-    let mut sink = TerminalSink::new()
-        .with_formatter(formatter);
-    
+
+    let mut sink = TerminalSink::new().with_formatter(formatter);
+
     // Set layout based on mode
     match mode {
         OutputMode::Split => {
@@ -106,13 +110,11 @@ fn create_terminal_sink(mode: OutputMode, color_config: &rush_config::loader::Co
             });
         }
         OutputMode::Dashboard => {
-            sink = sink.with_layout(crate::sink::TerminalLayout::Dashboard {
-                widgets: vec![],
-            });
+            sink = sink.with_layout(crate::sink::TerminalLayout::Dashboard { widgets: vec![] });
         }
         _ => {}
     }
-    
+
     sink
 }
 
@@ -150,7 +152,10 @@ mod tests {
         assert!(matches!(parse_output_mode("auto"), OutputMode::Auto));
         assert!(matches!(parse_output_mode("simple"), OutputMode::Simple));
         assert!(matches!(parse_output_mode("split"), OutputMode::Split));
-        assert!(matches!(parse_output_mode("dashboard"), OutputMode::Dashboard));
+        assert!(matches!(
+            parse_output_mode("dashboard"),
+            OutputMode::Dashboard
+        ));
         assert!(matches!(parse_output_mode("web"), OutputMode::Web));
         assert!(matches!(parse_output_mode("invalid"), OutputMode::Auto));
     }

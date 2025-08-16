@@ -7,6 +7,8 @@ pub mod infrastructure;
 pub mod manifests;
 pub mod validation;
 
-pub use context::{KubernetesContext, ContextManager};
-pub use deployment::{Manifest as DeploymentManifest, ManifestCollection as DeploymentManifestCollection};
+pub use context::{ContextManager, KubernetesContext};
+pub use deployment::{
+    Manifest as DeploymentManifest, ManifestCollection as DeploymentManifestCollection,
+};
 pub use manifests::{Manifest, ManifestCollection};

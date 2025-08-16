@@ -34,7 +34,11 @@ where
     }
 
     fn description(&self) -> String {
-        format!("{} AND {}", self.left.description(), self.right.description())
+        format!(
+            "{} AND {}",
+            self.left.description(),
+            self.right.description()
+        )
     }
 }
 
@@ -60,7 +64,11 @@ where
     }
 
     fn description(&self) -> String {
-        format!("{} OR {}", self.left.description(), self.right.description())
+        format!(
+            "{} OR {}",
+            self.left.description(),
+            self.right.description()
+        )
     }
 }
 
@@ -278,7 +286,11 @@ impl OutputFilter for PatternFilter {
     }
 
     fn description(&self) -> String {
-        format!("Pattern filter ({:?}): {} patterns", self.mode, self.patterns.len())
+        format!(
+            "Pattern filter ({:?}): {} patterns",
+            self.mode,
+            self.patterns.len()
+        )
     }
 }
 
@@ -390,31 +402,24 @@ mod tests {
 
     #[test]
     fn test_component_filter_allowlist() {
-        let filter = ComponentFilter::allowlist(vec!["backend".to_string(), "frontend".to_string()]);
-        
+        let filter =
+            ComponentFilter::allowlist(vec!["backend".to_string(), "frontend".to_string()]);
+
         let source = OutputSource::new("backend", "container");
-        let event = OutputEvent::runtime(
-            source,
-            OutputStream::stdout(b"test".to_vec()),
-            None,
-        );
-        
+        let event = OutputEvent::runtime(source, OutputStream::stdout(b"test".to_vec()), None);
+
         assert!(filter.should_pass(&event));
 
         let source = OutputSource::new("database", "container");
-        let event = OutputEvent::runtime(
-            source,
-            OutputStream::stdout(b"test".to_vec()),
-            None,
-        );
-        
+        let event = OutputEvent::runtime(source, OutputStream::stdout(b"test".to_vec()), None);
+
         assert!(!filter.should_pass(&event));
     }
 
     #[test]
     fn test_phase_filter() {
         let filter = PhaseFilter::compile_time();
-        
+
         let source = OutputSource::new("test", "container");
         let event = OutputEvent::compile_time(
             source.clone(),
@@ -422,29 +427,25 @@ mod tests {
             "test".to_string(),
             OutputStream::stdout(b"compiling".to_vec()),
         );
-        
+
         assert!(filter.should_pass(&event));
 
-        let event = OutputEvent::runtime(
-            source,
-            OutputStream::stdout(b"running".to_vec()),
-            None,
-        );
-        
+        let event = OutputEvent::runtime(source, OutputStream::stdout(b"running".to_vec()), None);
+
         assert!(!filter.should_pass(&event));
     }
 
     #[test]
     fn test_pattern_filter() {
         let filter = PatternFilter::any(vec!["error".to_string(), "warning".to_string()]).unwrap();
-        
+
         let source = OutputSource::new("test", "container");
         let event = OutputEvent::runtime(
             source.clone(),
             OutputStream::stdout(b"An error occurred".to_vec()),
             None,
         );
-        
+
         assert!(filter.should_pass(&event));
 
         let event = OutputEvent::runtime(
@@ -452,7 +453,7 @@ mod tests {
             OutputStream::stdout(b"Everything is fine".to_vec()),
             None,
         );
-        
+
         assert!(!filter.should_pass(&event));
     }
 }

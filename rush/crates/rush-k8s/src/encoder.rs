@@ -3,8 +3,8 @@
 //! This module provides functionality for encoding Kubernetes secrets to the
 //! appropriate format for deployment in Kubernetes manifests.
 
-use rush_core::error::{Error, Result};
 use log::{info, trace, warn};
+use rush_core::error::{Error, Result};
 use std::fs;
 use std::process::Command;
 

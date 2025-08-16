@@ -1,21 +1,21 @@
 //! Simplified output integration for containers using the new sink system
-//! 
+//!
 //! This module properly captures stdout/stderr directly from spawned processes
 //! instead of using docker logs, ensuring real-time output and color preservation.
 
 use crate::DockerClient;
+use log::{debug, error, warn};
 use rush_core::error::{Error, Result};
+use rush_core::shutdown;
 use rush_output::simple::{LogEntry, Sink};
-use std::sync::Arc;
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use log::{debug, error, warn};
-use rush_core::shutdown;
 
 /// Capture output from any spawned process and forward to sink
-/// 
+///
 /// This is the core function that properly captures stdout/stderr from a spawned
 /// child process and forwards it to the configured sink.
 pub async fn capture_process_output(
@@ -25,7 +25,10 @@ pub async fn capture_process_output(
     sink: Arc<Mutex<Box<dyn Sink>>>,
     is_build: bool,
 ) -> Result<()> {
-    debug!("Starting process: {} {:?} for component {}", command, args, component_name);
+    debug!(
+        "Starting process: {} {:?} for component {}",
+        command, args, component_name
+    );
 
     let mut child = Command::new(command)
         .args(&args)
@@ -34,9 +37,13 @@ pub async fn capture_process_output(
         .spawn()
         .map_err(|e| Error::Docker(format!("Failed to spawn process {}: {}", command, e)))?;
 
-    let stdout = child.stdout.take()
+    let stdout = child
+        .stdout
+        .take()
         .ok_or_else(|| Error::Docker("Failed to capture stdout".into()))?;
-    let stderr = child.stderr.take()
+    let stderr = child
+        .stderr
+        .take()
         .ok_or_else(|| Error::Docker("Failed to capture stderr".into()))?;
 
     let mut handles = vec![];
@@ -60,7 +67,7 @@ pub async fn capture_process_output(
             if let Err(e) = sink_guard.write(entry).await {
                 error!("Failed to write stdout: {}", e);
             }
-            
+
             line.clear();
         }
         debug!("Stdout reader finished for {}", component_clone);
@@ -86,7 +93,7 @@ pub async fn capture_process_output(
             if let Err(e) = sink_guard.write(entry).await {
                 error!("Failed to write stderr: {}", e);
             }
-            
+
             line.clear();
         }
         debug!("Stderr reader finished for {}", component_clone);
@@ -101,7 +108,9 @@ pub async fn capture_process_output(
     }
 
     // Wait for the process to complete
-    let status = child.wait().await
+    let status = child
+        .wait()
+        .await
         .map_err(|e| Error::Docker(format!("Failed to wait for process: {}", e)))?;
 
     if !status.success() {
@@ -115,7 +124,7 @@ pub async fn capture_process_output(
 }
 
 /// Capture output from any spawned process with graceful shutdown handling
-/// 
+///
 /// This version handles shutdown gracefully and doesn't report errors when
 /// processes are terminated due to shutdown.
 pub async fn capture_process_output_with_shutdown(
@@ -125,10 +134,13 @@ pub async fn capture_process_output_with_shutdown(
     sink: Arc<Mutex<Box<dyn Sink>>>,
     is_build: bool,
 ) -> Result<()> {
-    debug!("Starting process with shutdown handling: {} {:?} for component {}", command, args, component_name);
+    debug!(
+        "Starting process with shutdown handling: {} {:?} for component {}",
+        command, args, component_name
+    );
 
     let shutdown_token = shutdown::global_shutdown().cancellation_token();
-    
+
     let mut child = Command::new(command)
         .args(&args)
         .stdout(Stdio::piped())
@@ -136,9 +148,13 @@ pub async fn capture_process_output_with_shutdown(
         .spawn()
         .map_err(|e| Error::Docker(format!("Failed to spawn process {}: {}", command, e)))?;
 
-    let stdout = child.stdout.take()
+    let stdout = child
+        .stdout
+        .take()
         .ok_or_else(|| Error::Docker("Failed to capture stdout".into()))?;
-    let stderr = child.stderr.take()
+    let stderr = child
+        .stderr
+        .take()
         .ok_or_else(|| Error::Docker("Failed to capture stderr".into()))?;
 
     let mut handles = vec![];
@@ -158,7 +174,7 @@ pub async fn capture_process_output_with_shutdown(
                     if result.unwrap_or(0) == 0 {
                         break;
                     }
-                    
+
                     let entry = if is_build {
                         LogEntry::build(&component_clone, &line)
                     } else {
@@ -171,7 +187,7 @@ pub async fn capture_process_output_with_shutdown(
                             error!("Failed to write stdout: {}", e);
                         }
                     }
-                    
+
                     line.clear();
                 }
                 _ = shutdown_clone.cancelled() => {
@@ -199,7 +215,7 @@ pub async fn capture_process_output_with_shutdown(
                     if result.unwrap_or(0) == 0 {
                         break;
                     }
-                    
+
                     let entry = if is_build {
                         LogEntry::build(&component_clone, &line).as_error()
                     } else {
@@ -212,7 +228,7 @@ pub async fn capture_process_output_with_shutdown(
                             error!("Failed to write stderr: {}", e);
                         }
                     }
-                    
+
                     line.clear();
                 }
                 _ = shutdown_clone.cancelled() => {
@@ -236,28 +252,35 @@ pub async fn capture_process_output_with_shutdown(
 
     // If we're shutting down, kill the child process gracefully
     if shutdown_token.is_cancelled() {
-        debug!("Terminating {} process for {} due to shutdown", command, component_name);
-        let _ = child.kill().await;  // Ignore errors during shutdown
-        return Ok(());  // Don't report error during shutdown
+        debug!(
+            "Terminating {} process for {} due to shutdown",
+            command, component_name
+        );
+        let _ = child.kill().await; // Ignore errors during shutdown
+        return Ok(()); // Don't report error during shutdown
     }
 
     // Wait for the process to complete
-    let status = child.wait().await
+    let status = child
+        .wait()
+        .await
         .map_err(|e| Error::Docker(format!("Failed to wait for process: {}", e)))?;
 
     // Check exit status, but ignore if we're shutting down
     if !status.success() {
         // Common exit codes that indicate normal termination during shutdown
         let exit_code = status.code().unwrap_or(-1);
-        
+
         // Docker attach returns 255 when the container is stopped
         // Also ignore exit code 1 which can happen during container shutdown
         if exit_code == 255 || exit_code == 1 || exit_code == 125 {
-            debug!("{} process for {} exited with code {} (likely due to container stop)", 
-                   command, component_name, exit_code);
+            debug!(
+                "{} process for {} exited with code {} (likely due to container stop)",
+                command, component_name, exit_code
+            );
             return Ok(());
         }
-        
+
         return Err(Error::Docker(format!(
             "Process {} failed with status: {}",
             command, status
@@ -267,9 +290,8 @@ pub async fn capture_process_output_with_shutdown(
     Ok(())
 }
 
-
 /// Follow container logs from the beginning to ensure no output is missed
-/// 
+///
 /// This uses docker logs --follow to get all output from container start,
 /// avoiding the race condition where attach might miss early output.
 /// Handles shutdown gracefully without logging errors when containers are stopped.
@@ -283,9 +305,9 @@ pub async fn follow_container_logs_from_start(
 
     let args = vec![
         "logs".to_string(),
-        "--follow".to_string(),      // Follow log output
-        "--since".to_string(),         
-        "0s".to_string(),             // Get all logs from the beginning
+        "--follow".to_string(), // Follow log output
+        "--since".to_string(),
+        "0s".to_string(), // Get all logs from the beginning
         container_id.to_string(),
     ];
 
@@ -296,11 +318,12 @@ pub async fn follow_container_logs_from_start(
         component_name.clone(),
         sink.clone(),
         false, // is_build = false for runtime containers
-    ).await
+    )
+    .await
 }
 
 /// Attach to an already running container and capture its output
-/// 
+///
 /// DEPRECATED: Use follow_container_logs_from_start instead to avoid missing startup logs.
 /// This uses docker attach to get direct stream access to a running container.
 /// Handles shutdown gracefully without logging errors when containers are stopped.
@@ -315,14 +338,17 @@ pub async fn attach_to_container(
 }
 
 /// Follow build output using the simplified sink system
-/// 
+///
 /// This captures output directly from the build command process.
 pub async fn follow_build_output_simple(
     component_name: String,
     build_command: Vec<String>,
     sink: Arc<Mutex<Box<dyn Sink>>>,
 ) -> Result<()> {
-    debug!("Starting build command for {}: {:?}", component_name, build_command);
+    debug!(
+        "Starting build command for {}: {:?}",
+        component_name, build_command
+    );
 
     if build_command.is_empty() {
         return Err(Error::Docker("Build command is empty".to_string()));
@@ -335,11 +361,12 @@ pub async fn follow_build_output_simple(
         component_name,
         sink,
         true, // is_build = true for build commands
-    ).await
+    )
+    .await
 }
 
 /// Capture Docker build output
-/// 
+///
 /// This runs docker build and captures its output directly.
 pub async fn capture_docker_build(
     tag: &str,
@@ -352,12 +379,12 @@ pub async fn capture_docker_build(
     debug!("Building Docker image {} for {}", tag, component_name);
 
     let mut args = vec!["build".to_string()];
-    
+
     if let Some(platform) = platform {
         args.push("--platform".to_string());
         args.push(platform.to_string());
     }
-    
+
     args.extend(vec![
         "-t".to_string(),
         tag.to_string(),
@@ -372,7 +399,8 @@ pub async fn capture_docker_build(
         component_name,
         sink,
         true, // is_build = true for docker build
-    ).await
+    )
+    .await
 }
 
 /// Write a system message to the sink

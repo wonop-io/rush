@@ -1,7 +1,7 @@
-use rush_core::dotenv::{load_dotenv, save_dotenv};
 use crate::vault::vault_trait::Vault;
 use async_trait::async_trait;
 use log::{debug, warn};
+use rush_core::dotenv::{load_dotenv, save_dotenv};
 use serde_yaml::Value;
 use std::collections::HashMap;
 use std::error::Error;
@@ -32,7 +32,15 @@ impl DotenvVault {
                     component_name.as_str(),
                     component_info.get("location").and_then(|v| v.as_str()),
                 ) {
-                    let absolute_path = product_dir.join(location).canonicalize().unwrap_or_else(|_| panic!("Failed to get absolute path for component: {component_name}"));
+                    let absolute_path =
+                        product_dir
+                            .join(location)
+                            .canonicalize()
+                            .unwrap_or_else(|_| {
+                                panic!(
+                                    "Failed to get absolute path for component: {component_name}"
+                                )
+                            });
                     components.insert(component_name.to_string(), absolute_path);
                 }
             }

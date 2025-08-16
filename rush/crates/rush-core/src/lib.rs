@@ -1,5 +1,5 @@
 //! Rush Core - Foundation types and utilities
-//! 
+//!
 //! This crate provides the core types, traits, and utilities used across
 //! all other Rush crates.
 
@@ -13,7 +13,7 @@ pub mod types;
 // Re-export commonly used items
 pub use constants::*;
 pub use error::{Error, Result};
-pub use shutdown::{ShutdownCoordinator, ShutdownReason, global_shutdown};
+pub use shutdown::{global_shutdown, ShutdownCoordinator, ShutdownReason};
 
 /// Rush version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -6,14 +6,14 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = { workspace = true }
+hex = { workspace = true }
+log = { workspace = true }
 rush-core = { workspace = true }
 rush-utils = { workspace = true }
-anyhow = { workspace = true }
-log = { workspace = true }
-which = { workspace = true }
 serde = { workspace = true }
 sha2 = { workspace = true }
-hex = { workspace = true }
+which = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

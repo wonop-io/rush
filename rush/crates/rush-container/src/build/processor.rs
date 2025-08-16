@@ -2,10 +2,10 @@ use colored::Colorize;
 use log::{debug, error, info, warn};
 use std::path::Path;
 
+use crate::ImageBuilder;
 use rush_build::BuildContext;
 use rush_build::BuildScript;
 use rush_build::BuildType;
-use crate::ImageBuilder;
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
 use rush_utils::{run_command_in_window, Directory};

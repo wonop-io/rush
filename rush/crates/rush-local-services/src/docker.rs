@@ -31,10 +31,10 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
 
     /// Gets the logs from a container
     async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String>;
-    
+
     /// Execute a command in a running container
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String>;
-    
+
     /// Get container by name
     async fn get_container_by_name(&self, name: &str) -> Result<String>;
 }

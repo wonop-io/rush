@@ -3,9 +3,9 @@
 //! This module provides abstractions for interacting with Docker to create,
 //! manage, and monitor containers.
 
+use log::{debug, error, info, trace, warn};
 use rush_core::error::{Error, Result};
 use rush_output::{OutputDirector, OutputSource, OutputStream};
-use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::fmt;
 use std::process::Stdio;
@@ -66,10 +66,10 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
 
     /// Sends a signal to a container
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()>;
-    
+
     /// Execute a command in a running container
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String>;
-    
+
     /// Get container by name
     async fn get_container_by_name(&self, name: &str) -> Result<String>;
 }
@@ -663,13 +663,17 @@ impl DockerClient for DockerCliClient {
         );
         Ok(())
     }
-    
+
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
-        trace!("Executing command in container {}: {:?}", container_id, command);
-        
+        trace!(
+            "Executing command in container {}: {:?}",
+            container_id,
+            command
+        );
+
         let mut args = vec!["exec", container_id];
         args.extend(command);
-        
+
         let output = Command::new(&self.docker_path)
             .args(&args)
             .stdout(Stdio::piped())
@@ -677,18 +681,18 @@ impl DockerClient for DockerCliClient {
             .output()
             .await
             .map_err(|e| Error::Docker(format!("Failed to exec in container: {e}")))?;
-        
+
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(Error::Docker(format!("Command failed: {}", stderr)));
         }
-        
+
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
-    
+
     async fn get_container_by_name(&self, name: &str) -> Result<String> {
         trace!("Getting container by name: {}", name);
-        
+
         let output = Command::new(&self.docker_path)
             .args(["ps", "-aq", "--filter", &format!("name={}", name)])
             .stdout(Stdio::piped())
@@ -696,17 +700,20 @@ impl DockerClient for DockerCliClient {
             .output()
             .await
             .map_err(|e| Error::Docker(format!("Failed to get container by name: {e}")))?;
-        
+
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::Docker(format!("Failed to get container: {}", stderr)));
+            return Err(Error::Docker(format!(
+                "Failed to get container: {}",
+                stderr
+            )));
         }
-        
+
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if container_id.is_empty() {
             return Err(Error::Docker(format!("Container '{}' not found", name)));
         }
-        
+
         Ok(container_id)
     }
 }
@@ -886,7 +893,7 @@ impl DockerService {
     pub fn id(&self) -> &str {
         &self.id
     }
-    
+
     /// Returns the service name
     pub fn name(&self) -> Option<String> {
         Some(self.config.name.clone())
@@ -1007,7 +1014,11 @@ mod tests {
             ) -> Result<()> {
                 unimplemented!()
             }
-            async fn exec_in_container(&self, _container_id: &str, _command: &[&str]) -> Result<String> {
+            async fn exec_in_container(
+                &self,
+                _container_id: &str,
+                _command: &[&str],
+            ) -> Result<String> {
                 unimplemented!()
             }
             async fn get_container_by_name(&self, _name: &str) -> Result<String> {
@@ -1118,7 +1129,11 @@ mod tests {
             ) -> Result<()> {
                 unimplemented!()
             }
-            async fn exec_in_container(&self, _container_id: &str, _command: &[&str]) -> Result<String> {
+            async fn exec_in_container(
+                &self,
+                _container_id: &str,
+                _command: &[&str],
+            ) -> Result<String> {
                 unimplemented!()
             }
             async fn get_container_by_name(&self, _name: &str) -> Result<String> {

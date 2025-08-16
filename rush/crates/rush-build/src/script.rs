@@ -8,8 +8,8 @@ use tera::Context;
 
 use crate::build_type::BuildType;
 use crate::context::BuildContext;
-use rush_utils::TEMPLATES;
 use log::{debug, trace};
+use rush_utils::TEMPLATES;
 
 /// Represents a build script that can be generated for a component
 pub struct BuildScript {

@@ -15,7 +15,7 @@ pub mod watcher;
 #[cfg(test)]
 pub mod tests;
 
-pub use docker::{DockerClient, DockerCliClient, DockerImage, DockerService};
+pub use docker::{DockerCliClient, DockerClient, DockerImage, DockerService};
 pub use image_builder::{BuildConfig, ImageBuilder};
 pub use reactor::{ContainerReactor, ContainerReactorConfig};
 pub use service::{ContainerService, ServiceCollection, ServiceConfig, ServicesSpec};

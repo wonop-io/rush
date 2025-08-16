@@ -4,7 +4,7 @@ use std::time::Duration;
 #[test]
 fn test_health_check_creation() {
     let check = HealthCheck::new("pg_isready -U postgres".to_string());
-    
+
     assert_eq!(check.command, "pg_isready -U postgres");
     assert_eq!(check.interval, Duration::from_secs(5));
     assert_eq!(check.timeout, Duration::from_secs(3));
@@ -19,7 +19,7 @@ fn test_health_check_with_settings() {
     check.timeout = Duration::from_secs(1);
     check.retries = 5;
     check.start_period = Duration::from_secs(5);
-    
+
     assert_eq!(check.command, "redis-cli ping");
     assert_eq!(check.interval, Duration::from_secs(2));
     assert_eq!(check.timeout, Duration::from_secs(1));
@@ -31,13 +31,13 @@ fn test_health_check_with_settings() {
 fn test_health_status_variants() {
     let healthy = HealthStatus::Healthy;
     assert!(matches!(healthy, HealthStatus::Healthy));
-    
+
     let unhealthy = HealthStatus::Unhealthy("Connection refused".to_string());
     assert!(matches!(unhealthy, HealthStatus::Unhealthy(_)));
-    
+
     let not_running = HealthStatus::NotRunning;
     assert!(matches!(not_running, HealthStatus::NotRunning));
-    
+
     let unknown = HealthStatus::Unknown;
     assert!(matches!(unknown, HealthStatus::Unknown));
 }
@@ -47,17 +47,17 @@ fn test_health_status_equality() {
     assert_eq!(HealthStatus::Healthy, HealthStatus::Healthy);
     assert_eq!(HealthStatus::NotRunning, HealthStatus::NotRunning);
     assert_eq!(HealthStatus::Unknown, HealthStatus::Unknown);
-    
+
     assert_eq!(
         HealthStatus::Unhealthy("error".to_string()),
         HealthStatus::Unhealthy("error".to_string())
     );
-    
+
     assert_ne!(
         HealthStatus::Unhealthy("error1".to_string()),
         HealthStatus::Unhealthy("error2".to_string())
     );
-    
+
     assert_ne!(HealthStatus::Healthy, HealthStatus::NotRunning);
 }
 
@@ -65,7 +65,7 @@ fn test_health_status_equality() {
 fn test_health_check_clone() {
     let original = HealthCheck::new("test command".to_string());
     let cloned = original.clone();
-    
+
     assert_eq!(original.command, cloned.command);
     assert_eq!(original.interval, cloned.interval);
     assert_eq!(original.timeout, cloned.timeout);
@@ -76,7 +76,7 @@ fn test_health_check_clone() {
 #[test]
 fn test_health_check_defaults() {
     let check = HealthCheck::new("test".to_string());
-    
+
     // Verify default values match expected settings
     assert_eq!(check.interval.as_secs(), 5);
     assert_eq!(check.timeout.as_secs(), 3);
@@ -89,7 +89,7 @@ fn test_health_status_debug() {
     let healthy = HealthStatus::Healthy;
     let debug_str = format!("{:?}", healthy);
     assert!(debug_str.contains("Healthy"));
-    
+
     let unhealthy = HealthStatus::Unhealthy("test error".to_string());
     let debug_str = format!("{:?}", unhealthy);
     assert!(debug_str.contains("Unhealthy"));

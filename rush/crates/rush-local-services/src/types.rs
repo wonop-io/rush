@@ -9,16 +9,16 @@ pub enum LocalServiceType {
     MySQL,
     MongoDB,
     Redis,
-    
+
     // AWS Services
-    LocalStack,  // Provides S3, SQS, SNS, DynamoDB, etc.
-    MinIO,       // S3-compatible storage
-    ElasticMQ,   // SQS alternative
-    
+    LocalStack, // Provides S3, SQS, SNS, DynamoDB, etc.
+    MinIO,      // S3-compatible storage
+    ElasticMQ,  // SQS alternative
+
     // Development Tools
     StripeCLI,
-    MailHog,     // Email testing
-    
+    MailHog, // Email testing
+
     // Custom
     Custom(String),
 }
@@ -39,7 +39,7 @@ impl LocalServiceType {
             Self::Custom(image) => image.clone(),
         }
     }
-    
+
     /// Get the default port for this service type
     pub fn default_port(&self) -> Option<u16> {
         match self {
@@ -55,7 +55,7 @@ impl LocalServiceType {
             Self::Custom(_) => None,
         }
     }
-    
+
     /// Get the default health check command for this service type
     pub fn default_health_check(&self) -> Option<String> {
         match self {
@@ -63,7 +63,9 @@ impl LocalServiceType {
             Self::MySQL => Some("mysqladmin ping -h localhost".to_string()),
             Self::MongoDB => Some("mongosh --eval 'db.adminCommand(\"ping\")'".to_string()),
             Self::Redis => Some("redis-cli ping".to_string()),
-            Self::LocalStack => Some("curl -f http://localhost:4566/_localstack/health".to_string()),
+            Self::LocalStack => {
+                Some("curl -f http://localhost:4566/_localstack/health".to_string())
+            }
             Self::MinIO => Some("mc ready local".to_string()),
             Self::ElasticMQ => Some("curl -f http://localhost:9324/".to_string()),
             Self::StripeCLI => None,
@@ -71,7 +73,7 @@ impl LocalServiceType {
             Self::Custom(_) => None,
         }
     }
-    
+
     /// Parse from string representation
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
@@ -103,7 +105,7 @@ impl PortMapping {
             container_port,
         }
     }
-    
+
     /// Parse from string format "host:container"
     pub fn from_str(s: &str) -> Option<Self> {
         let parts: Vec<&str> = s.split(':').collect();
@@ -118,7 +120,7 @@ impl PortMapping {
             None
         }
     }
-    
+
     pub fn to_docker_format(&self) -> String {
         format!("{}:{}", self.host_port, self.container_port)
     }
@@ -140,7 +142,7 @@ impl VolumeMapping {
             read_only,
         }
     }
-    
+
     /// Parse from string format "host:container" or "host:container:ro"
     pub fn from_str(s: &str) -> Option<Self> {
         let parts: Vec<&str> = s.split(':').collect();
@@ -153,7 +155,7 @@ impl VolumeMapping {
             None
         }
     }
-    
+
     pub fn to_docker_format(&self) -> String {
         if self.read_only {
             format!("{}:{}:ro", self.host_path, self.container_path)
@@ -166,6 +168,6 @@ impl VolumeMapping {
 /// Resource limits for a service
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceLimits {
-    pub memory: Option<String>,  // e.g., "512m", "1g"
-    pub cpus: Option<String>,    // e.g., "0.5", "2"
+    pub memory: Option<String>, // e.g., "512m", "1g"
+    pub cpus: Option<String>,   // e.g., "0.5", "2"
 }

@@ -76,7 +76,7 @@ impl OutputRouter for BroadcastRouter {
             // Send to all destinations in parallel
             // Note: We can't actually do parallel processing with mutable references
             // so we process sequentially for now
-            
+
             for dest in &mut self.destinations {
                 let event_clone = event.clone();
                 // We need to handle this differently since we can't move the mutable reference
@@ -162,7 +162,7 @@ impl OutputRouter for RuleBasedRouter {
                     log::warn!("Failed to write to sink: {}", e);
                 }
                 matched = true;
-                
+
                 if rule.stop_on_match {
                     break;
                 }
@@ -216,11 +216,7 @@ pub struct AggregatingRouter {
 
 impl AggregatingRouter {
     /// Create a new aggregating router
-    pub fn new(
-        buffer_size: usize,
-        flush_interval: Duration,
-        sink: Box<dyn OutputSink>,
-    ) -> Self {
+    pub fn new(buffer_size: usize, flush_interval: Duration, sink: Box<dyn OutputSink>) -> Self {
         Self {
             buffer: Vec::with_capacity(buffer_size),
             buffer_size,
@@ -328,27 +324,23 @@ impl Clone for SharedRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sink::BufferSink;
     use crate::filter::ComponentFilter;
+    use crate::sink::BufferSink;
     use crate::{OutputSource, OutputStream};
 
     #[tokio::test]
     async fn test_broadcast_router() {
         let sink1 = Box::new(BufferSink::new(100));
         let sink2 = Box::new(BufferSink::new(100));
-        
+
         let mut router = BroadcastRouter::new(vec![sink1, sink2]);
-        
+
         let source = OutputSource::new("test", "container");
-        let event = OutputEvent::runtime(
-            source,
-            OutputStream::stdout(b"test data".to_vec()),
-            None,
-        );
-        
+        let event = OutputEvent::runtime(source, OutputStream::stdout(b"test data".to_vec()), None);
+
         let result = router.route(event).await;
         assert!(result.is_ok());
-        
+
         let stats = router.stats();
         assert_eq!(stats.events_routed, 1);
         assert_eq!(stats.routing_errors, 0);
@@ -358,24 +350,21 @@ mod tests {
     async fn test_rule_based_router() {
         let backend_sink = Box::new(BufferSink::new(100));
         let default_sink = Box::new(BufferSink::new(100));
-        
+
         let mut router = RuleBasedRouter::new(default_sink);
         router = router.add_rule(RoutingRule {
             filter: Box::new(ComponentFilter::allowlist(vec!["backend".to_string()])),
             sink: backend_sink,
             stop_on_match: true,
         });
-        
+
         let source = OutputSource::new("backend", "container");
-        let event = OutputEvent::runtime(
-            source,
-            OutputStream::stdout(b"backend data".to_vec()),
-            None,
-        );
-        
+        let event =
+            OutputEvent::runtime(source, OutputStream::stdout(b"backend data".to_vec()), None);
+
         let result = router.route(event).await;
         assert!(result.is_ok());
-        
+
         let stats = router.stats();
         assert_eq!(stats.events_routed, 1);
     }
@@ -383,12 +372,8 @@ mod tests {
     #[tokio::test]
     async fn test_aggregating_router() {
         let sink = Box::new(BufferSink::new(100));
-        let mut router = AggregatingRouter::new(
-            5,
-            Duration::from_secs(1),
-            sink,
-        );
-        
+        let mut router = AggregatingRouter::new(5, Duration::from_secs(1), sink);
+
         // Add events below buffer size
         for i in 0..3 {
             let source = OutputSource::new("test", "container");
@@ -399,10 +384,10 @@ mod tests {
             );
             router.route(event).await.unwrap();
         }
-        
+
         // Buffer should not be flushed yet
         assert_eq!(router.buffer.len(), 3);
-        
+
         // Flush manually
         router.flush().await.unwrap();
         assert_eq!(router.buffer.len(), 0);

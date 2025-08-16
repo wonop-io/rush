@@ -3,8 +3,8 @@
 //! This module provides functionality for validating Kubernetes manifests
 //! against schemas and checking for deprecated APIs.
 
-use rush_core::error::{Error, Result};
 use log::{debug, info, trace, warn};
+use rush_core::error::{Error, Result};
 use std::process::Command;
 
 /// Trait defining operations for validating Kubernetes resources

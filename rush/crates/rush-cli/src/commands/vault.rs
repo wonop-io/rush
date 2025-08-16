@@ -1,10 +1,10 @@
 use crate::context::CliContext;
+use clap::ArgMatches;
+use log::{error, trace};
 use rush_config::Config;
 use rush_core::error::{Error, Result};
 use rush_security::Vault;
-use rush_security::{SecretsProvider, secrets::Environment};
-use clap::ArgMatches;
-use log::{error, trace};
+use rush_security::{secrets::Environment, SecretsProvider};
 use std::collections::HashMap;
 use std::process;
 use std::sync::{Arc, Mutex};
@@ -141,8 +141,8 @@ impl VaultCommand {
                 }
                 Err(e) => {
                     return Err(Error::Vault(format!(
-                        "Failed to get secrets from source vault for component {component_name}: {e}"
-                    )))
+                    "Failed to get secrets from source vault for component {component_name}: {e}"
+                )))
                 }
             }
         }

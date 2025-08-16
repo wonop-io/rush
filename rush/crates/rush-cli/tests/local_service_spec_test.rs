@@ -1,25 +1,28 @@
+use serde_yaml;
 use std::fs;
 use std::path::Path;
-use serde_yaml;
 
 #[test]
 fn test_local_service_example_spec_file_structure() {
     // Test that the example spec file has the correct flat structure
     let spec_path = Path::new("../../examples/local-services-test/stack.spec.yaml");
-    
+
     // Skip test if file doesn't exist (e.g., in CI without full repo)
     if !spec_path.exists() {
-        eprintln!("Skipping test: example spec file not found at {:?}", spec_path);
+        eprintln!(
+            "Skipping test: example spec file not found at {:?}",
+            spec_path
+        );
         return;
     }
 
-    let spec_content = fs::read_to_string(spec_path)
-        .expect("Failed to read example spec file");
+    let spec_content = fs::read_to_string(spec_path).expect("Failed to read example spec file");
 
-    let spec_value: serde_yaml::Value = serde_yaml::from_str(&spec_content)
-        .expect("Failed to parse example spec file as YAML");
+    let spec_value: serde_yaml::Value =
+        serde_yaml::from_str(&spec_content).expect("Failed to parse example spec file as YAML");
 
-    let spec_map = spec_value.as_mapping()
+    let spec_map = spec_value
+        .as_mapping()
         .expect("Spec file should be a YAML mapping");
 
     // Count LocalService components
@@ -28,7 +31,7 @@ fn test_local_service_example_spec_file_structure() {
 
     for (name, component) in spec_map {
         let name_str = name.as_str().unwrap_or("unknown");
-        
+
         if let Some(build_type_value) = component.get("build_type") {
             // Verify build_type is a flat string, not nested
             assert!(
@@ -39,7 +42,7 @@ fn test_local_service_example_spec_file_structure() {
             );
 
             let build_type = build_type_value.as_str().unwrap();
-            
+
             if build_type == "LocalService" {
                 local_service_count += 1;
                 local_service_components.push(name_str.to_string());
@@ -93,14 +96,16 @@ fn test_local_service_example_spec_file_structure() {
 
                 // Check environment variables for port configuration
                 if let Some(env) = component.get("env") {
-                    let env_map = env.as_mapping()
+                    let env_map = env
+                        .as_mapping()
                         .expect(&format!("Component '{}' env should be a mapping", name_str));
-                    
+
                     // Check for port configuration in env vars based on service type
-                    let service_type = component.get("service_type")
+                    let service_type = component
+                        .get("service_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    
+
                     match service_type {
                         "postgresql" => {
                             assert!(
@@ -111,14 +116,18 @@ fn test_local_service_example_spec_file_structure() {
                         }
                         "redis" => {
                             assert!(
-                                env_map.get(&serde_yaml::Value::String("REDIS_PORT".to_string())).is_some(),
+                                env_map
+                                    .get(&serde_yaml::Value::String("REDIS_PORT".to_string()))
+                                    .is_some(),
                                 "Redis service '{}' should configure port via REDIS_PORT env var",
                                 name_str
                             );
                         }
                         "minio" => {
                             assert!(
-                                env_map.get(&serde_yaml::Value::String("MINIO_PORT".to_string())).is_some(),
+                                env_map
+                                    .get(&serde_yaml::Value::String("MINIO_PORT".to_string()))
+                                    .is_some(),
                                 "MinIO service '{}' should configure port via MINIO_PORT env var",
                                 name_str
                             );
@@ -136,8 +145,10 @@ fn test_local_service_example_spec_file_structure() {
         "Expected to find LocalService components in example spec file"
     );
 
-    println!("✅ Found {} LocalService components with correct flat structure: {:?}",
-             local_service_count, local_service_components);
+    println!(
+        "✅ Found {} LocalService components with correct flat structure: {:?}",
+        local_service_count, local_service_components
+    );
 }
 
 #[test]
@@ -150,7 +161,7 @@ fn test_spec_file_consistency() {
 
     for spec_path_str in spec_files {
         let spec_path = Path::new(spec_path_str);
-        
+
         if !spec_path.exists() {
             eprintln!("Skipping {}: file not found", spec_path_str);
             continue;
@@ -159,15 +170,19 @@ fn test_spec_file_consistency() {
         let spec_content = fs::read_to_string(spec_path)
             .expect(&format!("Failed to read spec file: {}", spec_path_str));
 
-        let spec_value: serde_yaml::Value = serde_yaml::from_str(&spec_content)
-            .expect(&format!("Failed to parse spec file as YAML: {}", spec_path_str));
+        let spec_value: serde_yaml::Value = serde_yaml::from_str(&spec_content).expect(&format!(
+            "Failed to parse spec file as YAML: {}",
+            spec_path_str
+        ));
 
-        let spec_map = spec_value.as_mapping()
-            .expect(&format!("Spec file should be a YAML mapping: {}", spec_path_str));
+        let spec_map = spec_value.as_mapping().expect(&format!(
+            "Spec file should be a YAML mapping: {}",
+            spec_path_str
+        ));
 
         for (name, component) in spec_map {
             let name_str = name.as_str().unwrap_or("unknown");
-            
+
             if let Some(build_type_value) = component.get("build_type") {
                 // All build_type values should be flat strings
                 assert!(
@@ -176,7 +191,7 @@ fn test_spec_file_consistency() {
                     spec_path_str,
                     name_str
                 );
-                
+
                 // build_type should not be a nested mapping
                 assert!(
                     build_type_value.as_mapping().is_none(),
@@ -186,7 +201,7 @@ fn test_spec_file_consistency() {
                 );
             }
         }
-        
+
         println!("✅ {} has consistent flat structure", spec_path_str);
     }
 }

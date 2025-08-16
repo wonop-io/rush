@@ -1,8 +1,8 @@
 use crate::commands;
 use crate::context::CliContext;
-use rush_core::error::Result;
 use clap::ArgMatches;
 use log::{error, trace};
+use rush_core::error::Result;
 use std::process;
 
 /// Execute the appropriate command based on command line arguments
@@ -41,14 +41,17 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
             .get_one::<String>("output-format")
             .map(|s| s.as_str())
             .unwrap_or("auto");
-        
+
         let no_color = dev_matches.get_flag("no-color");
-        
-        eprintln!("DEBUG: Using output format: {} (no-color: {})", output_format, no_color);
+
+        eprintln!(
+            "DEBUG: Using output format: {} (no-color: {})",
+            output_format, no_color
+        );
 
         // Create a sink using the new simple system
         let sink = rush_output::simple::create_sink(output_format, no_color);
-        
+
         // Set the sink on the reactor
         ctx.reactor.set_output_sink(sink);
 

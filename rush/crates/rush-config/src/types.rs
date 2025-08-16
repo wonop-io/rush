@@ -1,5 +1,5 @@
-use rush_core::constants::*;
 use log::trace;
+use rush_core::constants::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -268,9 +268,7 @@ impl Config {
 
         let product_path = products_dir.join(&product_dirname);
         if !product_path.exists() {
-            panic!(
-                "Product path does not exist for product_dirname: {product_dirname}"
-            );
+            panic!("Product path does not exist for product_dirname: {product_dirname}");
         }
 
         let network_name = format!("{NETWORK_PREFIX}{product_uri}");

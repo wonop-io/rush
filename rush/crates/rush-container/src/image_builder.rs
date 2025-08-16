@@ -1,13 +1,13 @@
+use crate::docker::{DockerClient, DockerService, DockerServiceConfig};
+use crate::DockerImage;
+use log::warn;
 use rush_build::ComponentBuildSpec;
 use rush_build::{BuildContext, BuildType};
 use rush_core::constants::*;
-use crate::docker::{DockerClient, DockerService, DockerServiceConfig};
-use crate::DockerImage;
 use rush_core::error::{Error, Result};
 use rush_security::Vault;
 use rush_toolchain::{Platform, ToolchainContext};
 use rush_utils::PathMatcher;
-use log::warn;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -336,7 +336,13 @@ impl ImageBuilder {
 
         // First check if the image exists at all
         let inspect_output = Command::new("docker")
-            .args(["image", "inspect", &tagged_name, "--format", "{{.Architecture}}"])
+            .args([
+                "image",
+                "inspect",
+                &tagged_name,
+                "--format",
+                "{{.Architecture}}",
+            ])
             .output()
             .await
             .map_err(|e| Error::Docker(format!("Failed to check image existence: {e}")))?;
@@ -349,22 +355,29 @@ impl ImageBuilder {
         }
 
         // Check if the architecture matches what we need
-        let arch = String::from_utf8_lossy(&inspect_output.stdout).trim().to_string();
-        
+        let arch = String::from_utf8_lossy(&inspect_output.stdout)
+            .trim()
+            .to_string();
+
         // We always target linux/amd64, which should show as "amd64" architecture
         let expected_arch = "amd64";
-        
+
         if arch != expected_arch {
             log::warn!(
                 "Image {} exists but has wrong architecture: {} (expected {})",
-                tagged_name, arch, expected_arch
+                tagged_name,
+                arch,
+                expected_arch
             );
             self.image_exists_in_cache = false;
             return Ok(false);
         }
 
         self.image_exists_in_cache = true;
-        log::info!("Image {} already exists in cache with correct architecture", tagged_name);
+        log::info!(
+            "Image {} already exists in cache with correct architecture",
+            tagged_name
+        );
 
         Ok(self.image_exists_in_cache)
     }
@@ -508,8 +521,8 @@ impl ImageBuilder {
 
     /// Builds the Docker image
     pub async fn build(&mut self) -> Result<()> {
-        use rush_utils::DockerCrossCompileGuard;
         use log::info;
+        use rush_utils::DockerCrossCompileGuard;
 
         // Ensure we have a git tag computed
         self.compute_git_tag()?;
@@ -719,9 +732,7 @@ mod tests {
 
     #[test]
     fn test_image_builder_creation() {
-        let mock_client = Arc::new(crate::docker::DockerCliClient::new(
-            "docker".to_string(),
-        ));
+        let mock_client = Arc::new(crate::docker::DockerCliClient::new("docker".to_string()));
         let config = DockerServiceConfig {
             name: "test".to_string(),
             image: "test:latest".to_string(),

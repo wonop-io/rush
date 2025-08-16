@@ -1,8 +1,8 @@
 use log::{debug, error, trace};
+use std::env;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::env;
 
 /// Reads the contents of a file to a string
 ///
@@ -228,7 +228,7 @@ pub fn read_to_string_or_default<P: AsRef<Path>>(path: P, default: String) -> St
 pub fn find_project_root() -> Option<PathBuf> {
     let current_dir = env::current_dir().ok()?;
     let mut path = current_dir.as_path();
-    
+
     loop {
         // Check for various project root indicators
         // rushd.yaml is the definitive marker for rush projects
@@ -251,7 +251,7 @@ pub fn find_project_root() -> Option<PathBuf> {
             }
             return Some(path.to_path_buf());
         }
-        
+
         // Move up to parent directory
         path = path.parent()?;
     }

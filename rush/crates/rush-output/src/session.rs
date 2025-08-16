@@ -207,13 +207,13 @@ impl OutputSession {
     pub async fn stop_recording(&mut self) -> Result<()> {
         if let Some(mut recording) = self.recording.take() {
             recording.end_time = Some(Utc::now());
-            
+
             // Save recording to file
             // Implementation would serialize and save the recording
-            
+
             self.recording_start = None;
         }
-        
+
         Ok(())
     }
 
@@ -225,31 +225,31 @@ impl OutputSession {
     /// Close the session
     pub async fn close(&mut self) -> Result<()> {
         self.stats.end_time = Some(Utc::now());
-        
+
         if self.recording.is_some() {
             self.stop_recording().await?;
         }
-        
+
         self.router.close().await
     }
 
     /// Replay a recorded session
     pub async fn replay(recording: SessionRecording, speed: f32) -> Result<()> {
         let mut last_time = 0u64;
-        
+
         for recorded_event in recording.events {
             // Calculate delay
             let delay_ms = ((recorded_event.relative_time_ms - last_time) as f32 / speed) as u64;
             if delay_ms > 0 {
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
             }
-            
+
             // Output the event (would need a configured session)
             println!("{}", recorded_event.event.stream.as_string());
-            
+
             last_time = recorded_event.relative_time_ms;
         }
-        
+
         Ok(())
     }
 }
@@ -301,7 +301,10 @@ impl SessionBuilder {
     pub fn build(self) -> Result<OutputSession> {
         // If no sinks were specified, add default based on mode
         let mut config = self.config;
-        eprintln!("DEBUG session.rs: Building session with mode: {:?}", config.mode);
+        eprintln!(
+            "DEBUG session.rs: Building session with mode: {:?}",
+            config.mode
+        );
         if config.sinks.is_empty() {
             config.sinks = match config.mode {
                 OutputMode::Auto => {
@@ -316,48 +319,59 @@ impl SessionBuilder {
             };
         }
         eprintln!("DEBUG session.rs: Created {} sinks", config.sinks.len());
-        
+
         OutputSession::new(config)
     }
 
     /// Get default sinks for a mode
     fn default_sinks_for_mode(mode: OutputMode) -> Vec<Box<dyn OutputSink>> {
-        eprintln!("DEBUG session.rs: Creating default sinks for mode: {:?}", mode);
+        eprintln!(
+            "DEBUG session.rs: Creating default sinks for mode: {:?}",
+            mode
+        );
         match mode {
             OutputMode::Simple => {
                 eprintln!("DEBUG session.rs: Creating Simple mode sink");
-                vec![Box::new(TerminalSink::new()
-                    .with_formatter(Box::new(ColoredFormatter::default())))]
+                vec![Box::new(
+                    TerminalSink::new().with_formatter(Box::new(ColoredFormatter::default())),
+                )]
             }
             OutputMode::Auto => {
                 // Auto should actually resolve to a specific mode
                 let resolved_mode = OutputMode::auto();
-                eprintln!("DEBUG session.rs: Auto mode resolved to: {:?}", resolved_mode);
+                eprintln!(
+                    "DEBUG session.rs: Auto mode resolved to: {:?}",
+                    resolved_mode
+                );
                 Self::default_sinks_for_mode(resolved_mode)
             }
             OutputMode::Split => {
                 eprintln!("DEBUG session.rs: Creating Split mode sink with panes");
-                vec![Box::new(TerminalSink::new()
-                    .with_formatter(Box::new(ColoredFormatter::default()))
-                    .with_layout(TerminalLayout::Split {
-                        panes: vec![
-                            crate::sink::PaneConfig::new("Build"),
-                            crate::sink::PaneConfig::new("Runtime"),
-                        ],
-                    }))]
+                vec![Box::new(
+                    TerminalSink::new()
+                        .with_formatter(Box::new(ColoredFormatter::default()))
+                        .with_layout(TerminalLayout::Split {
+                            panes: vec![
+                                crate::sink::PaneConfig::new("Build"),
+                                crate::sink::PaneConfig::new("Runtime"),
+                            ],
+                        }),
+                )]
             }
             OutputMode::Dashboard => {
-                vec![Box::new(TerminalSink::new()
-                    .with_formatter(Box::new(ColoredFormatter::default()))
-                    .with_layout(TerminalLayout::Dashboard {
-                        widgets: vec![],
-                    }))]
+                vec![Box::new(
+                    TerminalSink::new()
+                        .with_formatter(Box::new(ColoredFormatter::default()))
+                        .with_layout(TerminalLayout::Dashboard { widgets: vec![] }),
+                )]
             }
             OutputMode::Web => {
                 // Placeholder for web mode - just use terminal with a prefix
-                vec![Box::new(TerminalSink::new()
-                    .with_formatter(Box::new(ColoredFormatter::default()))
-                    .with_layout(TerminalLayout::Web))]
+                vec![Box::new(
+                    TerminalSink::new()
+                        .with_formatter(Box::new(ColoredFormatter::default()))
+                        .with_layout(TerminalLayout::Web),
+                )]
             }
         }
     }
@@ -372,8 +386,8 @@ impl Default for SessionBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{OutputSource, OutputStream};
     use crate::filter::ComponentFilter;
+    use crate::{OutputSource, OutputStream};
 
     #[tokio::test]
     async fn test_session_creation() {
@@ -381,7 +395,7 @@ mod tests {
             .mode(OutputMode::Simple)
             .build()
             .unwrap();
-        
+
         assert_eq!(session.stats.events_processed, 0);
         assert!(session.stats.start_time.is_some());
     }
@@ -389,19 +403,18 @@ mod tests {
     #[tokio::test]
     async fn test_session_filtering() {
         let mut session = OutputSession::builder()
-            .filter(Box::new(ComponentFilter::allowlist(vec!["backend".to_string()])))
+            .filter(Box::new(ComponentFilter::allowlist(vec![
+                "backend".to_string()
+            ])))
             .build()
             .unwrap();
-        
+
         // This should pass
         let source = OutputSource::new("backend", "container");
-        let event = OutputEvent::runtime(
-            source,
-            OutputStream::stdout(b"backend data".to_vec()),
-            None,
-        );
+        let event =
+            OutputEvent::runtime(source, OutputStream::stdout(b"backend data".to_vec()), None);
         session.submit(event).await.unwrap();
-        
+
         // This should be filtered
         let source = OutputSource::new("frontend", "container");
         let event = OutputEvent::runtime(
@@ -410,7 +423,7 @@ mod tests {
             None,
         );
         session.submit(event).await.unwrap();
-        
+
         assert_eq!(session.stats.events_processed, 2);
         assert_eq!(session.stats.events_filtered, 1);
         assert_eq!(session.stats.events_routed, 1);
@@ -419,7 +432,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_stats() {
         let mut session = OutputSession::builder().build().unwrap();
-        
+
         for i in 0..10 {
             let source = OutputSource::new("test", "container");
             let event = OutputEvent::runtime(
@@ -429,7 +442,7 @@ mod tests {
             );
             session.submit(event).await.unwrap();
         }
-        
+
         assert_eq!(session.stats.events_processed, 10);
         assert_eq!(session.stats.events_routed, 10);
         assert!(session.stats.duration().is_some());

@@ -13,7 +13,7 @@ lazy_static! {
             .parent()  // rush-utils -> crates
             .and_then(|p| p.parent())  // crates -> workspace root
             .unwrap_or_else(|| std::path::Path::new("."));
-        
+
         let template_path = format!("{}/templates/**/*", workspace_root.display());
 
         let mut tera = match Tera::new(&template_path) {

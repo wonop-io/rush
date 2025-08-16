@@ -1,7 +1,7 @@
-use rush_core::error::Result;
 use crate::{
     BufferedOutputDirector, OutputDirector, OutputSource, OutputStream, StdOutputDirector,
 };
+use rush_core::error::Result;
 
 /// Example usage of the OutputDirector interface
 pub async fn demonstrate_output_director() -> Result<()> {
