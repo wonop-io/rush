@@ -22,7 +22,7 @@ where
     E: std::error::Error + Send + Sync + 'static,
 {
     fn context(self, msg: &str) -> Result<T> {
-        self.map_err(|e| Error::Internal(format!("{}: {}", msg, e)))
+        self.map_err(|e| Error::Internal(format!("{msg}: {e}")))
     }
 
     fn with_context<F>(self, f: F) -> Result<T>
@@ -59,7 +59,7 @@ impl<T> OptionContext<T> for Option<T> {
 
 /// Helper function to format error messages consistently
 pub fn format_error<T: Display>(action: &str, error: T) -> String {
-    format!("Failed to {}: {}", action, error)
+    format!("Failed to {action}: {error}")
 }
 
 /// Helper macro for creating context closures
