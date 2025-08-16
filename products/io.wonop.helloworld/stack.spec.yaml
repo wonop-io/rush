@@ -10,7 +10,7 @@ frontend:
 backend:
   build_type: "RustBinary"
   location: "backend/server"
-  context_dir: "backend"
+  context_dir: "."
   dockerfile: "backend/Dockerfile"
   color: "blue"
   mount_point: "/api"

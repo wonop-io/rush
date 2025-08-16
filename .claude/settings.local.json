@@ -18,7 +18,13 @@
       "Bash(timeout:*)",
       "Bash(rustc:*)",
       "Bash(./test_parse)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(/Users/tfr/Documents/Projects/rush/rush/target/release/rush io.wonop.helloworld dev --output-format split)",
+      "Bash(cargo test:*)",
+      "Bash(echo $?)",
+      "Bash(echo:*)",
+      "Bash(/Users/tfr/Documents/Projects/rush/rush/target/debug/rush io.wonop.helloworld dev --output-format split)",
+      "Bash(/Users/tfr/Documents/Projects/rush/rush/target/debug/rush:*)"
     ],
     "deny": []
   }
