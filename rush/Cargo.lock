@@ -2547,6 +2547,7 @@ dependencies = [
  "rush-utils",
  "serde",
  "serde_yaml",
+ "serial_test",
  "tempfile",
  "thiserror 1.0.63",
  "tokio",

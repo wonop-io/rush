@@ -12,6 +12,9 @@ pub mod simple_output;
 pub mod status;
 pub mod watcher;
 
+#[cfg(test)]
+pub mod tests;
+
 pub use docker::{DockerClient, DockerCliClient, DockerImage, DockerService};
 pub use image_builder::{BuildConfig, ImageBuilder};
 pub use reactor::{ContainerReactor, ContainerReactorConfig};

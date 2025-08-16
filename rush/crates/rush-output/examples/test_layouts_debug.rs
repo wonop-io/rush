@@ -1,7 +1,9 @@
-use rush_output::prelude::*;
-use rush_output::event::{CompileStage, LogLevel, OutputMetadata};
+use rush_output::event::{CompileStage, LogLevel, OutputEvent, OutputMetadata};
 use rush_output::sink::{TerminalLayout, TerminalSink};
 use rush_output::formatter::PlainFormatter;
+use rush_output::source::OutputSource;
+use rush_output::stream::OutputStream;
+use rush_output::session::OutputSession;
 use std::time::Duration;
 use tokio::time::sleep;
 

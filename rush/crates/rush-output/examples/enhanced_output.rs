@@ -1,5 +1,8 @@
-use rush_output::prelude::*;
-use rush_output::event::{CompileStage, LogLevel, OutputMetadata};
+use rush_output::event::{CompileStage, LogLevel, OutputEvent, OutputMetadata};
+use rush_output::session::{OutputSession};
+use rush_output::source::OutputSource;
+use rush_output::stream::{OutputStream};
+use rush_output::filter::{ComponentFilter, PhaseFilter};
 use rush_output::config::create_session_from_config;
 use rush_config::loader::DevOutputConfig;
 

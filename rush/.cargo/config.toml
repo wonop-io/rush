@@ -1,2 +1,6 @@
 [build]
 rustflags = ["--cfg", "tokio_unstable"]
+
+[alias]
+# Run CI checks: formatting, sorting, autoinherit, and clippy
+run-ci = "!./scripts/run-ci.sh"

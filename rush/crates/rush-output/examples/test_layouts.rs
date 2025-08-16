@@ -1,6 +1,7 @@
-use rush_output::prelude::*;
-use rush_output::event::{CompileStage, LogLevel, OutputMetadata};
-use rush_output::session::{OutputMode, SessionBuilder};
+use rush_output::event::{CompileStage, LogLevel, OutputEvent, OutputMetadata};
+use rush_output::session::{OutputMode, OutputSession, SessionBuilder};
+use rush_output::source::OutputSource;
+use rush_output::stream::OutputStream;
 use std::time::Duration;
 use tokio::time::sleep;
 
