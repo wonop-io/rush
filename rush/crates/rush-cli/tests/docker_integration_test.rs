@@ -52,7 +52,7 @@ mod integration_tests {
         // Set toolchain
         let host = Platform::new("linux", "x86_64");
         let target = Platform::new("linux", "x86_64");
-        let _toolchain = Arc::new(ToolchainContext::new(host, target));
+        let _toolchain = Arc::new(ToolchainContext::create_with_platforms(host, target));
         // Note: toolchain is set internally by ImageBuilder
 
         // Note: generate_build_context() requires a vault to be configured,

@@ -38,9 +38,15 @@ pub struct ToolchainContext {
     ld: String,
 }
 
+impl Default for ToolchainContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolchainContext {
     /// Creates a new ToolchainContext for the specified host and target platforms
-    pub fn new(host: Platform, target: Platform) -> Self {
+    pub fn create_with_platforms(host: Platform, target: Platform) -> Self {
         trace!(
             "Creating new ToolchainContext with host: {:?}, target: {:?}",
             host,
@@ -61,7 +67,7 @@ impl ToolchainContext {
     }
 
     /// Returns the default toolchain for the current platform
-    pub fn default() -> Self {
+    pub fn new() -> Self {
         trace!("Creating default ToolchainContext");
 
         ToolchainContext {

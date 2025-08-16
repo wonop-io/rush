@@ -325,9 +325,7 @@ impl SessionBuilder {
 
     /// Get default sinks for a mode
     fn default_sinks_for_mode(mode: OutputMode) -> Vec<Box<dyn OutputSink>> {
-        eprintln!(
-            "DEBUG session.rs: Creating default sinks for mode: {mode:?}"
-        );
+        eprintln!("DEBUG session.rs: Creating default sinks for mode: {mode:?}");
         match mode {
             OutputMode::Simple => {
                 eprintln!("DEBUG session.rs: Creating Simple mode sink");
@@ -338,9 +336,7 @@ impl SessionBuilder {
             OutputMode::Auto => {
                 // Auto should actually resolve to a specific mode
                 let resolved_mode = OutputMode::auto();
-                eprintln!(
-                    "DEBUG session.rs: Auto mode resolved to: {resolved_mode:?}"
-                );
+                eprintln!("DEBUG session.rs: Auto mode resolved to: {resolved_mode:?}");
                 Self::default_sinks_for_mode(resolved_mode)
             }
             OutputMode::Split => {

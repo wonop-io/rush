@@ -21,7 +21,7 @@ pub fn create_test_variables() -> Arc<Variables> {
 pub fn create_test_toolchain() -> Arc<ToolchainContext> {
     let host = Platform::new("macos", "aarch64");
     let target = Platform::new("linux", "x86_64");
-    Arc::new(ToolchainContext::new(host, target))
+    Arc::new(ToolchainContext::create_with_platforms(host, target))
 }
 
 // Create a simple component build spec for testing

@@ -302,7 +302,7 @@ fn setup_environment_files(config: &Config, product_name: &str, environment: &st
 }
 
 fn create_toolchain(target_os: &str, target_arch: &str) -> Arc<ToolchainContext> {
-    let toolchain = Arc::new(ToolchainContext::new(
+    let toolchain = Arc::new(ToolchainContext::create_with_platforms(
         Platform::default(),
         Platform::new(target_os, target_arch),
     ));

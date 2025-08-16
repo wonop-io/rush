@@ -76,10 +76,7 @@ async fn test_startup_logs_not_missed() -> Result<()> {
 
     // Verify all startup logs are present
     for log in &early_startup_logs {
-        assert!(
-            logs.contains(log),
-            "Startup log '{log}' should be captured"
-        );
+        assert!(logs.contains(log), "Startup log '{log}' should be captured");
     }
 
     Ok(())
@@ -230,12 +227,16 @@ async fn test_build_vs_runtime_phase_distinction() -> Result<()> {
     let sink = TestSink::new();
 
     // Create build and runtime entries
-    let build_logs = [LogEntry::build("builder", "Downloading dependencies..."),
+    let build_logs = [
+        LogEntry::build("builder", "Downloading dependencies..."),
         LogEntry::build("builder", "Compiling source code..."),
-        LogEntry::build("builder", "Build complete")];
+        LogEntry::build("builder", "Build complete"),
+    ];
 
-    let runtime_logs = [LogEntry::runtime("app", "Starting application..."),
-        LogEntry::runtime("app", "Server running")];
+    let runtime_logs = [
+        LogEntry::runtime("app", "Starting application..."),
+        LogEntry::runtime("app", "Server running"),
+    ];
 
     let mut sink_mut = sink.clone();
     for entry in build_logs.iter().chain(runtime_logs.iter()) {

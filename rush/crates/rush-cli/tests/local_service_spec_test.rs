@@ -8,9 +8,7 @@ fn test_local_service_example_spec_file_structure() {
 
     // Skip test if file doesn't exist (e.g., in CI without full repo)
     if !spec_path.exists() {
-        eprintln!(
-            "Skipping test: example spec file not found at {spec_path:?}"
-        );
+        eprintln!("Skipping test: example spec file not found at {spec_path:?}");
         return;
     }
 
@@ -85,9 +83,9 @@ fn test_local_service_example_spec_file_structure() {
 
                 // Check environment variables for port configuration
                 if let Some(env) = component.get("env") {
-                    let env_map = env
-                        .as_mapping()
-                        .unwrap_or_else(|| panic!("Component '{name_str}' env should be a mapping"));
+                    let env_map = env.as_mapping().unwrap_or_else(|| {
+                        panic!("Component '{name_str}' env should be a mapping")
+                    });
 
                     // Check for port configuration in env vars based on service type
                     let service_type = component
@@ -155,9 +153,12 @@ fn test_spec_file_consistency() {
         let spec_content = fs::read_to_string(spec_path)
             .unwrap_or_else(|_| panic!("Failed to read spec file: {spec_path_str}"));
 
-        let spec_value: serde_yaml::Value = serde_yaml::from_str(&spec_content).unwrap_or_else(|_| panic!("Failed to parse spec file as YAML: {spec_path_str}"));
+        let spec_value: serde_yaml::Value = serde_yaml::from_str(&spec_content)
+            .unwrap_or_else(|_| panic!("Failed to parse spec file as YAML: {spec_path_str}"));
 
-        let spec_map = spec_value.as_mapping().unwrap_or_else(|| panic!("Spec file should be a YAML mapping: {spec_path_str}"));
+        let spec_map = spec_value
+            .as_mapping()
+            .unwrap_or_else(|| panic!("Spec file should be a YAML mapping: {spec_path_str}"));
 
         for (name, component) in spec_map {
             let name_str = name.as_str().unwrap_or("unknown");

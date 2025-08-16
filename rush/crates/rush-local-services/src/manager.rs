@@ -23,9 +23,11 @@ pub struct LocalServiceManager {
     configs: HashMap<String, LocalServiceConfig>,
 
     /// Data persistence directory
+    #[allow(dead_code)]
     data_dir: PathBuf,
 
     /// Network name for services
+    #[allow(dead_code)]
     network_name: String,
 }
 

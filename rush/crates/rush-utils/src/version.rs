@@ -2,10 +2,14 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Release {
+    #[allow(dead_code)]
     url: String,
     tag_name: String,
+    #[allow(dead_code)]
     name: String,
+    #[allow(dead_code)]
     draft: bool,
+    #[allow(dead_code)]
     prerelease: bool,
 }
 

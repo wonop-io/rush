@@ -42,7 +42,7 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
     let host_platform = Platform::default();
 
     // Setup toolchain
-    let toolchain = Arc::new(ToolchainContext::new(
+    let toolchain = Arc::new(ToolchainContext::create_with_platforms(
         host_platform.clone(),
         target_platform.clone(),
     ));

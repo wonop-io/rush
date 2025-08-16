@@ -237,12 +237,10 @@ impl Config {
         // To support the Apple quirk that ".app" is an "App", we allow for using _ in the product name
         if let Ok(entries) = std::fs::read_dir(&products_dir) {
             let mut dirnames: Vec<(String, String)> = Vec::new();
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    if entry.path().is_dir() {
-                        if let Some(dirname) = entry.file_name().to_str() {
-                            dirnames.push((dirname.to_string(), dirname.replace('_', ".")));
-                        }
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Some(dirname) = entry.file_name().to_str() {
+                        dirnames.push((dirname.to_string(), dirname.replace('_', ".")));
                     }
                 }
             }

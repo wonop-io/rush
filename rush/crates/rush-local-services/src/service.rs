@@ -258,9 +258,9 @@ impl LocalServiceHandle {
 
                         match result {
                             Ok(_) => Ok(HealthStatus::Healthy),
-                            Err(e) => Ok(HealthStatus::Unhealthy(format!(
-                                "Health check failed: {e}"
-                            ))),
+                            Err(e) => {
+                                Ok(HealthStatus::Unhealthy(format!("Health check failed: {e}")))
+                            }
                         }
                     } else {
                         Ok(HealthStatus::Unknown)

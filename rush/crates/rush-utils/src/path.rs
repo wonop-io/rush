@@ -28,9 +28,9 @@ pub fn expand_path<P: AsRef<Path>>(path: P) -> PathBuf {
     let path_str = path.as_ref().to_string_lossy();
 
     // Handle tilde expansion for home directory
-    if path_str.starts_with("~/") {
+    if let Some(stripped) = path_str.strip_prefix("~/") {
         if let Some(home_dir) = dirs::home_dir() {
-            return home_dir.join(&path_str[2..]);
+            return home_dir.join(stripped);
         }
     }
 

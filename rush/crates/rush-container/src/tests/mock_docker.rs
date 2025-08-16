@@ -250,8 +250,7 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn container_exists(&self, name: &str) -> Result<bool> {
-        self.record_call(format!("container_exists({name})"))
-            .await;
+        self.record_call(format!("container_exists({name})")).await;
 
         let containers = self.containers.lock().await;
         Ok(containers.contains_key(name))
@@ -300,10 +299,8 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
-        self.record_call(format!(
-            "exec_in_container({container_id}, {command:?})"
-        ))
-        .await;
+        self.record_call(format!("exec_in_container({container_id}, {command:?})"))
+            .await;
         Ok("Mock output".to_string())
     }
 

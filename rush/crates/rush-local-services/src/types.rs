@@ -74,7 +74,7 @@ impl LocalServiceType {
     }
 
     /// Parse from string representation
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "postgresql" | "postgres" | "pg" => Self::PostgreSQL,
             "mysql" => Self::MySQL,
@@ -106,7 +106,7 @@ impl PortMapping {
     }
 
     /// Parse from string format "host:container"
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() == 2 {
             let host_port = parts[0].parse().ok()?;
@@ -143,7 +143,7 @@ impl VolumeMapping {
     }
 
     /// Parse from string format "host:container" or "host:container:ro"
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() >= 2 {
             let host_path = parts[0].to_string();

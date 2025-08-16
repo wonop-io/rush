@@ -186,8 +186,7 @@ pub struct PerformanceMetrics {
 }
 
 /// Additional metadata for output events
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OutputMetadata {
     /// Log level if applicable
     pub level: Option<LogLevel>,
@@ -201,7 +200,6 @@ pub struct OutputMetadata {
     /// Performance metrics
     pub metrics: Option<PerformanceMetrics>,
 }
-
 
 impl OutputMetadata {
     /// Create metadata with a log level

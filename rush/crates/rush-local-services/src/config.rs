@@ -154,9 +154,10 @@ impl LocalServiceConfig {
 
                 // Add MinIO console port if main port is configured
                 if self.ports.iter().any(|p| p.container_port == 9000)
-                    && !self.ports.iter().any(|p| p.container_port == 9001) {
-                        self.ports.push(PortMapping::new(9001, 9001));
-                    }
+                    && !self.ports.iter().any(|p| p.container_port == 9001)
+                {
+                    self.ports.push(PortMapping::new(9001, 9001));
+                }
 
                 // Set default command for MinIO
                 if self.command.is_none() {

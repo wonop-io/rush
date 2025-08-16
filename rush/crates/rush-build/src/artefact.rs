@@ -245,7 +245,7 @@ mod tests {
             target: Platform::new("linux", "x86_64"),
             host: Platform::new("linux", "x86_64"),
             rust_target: "x86_64-unknown-linux-gnu".to_string(),
-            toolchain: rush_toolchain::ToolchainContext::new(
+            toolchain: rush_toolchain::ToolchainContext::create_with_platforms(
                 Platform::new("linux", "x86_64"),
                 Platform::new("linux", "x86_64"),
             ),

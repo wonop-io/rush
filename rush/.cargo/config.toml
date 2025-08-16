@@ -3,4 +3,5 @@ rustflags = ["--cfg", "tokio_unstable"]
 
 [alias]
 # Run CI checks: formatting, sorting, autoinherit, and clippy
-run-ci = "!./scripts/run-ci.sh"
+# This creates a cargo alias that runs a script
+run-ci = ["run", "--package", "xtask", "--", "ci"]

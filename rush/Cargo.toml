@@ -12,6 +12,7 @@ members = [
     "crates/rush-security",
     "crates/rush-toolchain",
     "crates/rush-utils",
+    "xtask",
 ]
 resolver = "2"
 

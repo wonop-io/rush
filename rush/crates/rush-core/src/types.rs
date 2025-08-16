@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Represents different environments
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Environment {
     #[default]
     Development,
@@ -13,7 +12,6 @@ pub enum Environment {
     Production,
     Custom(String),
 }
-
 
 impl fmt::Display for Environment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

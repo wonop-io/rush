@@ -3,30 +3,30 @@ use rush_local_services::{LocalServiceType, PortMapping, VolumeMapping};
 #[test]
 fn test_service_type_from_string() {
     assert_eq!(
-        LocalServiceType::from_str("postgresql"),
+        LocalServiceType::parse("postgresql"),
         LocalServiceType::PostgreSQL
     );
     assert_eq!(
-        LocalServiceType::from_str("postgres"),
+        LocalServiceType::parse("postgres"),
         LocalServiceType::PostgreSQL
     );
-    assert_eq!(LocalServiceType::from_str("redis"), LocalServiceType::Redis);
-    assert_eq!(LocalServiceType::from_str("minio"), LocalServiceType::MinIO);
-    assert_eq!(LocalServiceType::from_str("s3"), LocalServiceType::MinIO);
+    assert_eq!(LocalServiceType::parse("redis"), LocalServiceType::Redis);
+    assert_eq!(LocalServiceType::parse("minio"), LocalServiceType::MinIO);
+    assert_eq!(LocalServiceType::parse("s3"), LocalServiceType::MinIO);
     assert_eq!(
-        LocalServiceType::from_str("localstack"),
+        LocalServiceType::parse("localstack"),
         LocalServiceType::LocalStack
     );
     assert_eq!(
-        LocalServiceType::from_str("stripe-cli"),
+        LocalServiceType::parse("stripe-cli"),
         LocalServiceType::StripeCLI
     );
     assert_eq!(
-        LocalServiceType::from_str("stripe"),
+        LocalServiceType::parse("stripe"),
         LocalServiceType::StripeCLI
     );
     assert_eq!(
-        LocalServiceType::from_str("unknown"),
+        LocalServiceType::parse("unknown"),
         LocalServiceType::Custom("unknown".to_string())
     );
 }
@@ -34,19 +34,19 @@ fn test_service_type_from_string() {
 #[test]
 fn test_port_mapping_from_str() {
     // Standard port mapping
-    let port = PortMapping::from_str("8080:80").unwrap();
+    let port = PortMapping::parse("8080:80").unwrap();
     assert_eq!(port.host_port, 8080);
     assert_eq!(port.container_port, 80);
 
     // Same port on both sides
-    let port = PortMapping::from_str("3000").unwrap();
+    let port = PortMapping::parse("3000").unwrap();
     assert_eq!(port.host_port, 3000);
     assert_eq!(port.container_port, 3000);
 
     // Invalid format
-    assert!(PortMapping::from_str("invalid").is_none());
-    assert!(PortMapping::from_str("80:90:100").is_none());
-    assert!(PortMapping::from_str("not:numbers").is_none());
+    assert!(PortMapping::parse("invalid").is_none());
+    assert!(PortMapping::parse("80:90:100").is_none());
+    assert!(PortMapping::parse("not:numbers").is_none());
 }
 
 #[test]
@@ -61,20 +61,20 @@ fn test_port_mapping_to_docker_format() {
 #[test]
 fn test_volume_mapping_from_str() {
     // Read-write volume
-    let vol = VolumeMapping::from_str("/host/path:/container/path").unwrap();
+    let vol = VolumeMapping::parse("/host/path:/container/path").unwrap();
     assert_eq!(vol.host_path, "/host/path");
     assert_eq!(vol.container_path, "/container/path");
     assert!(!vol.read_only);
 
     // Read-only volume
-    let vol = VolumeMapping::from_str("/host/path:/container/path:ro").unwrap();
+    let vol = VolumeMapping::parse("/host/path:/container/path:ro").unwrap();
     assert_eq!(vol.host_path, "/host/path");
     assert_eq!(vol.container_path, "/container/path");
     assert!(vol.read_only);
 
     // Invalid format
-    assert!(VolumeMapping::from_str("/only/one/path").is_none());
-    assert!(VolumeMapping::from_str("").is_none());
+    assert!(VolumeMapping::parse("/only/one/path").is_none());
+    assert!(VolumeMapping::parse("").is_none());
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn test_port_mapping_edge_cases() {
 
 #[test]
 fn test_volume_mapping_with_spaces() {
-    let vol = VolumeMapping::from_str("/path with spaces:/container path").unwrap();
+    let vol = VolumeMapping::parse("/path with spaces:/container path").unwrap();
     assert_eq!(vol.host_path, "/path with spaces");
     assert_eq!(vol.container_path, "/container path");
     assert_eq!(vol.to_docker_format(), "/path with spaces:/container path");

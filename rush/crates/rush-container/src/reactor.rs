@@ -1476,9 +1476,7 @@ impl ContainerReactor {
 
             // Start log following task immediately with minimal delay
             tokio::spawn(async move {
-                eprintln!(
-                    "DEBUG: Following logs for container {container_name} from start"
-                );
+                eprintln!("DEBUG: Following logs for container {container_name} from start");
 
                 // Very small delay to ensure container process has started
                 // This is much faster than the previous attach approach
@@ -2176,7 +2174,8 @@ impl ContainerReactor {
         // Create toolchain context
         let host_platform = Platform::default();
         let target_platform = Platform::new("linux", "x86_64");
-        let toolchain = ToolchainContext::new(host_platform.clone(), target_platform.clone());
+        let toolchain =
+            ToolchainContext::create_with_platforms(host_platform.clone(), target_platform.clone());
 
         // Get location from build type
         let location = spec.build_type.location().unwrap_or(".");
@@ -2339,7 +2338,10 @@ impl ContainerReactor {
         {
             // Cross-compilation scenario
             match std::panic::catch_unwind(|| {
-                ToolchainContext::new(host_platform.clone(), target_platform.clone())
+                ToolchainContext::create_with_platforms(
+                    host_platform.clone(),
+                    target_platform.clone(),
+                )
             }) {
                 Ok(tc) => {
                     info!("Cross-compilation toolchain initialized successfully");
@@ -2590,7 +2592,8 @@ impl ContainerReactor {
             .ok_or_else(|| Error::Setup("No dockerfile path specified".into()))?;
         let context_path = image_builder
             .build_config()
-            .context_dir.as_deref()
+            .context_dir
+            .as_deref()
             .unwrap_or(".");
 
         // Build the image using proper stream capture

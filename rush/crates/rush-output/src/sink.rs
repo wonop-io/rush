@@ -11,15 +11,13 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Capabilities of an output sink
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SinkCapabilities {
     pub supports_color: bool,
     pub supports_unicode: bool,
     pub is_interactive: bool,
     pub max_width: Option<usize>,
 }
-
 
 /// Trait for output destinations
 #[async_trait]

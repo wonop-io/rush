@@ -703,9 +703,7 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::Docker(format!(
-                "Failed to get container: {stderr}"
-            )));
+            return Err(Error::Docker(format!("Failed to get container: {stderr}")));
         }
 
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
