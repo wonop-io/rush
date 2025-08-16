@@ -323,7 +323,7 @@ impl ImageBuilder {
         Ok(tag)
     }
 
-    /// Checks if the image exists in the local Docker cache
+    /// Checks if the image exists in the local Docker cache with the correct platform
     pub async fn check_image_exists(&mut self) -> Result<bool> {
         use tokio::process::Command;
 
@@ -334,22 +334,37 @@ impl ImageBuilder {
 
         log::debug!("Checking if image exists: {}", tagged_name);
 
-        // Use docker image inspect to check if the image exists
-        let status = Command::new("docker")
-            .args(["image", "inspect", &tagged_name])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
+        // First check if the image exists at all
+        let inspect_output = Command::new("docker")
+            .args(["image", "inspect", &tagged_name, "--format", "{{.Architecture}}"])
+            .output()
             .await
             .map_err(|e| Error::Docker(format!("Failed to check image existence: {e}")))?;
 
-        self.image_exists_in_cache = status.success();
-
-        if self.image_exists_in_cache {
-            log::info!("Image {} already exists in cache", tagged_name);
-        } else {
+        if !inspect_output.status.success() {
+            // Image doesn't exist
+            self.image_exists_in_cache = false;
             log::debug!("Image {} not found in cache", tagged_name);
+            return Ok(false);
         }
+
+        // Check if the architecture matches what we need
+        let arch = String::from_utf8_lossy(&inspect_output.stdout).trim().to_string();
+        
+        // We always target linux/amd64, which should show as "amd64" architecture
+        let expected_arch = "amd64";
+        
+        if arch != expected_arch {
+            log::warn!(
+                "Image {} exists but has wrong architecture: {} (expected {})",
+                tagged_name, arch, expected_arch
+            );
+            self.image_exists_in_cache = false;
+            return Ok(false);
+        }
+
+        self.image_exists_in_cache = true;
+        log::info!("Image {} already exists in cache with correct architecture", tagged_name);
 
         Ok(self.image_exists_in_cache)
     }

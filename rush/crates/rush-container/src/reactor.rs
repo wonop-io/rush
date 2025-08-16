@@ -1447,20 +1447,20 @@ impl ContainerReactor {
             eprintln!("DEBUG: Using simple output sink for container {container_name}");
             let sink = self.output_sink.clone();
             let component_name_for_sink = component_name.clone();
+            let container_id_clone = container_id.clone();
 
             tokio::spawn(async move {
-                eprintln!("DEBUG: Starting simple log follower for {container_name}");
-                // Use the simple sink-based log follower
-                if let Err(e) = crate::simple_output::follow_container_logs_simple(
+                eprintln!("DEBUG: Attaching to container {} for output", container_name);
+                // Attach to the running container to capture its output
+                if let Err(e) = crate::simple_output::attach_to_container(
                     docker_client,
-                    &container_id,
+                    &container_id_clone,
                     component_name_for_sink,
                     sink,
-                    false, // is_build = false for runtime containers
                 )
                 .await
                 {
-                    error!("Error following logs for {}: {}", container_name, e);
+                    error!("Error attaching to container {}: {}", container_name, e);
                 }
             });
 
@@ -2514,11 +2514,35 @@ impl ContainerReactor {
             image_builder = image_builder.with_toolchain(toolchain.clone());
         }
 
-        // Build the image directly (we already checked if it needs rebuilding)
-        image_builder.build().await?;
+        // Compute the git tag to get the final image name
+        image_builder.compute_git_tag()?;
+        let image_tag = image_builder.tagged_image_name();
+        
+        // Get the dockerfile and context paths from the image builder
+        let dockerfile_path = image_builder.build_config().dockerfile_path
+            .as_ref()
+            .ok_or_else(|| Error::Setup("No dockerfile path specified".into()))?;
+        let context_path = image_builder.build_config().context_dir
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or(".");
+        
+        // Build the image using proper stream capture
+        // Always build for linux/amd64 regardless of host architecture
+        // This ensures compatibility with deployment environments
+        let platform = Some("linux/amd64".to_string());
+        
+        crate::simple_output::capture_docker_build(
+            &image_tag,
+            dockerfile_path,
+            context_path,
+            component_name.to_string(),
+            self.output_sink.clone(),
+            platform.as_deref(),
+        ).await?;
 
         // Return the actual tagged image name that was built
-        Ok(image_builder.tagged_image_name())
+        Ok(image_tag)
     }
 }
 
