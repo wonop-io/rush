@@ -20,38 +20,38 @@ pub struct LogEntry {
     pub timestamp: DateTime<Utc>,
     /// Whether this is from stderr (vs stdout)
     pub is_error: bool,
-    /// The phase of execution
-    pub phase: LogPhase,
+    /// The origin of the log
+    pub log_origin: LogOrigin,
 }
 
-/// The phase of execution for a log entry
+/// The origin of a log entry
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LogPhase {
-    Build,
-    Runtime,
+pub enum LogOrigin {
+    Script,
+    Docker,
     System,
 }
 
 impl LogEntry {
-    /// Create a new build log entry
-    pub fn build(component: impl Into<String>, content: impl Into<String>) -> Self {
+    /// Create a new script log entry
+    pub fn script(component: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             component: component.into(),
             content: content.into(),
             timestamp: Utc::now(),
             is_error: false,
-            phase: LogPhase::Build,
+            log_origin: LogOrigin::Script,
         }
     }
 
-    /// Create a new runtime log entry
-    pub fn runtime(component: impl Into<String>, content: impl Into<String>) -> Self {
+    /// Create a new docker log entry
+    pub fn docker(component: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             component: component.into(),
             content: content.into(),
             timestamp: Utc::now(),
             is_error: false,
-            phase: LogPhase::Runtime,
+            log_origin: LogOrigin::Docker,
         }
     }
 
@@ -62,7 +62,7 @@ impl LogEntry {
             content: content.into(),
             timestamp: Utc::now(),
             is_error: false,
-            phase: LogPhase::System,
+            log_origin: LogOrigin::System,
         }
     }
 
@@ -154,15 +154,15 @@ impl StdoutSink {
             String::new()
         };
 
-        // Get phase label
-        let phase_label = match entry.phase {
-            LogPhase::Build => "[BUILDING]".yellow().to_string(),
-            LogPhase::Runtime => "[RUNNING] ".green().to_string(),
-            LogPhase::System => "[SYSTEM]  ".cyan().to_string(),
+        // Get origin label
+        let origin_label = match entry.log_origin {
+            LogOrigin::Script => "[SCRIPT]".yellow().to_string(),
+            LogOrigin::Docker => "[DOCKER]".green().to_string(),
+            LogOrigin::System => "[SYSTEM]".cyan().to_string(),
         };
 
         // Special formatting for system messages from the "system" component
-        if entry.phase == LogPhase::System && entry.component == "system" {
+        if entry.log_origin == LogOrigin::System && entry.component == "system" {
             let content = if entry.is_error {
                 entry.content.red().to_string()
             } else {
@@ -171,9 +171,9 @@ impl StdoutSink {
             };
             
             if self.show_timestamp {
-                format!("{timestamp} {phase_label} {content}")
+                format!("{timestamp} {origin_label} {content}")
             } else {
-                format!("{phase_label} {content}")
+                format!("{origin_label} {content}")
             }
         } else {
             let component_color = self.get_component_color(&entry.component);
@@ -187,9 +187,9 @@ impl StdoutSink {
             };
 
             if self.show_timestamp {
-                format!("{timestamp} {phase_label} {component} | {content}")
+                format!("{timestamp} {origin_label} {component} | {content}")
             } else {
-                format!("{phase_label} {component} | {content}")
+                format!("{origin_label} {component} | {content}")
             }
         }
     }
@@ -248,19 +248,19 @@ impl NoColorStdoutSink {
             String::new()
         };
 
-        // Get phase label without colors
-        let phase_label = match entry.phase {
-            LogPhase::Build => "[BUILDING]",
-            LogPhase::Runtime => "[RUNNING] ",
-            LogPhase::System => "[SYSTEM]  ",
+        // Get origin label without colors
+        let origin_label = match entry.log_origin {
+            LogOrigin::Script => "[SCRIPT]",
+            LogOrigin::Docker => "[DOCKER]",
+            LogOrigin::System => "[SYSTEM]",
         };
 
         let content = entry.content.trim_end();
 
         if self.show_timestamp {
-            format!("{} {} {} | {}", timestamp, phase_label, entry.component, content)
+            format!("{} {} {} | {}", timestamp, origin_label, entry.component, content)
         } else {
-            format!("{} {} | {}", phase_label, entry.component, content)
+            format!("{} {} | {}", origin_label, entry.component, content)
         }
     }
 }
@@ -344,10 +344,10 @@ impl SplitSink {
             String::new()
         };
 
-        let phase_label = match entry.phase {
-            LogPhase::Build => "[BUILDING]".yellow().to_string(),
-            LogPhase::Runtime => "[RUNNING] ".green().to_string(),
-            LogPhase::System => "[SYSTEM]  ".cyan().to_string(),
+        let origin_label = match entry.log_origin {
+            LogOrigin::Script => "[SCRIPT]".yellow().to_string(),
+            LogOrigin::Docker => "[DOCKER]".green().to_string(),
+            LogOrigin::System => "[SYSTEM]".cyan().to_string(),
         };
 
         let component_color = self.get_component_color(&entry.component);
@@ -360,9 +360,9 @@ impl SplitSink {
         };
 
         if self.show_timestamp {
-            format!("{timestamp} {phase_label} {component} | {content}")
+            format!("{timestamp} {origin_label} {component} | {content}")
         } else {
-            format!("{phase_label} {component} | {content}")
+            format!("{origin_label} {component} | {content}")
         }
     }
 }
@@ -416,10 +416,10 @@ impl Sink for FileSink {
                 "component": entry.component,
                 "content": entry.content,
                 "is_error": entry.is_error,
-                "phase": match entry.phase {
-                    LogPhase::Build => "build",
-                    LogPhase::Runtime => "runtime",
-                    LogPhase::System => "system",
+                "log_origin": match entry.log_origin {
+                    LogOrigin::Script => "script",
+                    LogOrigin::Docker => "docker",
+                    LogOrigin::System => "system",
                 }
             });
             writeln!(self.file, "{json}")?;
@@ -459,19 +459,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_log_entry_creation() {
-        let entry = LogEntry::build("frontend", "Building...");
+        let entry = LogEntry::script("frontend", "Building...");
         assert_eq!(entry.component, "frontend");
-        assert_eq!(entry.phase, LogPhase::Build);
+        assert_eq!(entry.log_origin, LogOrigin::Script);
         assert!(!entry.is_error);
 
-        let error_entry = LogEntry::runtime("backend", "Error!").as_error();
+        let error_entry = LogEntry::docker("backend", "Error!").as_error();
         assert!(error_entry.is_error);
     }
 
     #[tokio::test]
     async fn test_stdout_sink() {
         let mut sink = StdoutSink::new();
-        let entry = LogEntry::runtime("test", "Hello, World!");
+        let entry = LogEntry::docker("test", "Hello, World!");
         // This would write to stdout in a real scenario
         assert!(sink.write(entry).await.is_ok());
     }

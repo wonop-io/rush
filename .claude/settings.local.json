@@ -35,7 +35,11 @@
       "Bash(sed:*)",
       "Bash(grep:*)",
       "Bash(awk:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(./test_logging.sh:*)",
+      "Bash(./rush/target/release/rush:*)",
+      "Bash(./test_complete_logging.sh:*)",
+      "Bash(./test_phase_labels.sh:*)"
     ],
     "deny": []
   }

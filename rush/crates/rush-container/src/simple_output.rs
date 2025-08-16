@@ -114,9 +114,9 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
             }
 
             let entry = if is_build {
-                LogEntry::build(&component_clone, &line)
+                LogEntry::script(&component_clone, &line)
             } else {
-                LogEntry::runtime(&component_clone, &line)
+                LogEntry::docker(&component_clone, &line)
             };
 
             let mut sink_guard = sink_clone.lock().await;
@@ -159,9 +159,9 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
             }
 
             let entry = if is_build {
-                LogEntry::build(&component_clone, &line).as_error()
+                LogEntry::script(&component_clone, &line).as_error()
             } else {
-                LogEntry::runtime(&component_clone, &line).as_error()
+                LogEntry::docker(&component_clone, &line).as_error()
             };
 
             let mut sink_guard = sink_clone.lock().await;

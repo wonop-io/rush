@@ -90,9 +90,9 @@ async fn test_log_capture_with_sink() -> Result<()> {
 
     // Test different log types
     let entries = vec![
-        LogEntry::runtime("app", "Starting server..."),
-        LogEntry::runtime("app", "Server ready on port 8080"),
-        LogEntry::build("builder", "Compiling..."),
+        LogEntry::docker("app", "Starting server..."),
+        LogEntry::docker("app", "Server ready on port 8080"),
+        LogEntry::script("builder", "Compiling..."),
     ];
 
     let mut sink_mut = sink.clone();
@@ -114,8 +114,8 @@ async fn test_error_output_marked_correctly() -> Result<()> {
     let sink = TestSink::new();
 
     // Create entries from stdout and stderr
-    let stdout_entry = LogEntry::runtime("app", "Normal output");
-    let stderr_entry = LogEntry::runtime("app", "Error output").as_error();
+    let stdout_entry = LogEntry::docker("app", "Normal output");
+    let stderr_entry = LogEntry::docker("app", "Error output").as_error();
 
     let mut sink_mut = sink.clone();
     sink_mut.write(stdout_entry).await?;
@@ -228,14 +228,14 @@ async fn test_build_vs_runtime_phase_distinction() -> Result<()> {
 
     // Create build and runtime entries
     let build_logs = [
-        LogEntry::build("builder", "Downloading dependencies..."),
-        LogEntry::build("builder", "Compiling source code..."),
-        LogEntry::build("builder", "Build complete"),
+        LogEntry::script("builder", "Downloading dependencies..."),
+        LogEntry::script("builder", "Compiling source code..."),
+        LogEntry::script("builder", "Build complete"),
     ];
 
     let runtime_logs = [
-        LogEntry::runtime("app", "Starting application..."),
-        LogEntry::runtime("app", "Server running"),
+        LogEntry::docker("app", "Starting application..."),
+        LogEntry::docker("app", "Server running"),
     ];
 
     let mut sink_mut = sink.clone();
@@ -248,16 +248,16 @@ async fn test_build_vs_runtime_phase_distinction() -> Result<()> {
     assert_eq!(entries.len(), 5);
 
     // Check phases are correct
-    use rush_output::simple::LogPhase;
+    use rush_output::simple::LogOrigin;
     for entry in entries.iter().take(3) {
         assert!(
-            matches!(entry.phase, LogPhase::Build),
+            matches!(entry.log_origin, LogOrigin::Script),
             "First 3 should be build phase"
         );
     }
     for entry in entries.iter().skip(3).take(2) {
         assert!(
-            matches!(entry.phase, LogPhase::Runtime),
+            matches!(entry.log_origin, LogOrigin::Docker),
             "Last 2 should be runtime phase"
         );
     }
