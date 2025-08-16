@@ -1460,7 +1460,13 @@ impl ContainerReactor {
                 )
                 .await
                 {
-                    error!("Error attaching to container {}: {}", container_name, e);
+                    // Only log errors if we're not shutting down
+                    let shutdown_token = shutdown::global_shutdown().cancellation_token();
+                    if !shutdown_token.is_cancelled() {
+                        error!("Error attaching to container {}: {}", container_name, e);
+                    } else {
+                        debug!("Container {} detached during shutdown", container_name);
+                    }
                 }
             });
 

@@ -11,7 +11,8 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use log::{debug, error};
+use log::{debug, error, warn};
+use rush_core::shutdown;
 
 /// Capture output from any spawned process and forward to sink
 /// 
@@ -113,6 +114,159 @@ pub async fn capture_process_output(
     Ok(())
 }
 
+/// Capture output from any spawned process with graceful shutdown handling
+/// 
+/// This version handles shutdown gracefully and doesn't report errors when
+/// processes are terminated due to shutdown.
+pub async fn capture_process_output_with_shutdown(
+    command: &str,
+    args: Vec<String>,
+    component_name: String,
+    sink: Arc<Mutex<Box<dyn Sink>>>,
+    is_build: bool,
+) -> Result<()> {
+    debug!("Starting process with shutdown handling: {} {:?} for component {}", command, args, component_name);
+
+    let shutdown_token = shutdown::global_shutdown().cancellation_token();
+    
+    let mut child = Command::new(command)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| Error::Docker(format!("Failed to spawn process {}: {}", command, e)))?;
+
+    let stdout = child.stdout.take()
+        .ok_or_else(|| Error::Docker("Failed to capture stdout".into()))?;
+    let stderr = child.stderr.take()
+        .ok_or_else(|| Error::Docker("Failed to capture stderr".into()))?;
+
+    let mut handles = vec![];
+
+    // Handle stdout
+    let component_clone = component_name.clone();
+    let sink_clone = sink.clone();
+    let shutdown_clone = shutdown_token.clone();
+    let stdout_handle = tokio::spawn(async move {
+        debug!("Starting stdout reader for {}", component_clone);
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+
+        loop {
+            tokio::select! {
+                result = reader.read_line(&mut line) => {
+                    if result.unwrap_or(0) == 0 {
+                        break;
+                    }
+                    
+                    let entry = if is_build {
+                        LogEntry::build(&component_clone, &line)
+                    } else {
+                        LogEntry::runtime(&component_clone, &line)
+                    };
+
+                    let mut sink_guard = sink_clone.lock().await;
+                    if let Err(e) = sink_guard.write(entry).await {
+                        if !shutdown_clone.is_cancelled() {
+                            error!("Failed to write stdout: {}", e);
+                        }
+                    }
+                    
+                    line.clear();
+                }
+                _ = shutdown_clone.cancelled() => {
+                    debug!("Stdout reader for {} shutting down", component_clone);
+                    break;
+                }
+            }
+        }
+        debug!("Stdout reader finished for {}", component_clone);
+    });
+    handles.push(stdout_handle);
+
+    // Handle stderr
+    let component_clone = component_name.clone();
+    let sink_clone = sink.clone();
+    let shutdown_clone = shutdown_token.clone();
+    let stderr_handle = tokio::spawn(async move {
+        debug!("Starting stderr reader for {}", component_clone);
+        let mut reader = BufReader::new(stderr);
+        let mut line = String::new();
+
+        loop {
+            tokio::select! {
+                result = reader.read_line(&mut line) => {
+                    if result.unwrap_or(0) == 0 {
+                        break;
+                    }
+                    
+                    let entry = if is_build {
+                        LogEntry::build(&component_clone, &line).as_error()
+                    } else {
+                        LogEntry::runtime(&component_clone, &line).as_error()
+                    };
+
+                    let mut sink_guard = sink_clone.lock().await;
+                    if let Err(e) = sink_guard.write(entry).await {
+                        if !shutdown_clone.is_cancelled() {
+                            error!("Failed to write stderr: {}", e);
+                        }
+                    }
+                    
+                    line.clear();
+                }
+                _ = shutdown_clone.cancelled() => {
+                    debug!("Stderr reader for {} shutting down", component_clone);
+                    break;
+                }
+            }
+        }
+        debug!("Stderr reader finished for {}", component_clone);
+    });
+    handles.push(stderr_handle);
+
+    // Wait for all readers to finish or shutdown
+    for handle in handles {
+        if let Err(e) = handle.await {
+            if !shutdown_token.is_cancelled() {
+                error!("Reader task failed: {}", e);
+            }
+        }
+    }
+
+    // If we're shutting down, kill the child process gracefully
+    if shutdown_token.is_cancelled() {
+        debug!("Terminating {} process for {} due to shutdown", command, component_name);
+        let _ = child.kill().await;  // Ignore errors during shutdown
+        return Ok(());  // Don't report error during shutdown
+    }
+
+    // Wait for the process to complete
+    let status = child.wait().await
+        .map_err(|e| Error::Docker(format!("Failed to wait for process: {}", e)))?;
+
+    // Check exit status, but ignore if we're shutting down
+    if !status.success() {
+        // Common exit codes that indicate normal termination during shutdown
+        let exit_code = status.code().unwrap_or(-1);
+        
+        // Docker attach returns 255 when the container is stopped
+        // Also ignore exit code 1 which can happen during container shutdown
+        if exit_code == 255 || exit_code == 1 || exit_code == 125 {
+            debug!("{} process for {} exited with code {} (likely due to container stop)", 
+                   command, component_name, exit_code);
+            return Ok(());
+        }
+        
+        return Err(Error::Docker(format!(
+            "Process {} failed with status: {}",
+            command, status
+        )));
+    }
+
+    Ok(())
+}
+
 /// Run a Docker container in foreground mode and capture its output
 /// 
 /// This runs the container without -d flag, allowing us to capture output directly
@@ -155,6 +309,7 @@ pub async fn run_container_foreground(
 /// Attach to an already running container and capture its output
 /// 
 /// This uses docker attach to get direct stream access to a running container.
+/// Handles shutdown gracefully without logging errors when containers are stopped.
 pub async fn attach_to_container(
     docker_client: Arc<dyn DockerClient>,
     container_id: &str,
@@ -169,7 +324,8 @@ pub async fn attach_to_container(
         container_id.to_string(),
     ];
 
-    capture_process_output(
+    // Use the graceful version that handles shutdown
+    capture_process_output_with_shutdown(
         "docker",
         args,
         component_name,
