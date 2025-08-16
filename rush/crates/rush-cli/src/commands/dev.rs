@@ -25,7 +25,7 @@ pub struct DevCommand {
     vault: Arc<dyn SecretsProvider>,
     redirect_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
-    output_config: OutputDirectorConfig,
+    _output_config: OutputDirectorConfig,
 }
 
 impl DevCommand {
@@ -36,7 +36,7 @@ impl DevCommand {
         vault: Arc<dyn SecretsProvider>,
         redirect_components: HashMap<String, (String, u16)>,
         silence_components: Vec<String>,
-        output_config: OutputDirectorConfig,
+        _output_config: OutputDirectorConfig,
     ) -> Self {
         DevCommand {
             product_name,
@@ -45,7 +45,7 @@ impl DevCommand {
             vault,
             redirect_components,
             silence_components,
-            output_config,
+            _output_config,
         }
     }
 
@@ -136,7 +136,7 @@ pub async fn execute(
     vault: Arc<dyn SecretsProvider>,
     redirect_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
-    output_config: OutputDirectorConfig,
+    _output_config: OutputDirectorConfig,
 ) -> Result<()> {
     let cmd = DevCommand::new(
         product_name,
@@ -145,7 +145,7 @@ pub async fn execute(
         vault,
         redirect_components,
         silence_components,
-        output_config,
+        _output_config,
     );
     cmd.execute().await
 }

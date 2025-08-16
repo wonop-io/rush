@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::types::Config;
-use rush_utils::{find_project_root, read_to_string};
+use rush_utils::find_project_root;
 
 /// Loads configuration files for Rush CLI
 pub struct ConfigLoader {
@@ -66,10 +66,8 @@ impl ConfigLoader {
         let config_path = self.root_path.join(RUSHD_CONFIG_FILE);
         trace!("Loading rushd config from: {}", config_path.display());
 
-        let content =
-            read_to_string(&config_path).map_err(|e| format!("Failed to read rushd.yaml: {e}"))?;
-
-        serde_yaml::from_str(&content).map_err(|e| format!("Failed to parse rushd.yaml: {e}"))
+        rush_core::config_loader::ConfigLoader::load_yaml(&config_path)
+            .map_err(|e| format!("Failed to load rushd.yaml: {e}"))
     }
 }
 

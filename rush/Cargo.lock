@@ -2559,16 +2559,20 @@ name = "rush-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "log",
  "once_cell",
  "regex",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "tempfile",
  "thiserror 1.0.63",
  "tokio",
  "tokio-test",
  "tokio-util",
+ "toml",
 ]
 
 [[package]]

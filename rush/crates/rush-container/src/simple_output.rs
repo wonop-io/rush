@@ -270,7 +270,7 @@ pub async fn capture_process_output_with_shutdown(
 /// avoiding the race condition where attach might miss early output.
 /// Handles shutdown gracefully without logging errors when containers are stopped.
 pub async fn follow_container_logs_from_start(
-    docker_client: Arc<dyn DockerClient>,
+    _docker_client: Arc<dyn DockerClient>,
     container_id: &str,
     component_name: String,
     sink: Arc<Mutex<Box<dyn Sink>>>,

@@ -1,8 +1,7 @@
-use log::{error, info, warn};
+use log::error;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::time::sleep;
 
 use crate::ContainerHandle;
 use rush_core::error::Result;
@@ -14,9 +13,9 @@ pub struct ShutdownManager {
 }
 
 struct ShutdownRequest {
-    container: Arc<Mutex<ContainerHandle>>,
-    timeout: Duration,
-    result_tx: mpsc::Sender<Result<()>>,
+    _container: Arc<Mutex<ContainerHandle>>,
+    _timeout: Duration,
+    _result_tx: mpsc::Sender<Result<()>>,
 }
 
 impl Default for ShutdownManager {
@@ -47,9 +46,9 @@ impl ShutdownManager {
         // Send shutdown request to the background task
         self.shutdown_tx
             .send(ShutdownRequest {
-                container,
-                timeout,
-                result_tx,
+                _container: container,
+                _timeout: timeout,
+                _result_tx: result_tx,
             })
             .await
             .map_err(|_| {
@@ -64,74 +63,6 @@ impl ShutdownManager {
                 "Shutdown operation failed".to_string(),
             ))
         })
-    }
-
-    /// Background task that handles shutdown requests
-    async fn shutdown_task(mut shutdown_rx: mpsc::Receiver<ShutdownRequest>) {
-        while let Some(request) = shutdown_rx.recv().await {
-            let ShutdownRequest {
-                container,
-                timeout,
-                result_tx,
-            } = request;
-
-            let result = Self::perform_shutdown(container, timeout).await;
-            if let Err(_) = result_tx.send(result).await {
-                warn!("Failed to send shutdown result, receiver may have been dropped");
-            }
-        }
-
-        info!("Shutdown manager task terminated");
-    }
-
-    /// Performs the actual shutdown operation with timeout
-    async fn perform_shutdown(
-        container: Arc<Mutex<ContainerHandle>>,
-        timeout: Duration,
-    ) -> Result<()> {
-        let start_time = Instant::now();
-        let container_id = {
-            let container_guard = container.lock().unwrap();
-            container_guard.id().to_string()
-        };
-
-        info!(
-            "Starting graceful shutdown of container {} with timeout {:?}",
-            container_id, timeout
-        );
-
-        // First try SIGTERM
-        {
-            let mut container_guard = container.lock().unwrap();
-            container_guard.send_signal(15).await?; // SIGTERM
-        }
-
-        // Wait for container to stop, checking periodically
-        loop {
-            // Check if we've exceeded timeout
-            if start_time.elapsed() >= timeout {
-                warn!(
-                    "Shutdown timeout reached for container {}, forcing kill",
-                    container_id
-                );
-                let mut container_guard = container.lock().unwrap();
-                return container_guard.send_signal(9).await; // SIGKILL
-            }
-
-            // Check if container is still running
-            let is_running = {
-                let container_guard = container.lock().unwrap();
-                container_guard.is_running().await?
-            };
-
-            if !is_running {
-                info!("Container {} successfully shut down", container_id);
-                return Ok(());
-            }
-
-            // Wait a bit before checking again
-            sleep(Duration::from_millis(100)).await;
-        }
     }
 }
 

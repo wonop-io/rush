@@ -51,11 +51,11 @@ impl FileVault {
             return Ok(json!({}));
         }
 
-        let content = fs::read_to_string(path)?;
         trace!("Loading secrets from {}", path.display());
 
         // TODO: Handle decryption if encryption_key is present
-        let value: Value = serde_json::from_str(&content)?;
+        let value: Value = rush_core::config_loader::ConfigLoader::load_json(path)
+            .map_err(|e| Box::new(e) as Box<dyn Error>)?;
         Ok(value)
     }
 

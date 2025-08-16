@@ -8,7 +8,6 @@ use serde_yaml::Value;
 
 use crate::product::types::{Product, ProductComponent};
 use crate::types::Config;
-use rush_utils::read_to_string;
 
 /// Loads product definitions from a product directory
 pub struct ProductLoader {
@@ -37,19 +36,10 @@ impl ProductLoader {
             return Err(err_msg);
         }
 
-        let spec_content = match read_to_string(&stack_spec_path) {
-            Ok(content) => content,
-            Err(e) => {
-                let err_msg = format!("Failed to read stack specification: {e}");
-                error!("{}", err_msg);
-                return Err(err_msg);
-            }
-        };
-
-        let spec_value: Value = match serde_yaml::from_str(&spec_content) {
+        let spec_value: Value = match rush_core::config_loader::ConfigLoader::load_yaml(&stack_spec_path) {
             Ok(value) => value,
             Err(e) => {
-                let err_msg = format!("Failed to parse stack specification: {e}");
+                let err_msg = format!("Failed to load stack specification: {e}");
                 error!("{}", err_msg);
                 return Err(err_msg);
             }

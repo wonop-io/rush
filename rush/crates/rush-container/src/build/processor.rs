@@ -1,25 +1,17 @@
 use colored::Colorize;
 use log::{debug, error, info, warn};
-use std::path::Path;
 
 use crate::ImageBuilder;
-use rush_build::BuildContext;
-use rush_build::BuildScript;
-use rush_build::BuildType;
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
-use rush_utils::{run_command_in_window, Directory};
 
 /// Manages the build process for containers
-pub struct BuildProcessor {
-    /// Flag to determine if we're running in verbose mode
-    verbose: bool,
-}
+pub struct BuildProcessor {}
 
 impl BuildProcessor {
     /// Creates a new BuildProcessor
-    pub fn new(verbose: bool) -> Self {
-        Self { verbose }
+    pub fn new(_verbose: bool) -> Self {
+        Self {}
     }
 
     /// Builds a Docker image for a component
@@ -122,104 +114,6 @@ impl BuildProcessor {
     /// # Returns
     ///
     /// Optional build script string
-    fn get_build_script(&self, image: &ImageBuilder, context: &BuildContext) -> Option<String> {
-        let spec = image.spec();
-        let build_type = match spec.lock() {
-            Ok(spec) => spec.build_type.clone(),
-            Err(_) => return None,
-        };
-
-        match &build_type {
-            BuildType::PureDockerImage { .. } => None,
-            BuildType::PureKubernetes => None,
-            BuildType::KubernetesInstallation { .. } => None,
-            _ => {
-                let script = BuildScript::new(build_type).render(context);
-                if script.is_empty() {
-                    None
-                } else {
-                    Some(script)
-                }
-            }
-        }
-    }
-
-    /// Builds a Docker image
-    ///
-    /// # Arguments
-    ///
-    /// * `image` - The Docker image to build
-    ///
-    /// # Returns
-    ///
-    /// Result indicating success or failure
-    async fn build_docker_image(&self, image: &ImageBuilder) -> Result<()> {
-        let spec = image.spec();
-        let spec_guard = match spec.lock() {
-            Ok(guard) => guard,
-            Err(_) => return Err(Error::Internal("Failed to lock spec".into())),
-        };
-
-        match &spec_guard.build_type {
-            BuildType::PureDockerImage { .. } => Ok(()),
-            BuildType::PureKubernetes => Ok(()),
-            BuildType::KubernetesInstallation { .. } => Ok(()),
-            _ => {
-                let dockerfile_path = match spec_guard.build_type.dockerfile_path() {
-                    Some(path) => path,
-                    None => return Err(Error::Setup("No Dockerfile path specified".into())),
-                };
-
-                let context_dir = match &spec_guard.build_type {
-                    BuildType::TrunkWasm { context_dir, .. } => context_dir,
-                    BuildType::RustBinary { context_dir, .. } => context_dir,
-                    BuildType::DixiousWasm { context_dir, .. } => context_dir,
-                    BuildType::Script { context_dir, .. } => context_dir,
-                    BuildType::Zola { context_dir, .. } => context_dir,
-                    BuildType::Book { context_dir, .. } => context_dir,
-                    BuildType::Ingress { context_dir, .. } => context_dir,
-                    _ => return Ok(()),
-                };
-
-                let context_dir = context_dir.clone().unwrap_or_else(|| ".".to_string());
-                let dockerfile_dir = Path::new(dockerfile_path)
-                    .parent()
-                    .ok_or_else(|| Error::Setup("Invalid Dockerfile path".into()))?;
-                let dockerfile_name = Path::new(dockerfile_path)
-                    .file_name()
-                    .ok_or_else(|| Error::Setup("Invalid Dockerfile path".into()))?
-                    .to_str()
-                    .ok_or_else(|| Error::Setup("Invalid Dockerfile name".into()))?;
-
-                let _dir_guard = Directory::chpath(dockerfile_dir);
-
-                // Get the toolchain
-                let toolchain = image.toolchain();
-                let toolchain = match toolchain {
-                    Some(toolchain) => toolchain,
-                    None => return Err(Error::Setup("No toolchain configured for image".into())),
-                };
-
-                let tag = image.tagged_image_name();
-                let window_size = if self.verbose { 20 } else { 10 };
-
-                let build_command_args =
-                    vec!["build", "-t", &tag, "-f", dockerfile_name, &context_dir];
-
-                match run_command_in_window(
-                    window_size,
-                    &format!("docker build {}", image.component_name()),
-                    toolchain.docker(),
-                    build_command_args,
-                )
-                .await
-                {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(Error::Docker(e)),
-                }
-            }
-        }
-    }
 
     /// Handles a build error and determines what to do next
     ///

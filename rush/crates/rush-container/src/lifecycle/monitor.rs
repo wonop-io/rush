@@ -9,7 +9,6 @@ use rush_core::error::Result;
 
 /// Monitors container lifecycle and status
 pub struct LifecycleMonitor {
-    container: Arc<Mutex<Container>>,
     status_tx: mpsc::Sender<ContainerStatus>,
     shutdown_signal: mpsc::Receiver<()>,
     interval: Duration,
@@ -42,13 +41,12 @@ impl LifecycleMonitor {
     /// * `shutdown_signal` - Channel for receiving shutdown signals
     /// * `interval` - How frequently to check container status
     pub fn new(
-        container: Arc<Mutex<Container>>,
+        _container: Arc<Mutex<Container>>,
         status_tx: mpsc::Sender<ContainerStatus>,
         shutdown_signal: mpsc::Receiver<()>,
         interval: Duration,
     ) -> Self {
         Self {
-            container,
             status_tx,
             shutdown_signal,
             interval,
@@ -116,34 +114,6 @@ impl LifecycleMonitor {
         Ok(())
     }
 
-    /// Determines the current status of the container
-    async fn determine_status(&self, container: &Container) -> Result<ContainerStatus> {
-        // Get container's running state
-        let is_running = container.is_running().await?;
-
-        // Get container's health status if available
-        let health_status = container.health_status();
-
-        if !is_running {
-            if container.exit_code().await? == Some(0) {
-                Ok(ContainerStatus::Stopped)
-            } else {
-                Ok(ContainerStatus::Failed(format!(
-                    "Container exited with code: {:?}",
-                    container.exit_code().await?
-                )))
-            }
-        } else if let Some(health) = health_status {
-            if health.is_healthy() {
-                Ok(ContainerStatus::Running)
-            } else {
-                Ok(ContainerStatus::Unhealthy(health.status().to_string()))
-            }
-        } else {
-            // If health checks aren't available, just use running state
-            Ok(ContainerStatus::Running)
-        }
-    }
 }
 
 #[cfg(test)]

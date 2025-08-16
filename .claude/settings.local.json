@@ -32,7 +32,10 @@
       "Bash(cargo:*)",
       "Bash(chmod:*)",
       "Bash(time cargo test:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(grep:*)",
+      "Bash(awk:*)",
+      "Bash(cp:*)"
     ],
     "deny": []
   }

@@ -15,10 +15,7 @@ pub use shutdown::ShutdownManager;
 ///
 /// This struct coordinates the various phases of a container's lifecycle,
 /// providing a simpler interface to the rest of the application.
-pub struct LifecycleManager {
-    /// Manager for handling container shutdowns
-    shutdown_manager: ShutdownManager,
-}
+pub struct LifecycleManager {}
 
 impl Default for LifecycleManager {
     fn default() -> Self {
@@ -29,9 +26,7 @@ impl Default for LifecycleManager {
 impl LifecycleManager {
     /// Creates a new lifecycle manager
     pub fn new() -> Self {
-        Self {
-            shutdown_manager: ShutdownManager::new(),
-        }
+        Self {}
     }
 
     /// Requests a graceful shutdown of containers
