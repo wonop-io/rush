@@ -216,6 +216,20 @@ impl LocalServiceManager {
         service.logs(lines).await
     }
 
+    /// Get container IDs for all running services
+    pub async fn get_container_ids(&self) -> HashMap<String, String> {
+        let mut container_ids = HashMap::new();
+        let services = self.services.read().await;
+        
+        for (name, service) in services.iter() {
+            if let Some(container_id) = service.container_id() {
+                container_ids.insert(name.clone(), container_id.to_string());
+            }
+        }
+        
+        container_ids
+    }
+
     /// Get connection strings for all services
     pub async fn get_connection_strings(&self) -> HashMap<String, String> {
         let mut connections = HashMap::new();

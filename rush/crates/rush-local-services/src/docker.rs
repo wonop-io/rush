@@ -18,6 +18,7 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
         env_vars: &[String],
         ports: &[String],
         volumes: &[String],
+        command: Option<&[String]>,
     ) -> Result<String>; // Returns container ID
 
     /// Stops a running container

@@ -172,10 +172,10 @@ impl LocalServiceHandle {
         // Add image
         docker_args.push(image.clone());
 
-        // Add command if specified
-        if let Some(command) = &self.config.command {
-            docker_args.extend(command.split_whitespace().map(|s| s.to_string()));
-        }
+        // Prepare command if specified
+        let command_args = self.config.command.as_ref().map(|cmd| {
+            cmd.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()
+        });
 
         // Run the container using the proper method signature
         let container_id = self
@@ -187,6 +187,7 @@ impl LocalServiceHandle {
                 &env_vars,
                 &ports,
                 &volumes,
+                command_args.as_deref(),
             )
             .await
             .map_err(|e| Error::Docker(format!("Failed to start {}: {}", self.config.name, e)))?;

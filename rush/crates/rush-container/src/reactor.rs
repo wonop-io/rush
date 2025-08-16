@@ -1334,6 +1334,42 @@ impl ContainerReactor {
             for (key, value) in connections {
                 info!("Local service connection: {} = {}", key, value);
             }
+
+            // Follow logs for local services
+            let container_ids = manager.get_container_ids().await;
+            for (name, container_id) in container_ids {
+                let docker_client = self.docker_client.clone();
+                let container_id_clone = container_id.clone();
+                let component_name = name.clone();
+                let sink = self.output_sink.clone();
+                
+                // Find the component spec to get the color - local services don't have specs
+                // so we just use a default color
+                let _color = "cyan".to_string();
+
+                tokio::spawn(async move {
+                    // Small delay to ensure container process has started
+                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+                    if let Err(e) = crate::simple_output::follow_container_logs_from_start(
+                        docker_client,
+                        &container_id_clone,
+                        component_name,
+                        sink,
+                    )
+                    .await
+                    {
+                        // Only log errors if we're not shutting down
+                        let shutdown_token = shutdown::global_shutdown().cancellation_token();
+                        if !shutdown_token.is_cancelled() {
+                            error!(
+                                "Error following logs for local service container {}: {}",
+                                container_id_clone, e
+                            );
+                        }
+                    }
+                });
+            }
         }
 
         let (_status_sender, _status_receiver) = mpsc::channel::<Status>(100);

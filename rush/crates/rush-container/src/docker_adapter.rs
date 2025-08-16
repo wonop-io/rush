@@ -33,9 +33,10 @@ impl local_docker::DockerClient for LocalServicesDockerAdapter {
         env_vars: &[String],
         ports: &[String],
         volumes: &[String],
+        command: Option<&[String]>,
     ) -> Result<String> {
         self.inner
-            .run_container(image, name, network, env_vars, ports, volumes)
+            .run_container_with_command(image, name, network, env_vars, ports, volumes, command)
             .await
     }
 

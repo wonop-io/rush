@@ -41,6 +41,18 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
         volumes: &[String],
     ) -> Result<String>; // Returns container ID
 
+    /// Runs a container with the specified configuration and optional command
+    async fn run_container_with_command(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+    ) -> Result<String>; // Returns container ID
+
     /// Stops a running container
     async fn stop_container(&self, container_id: &str) -> Result<()>;
 
@@ -352,6 +364,20 @@ impl DockerClient for DockerCliClient {
         ports: &[String],
         volumes: &[String],
     ) -> Result<String> {
+        self.run_container_with_command(image, name, network, env_vars, ports, volumes, None)
+            .await
+    }
+
+    async fn run_container_with_command(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+    ) -> Result<String> {
         trace!("Running Docker container {} from image {}", name, image);
 
         let mut args = vec![
@@ -386,6 +412,14 @@ impl DockerClient for DockerCliClient {
 
         // Add image name at the end
         args.push(image);
+        
+        // Add command if specified
+        if let Some(cmd) = command {
+            for arg in cmd {
+                args.push(arg);
+            }
+        }
+        
         println!("RUNNING: {}", args.join(" "));
         let output = Command::new(&self.docker_path)
             .args(&args)
@@ -986,6 +1020,18 @@ mod tests {
             ) -> Result<String> {
                 unimplemented!()
             }
+            async fn run_container_with_command(
+                &self,
+                _image: &str,
+                _name: &str,
+                _network: &str,
+                _env_vars: &[String],
+                _ports: &[String],
+                _volumes: &[String],
+                _command: Option<&[String]>,
+            ) -> Result<String> {
+                unimplemented!()
+            }
             async fn stop_container(&self, container_id: &str) -> Result<()> {
                 assert_eq!(container_id, "test-container");
                 let mut called = self.stop_container_called.lock().unwrap();
@@ -1098,6 +1144,18 @@ mod tests {
                 _env_vars: &[String],
                 _ports: &[String],
                 _volumes: &[String],
+            ) -> Result<String> {
+                unimplemented!()
+            }
+            async fn run_container_with_command(
+                &self,
+                _image: &str,
+                _name: &str,
+                _network: &str,
+                _env_vars: &[String],
+                _ports: &[String],
+                _volumes: &[String],
+                _command: Option<&[String]>,
             ) -> Result<String> {
                 unimplemented!()
             }
