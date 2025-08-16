@@ -142,6 +142,7 @@ impl SecretsDefinitions {
     }
 
     /// Validate that all required secrets are present in the vault
+    #[allow(clippy::await_holding_lock)]
     pub async fn validate_vault(
         &self,
         vault: Arc<Mutex<dyn Vault + Send>>,
@@ -305,12 +306,9 @@ impl SecretsDefinitions {
                         };
 
                         // Expand home directory if path starts with ~
-                        let expanded_path = if file_path.starts_with("~/") {
+                        let expanded_path = if let Some(stripped) = file_path.strip_prefix("~/") {
                             if let Some(home_dir) = dirs::home_dir() {
-                                home_dir
-                                    .join(&file_path[2..])
-                                    .to_string_lossy()
-                                    .into_owned()
+                                home_dir.join(stripped).to_string_lossy().into_owned()
                             } else {
                                 warn!("Could not find home directory");
                                 file_path
@@ -372,6 +370,7 @@ impl SecretsDefinitions {
     }
 
     /// Populate the vault with all defined secrets
+    #[allow(clippy::await_holding_lock)]
     pub async fn populate(
         &self,
         vault: Arc<Mutex<dyn Vault + Send>>,
@@ -559,11 +558,4 @@ impl SecretsDefinitions {
         debug!("Vault population completed successfully");
         Ok(())
     }
-}
-
-// Helper type for tracking secrets and references
-#[derive(Debug, Clone)]
-struct SecretStore {
-    components: HashMap<String, HashMap<String, String>>,
-    references: HashMap<String, Vec<(String, String)>>,
 }

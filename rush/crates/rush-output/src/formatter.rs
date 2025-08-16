@@ -23,7 +23,6 @@ pub trait OutputFormatter: Send + Sync {
 /// Plain text formatter
 #[derive(Clone)]
 pub struct PlainFormatter {
-    template: String,
     timestamp_format: String,
     show_phase: bool,
 }
@@ -31,7 +30,6 @@ pub struct PlainFormatter {
 impl Default for PlainFormatter {
     fn default() -> Self {
         Self {
-            template: "{timestamp} {source} | {content}".to_string(),
             timestamp_format: "%H:%M:%S%.3f".to_string(),
             show_phase: false,
         }

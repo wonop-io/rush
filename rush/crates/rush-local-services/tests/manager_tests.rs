@@ -62,11 +62,9 @@ fn test_manager_creation() {
     let data_dir = PathBuf::from("/tmp/test");
     let network_name = "test-network".to_string();
 
-    let manager = LocalServiceManager::new(docker_client, data_dir.clone(), network_name.clone());
+    let _manager = LocalServiceManager::new(docker_client, data_dir.clone(), network_name.clone());
 
-    // Manager should be created successfully
-    // (Can't test internal state directly due to encapsulation)
-    assert!(true); // Placeholder - manager created without panic
+    // Test passes if manager is created without panic
 }
 
 #[test]
@@ -81,9 +79,7 @@ fn test_manager_register_service() {
 
     manager.register(config);
 
-    // Service should be registered
-    // (Can't test internal state directly, but registration shouldn't panic)
-    assert!(true);
+    // Test passes if service is registered without panic
 }
 
 #[tokio::test]
@@ -142,8 +138,7 @@ fn test_register_multiple_services() {
     manager.register(redis_config);
     manager.register(minio_config);
 
-    // All services should be registered without issues
-    assert!(true);
+    // Test passes if all services are registered without issues
 }
 
 #[test]
@@ -170,6 +165,5 @@ fn test_service_with_dependencies() {
     manager.register(redis_config);
     manager.register(app_config);
 
-    // Services with dependencies should be registered correctly
-    assert!(true);
+    // Test passes if services with dependencies are registered correctly
 }

@@ -568,6 +568,6 @@ mod tests {
         assert_eq!(saved_map.get("KEY1"), Some(&"value1".to_string()));
         assert_eq!(saved_map.get("KEY3"), Some(&"value3".to_string()));
         assert_eq!(saved_map.get("KEY4"), Some(&"value4".to_string()));
-        assert!(saved_map.get("KEY2").is_none());
+        assert!(!saved_map.contains_key("KEY2"));
     }
 }

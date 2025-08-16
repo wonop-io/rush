@@ -12,8 +12,6 @@ use std::path::{Path, PathBuf};
 pub struct FileVault {
     /// Directory where vault files are stored
     directory: PathBuf,
-    /// Optional encryption key for secured storage
-    encryption_key: Option<String>,
 }
 
 impl FileVault {
@@ -22,12 +20,9 @@ impl FileVault {
     /// # Arguments
     ///
     /// * `directory` - The base directory where vault files will be stored
-    /// * `encryption_key` - Optional key for encrypting stored secrets
-    pub fn new(directory: PathBuf, encryption_key: Option<String>) -> Self {
-        FileVault {
-            directory,
-            encryption_key,
-        }
+    /// * `_encryption_key` - Optional key for encrypting stored secrets (not yet implemented)
+    pub fn new(directory: PathBuf, _encryption_key: Option<String>) -> Self {
+        FileVault { directory }
     }
 
     /// Constructs the path to a specific vault file

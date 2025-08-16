@@ -162,9 +162,8 @@ mod tests {
 
     #[test]
     fn test_create_level_filter() {
-        let filter = create_level_filter("debug");
-        // Can't directly test the filter's internal state, but we can verify it's created
-        assert!(true); // Placeholder assertion
+        let _filter = create_level_filter("debug");
+        // The filter is created successfully - test passes if no panic
     }
 
     #[tokio::test]

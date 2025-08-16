@@ -625,10 +625,7 @@ impl ContainerReactor {
         // Build all containers
         self.build_all().await?;
 
-        panic!("Rollout not implemented");
-
-        info!("Rollout completed successfully");
-        Ok(())
+        panic!("Rollout not implemented")
     }
 
     /// Build and push Docker images for all components

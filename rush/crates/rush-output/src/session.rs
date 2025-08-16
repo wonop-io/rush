@@ -121,7 +121,7 @@ impl OutputSession {
     pub fn new(config: SessionConfig) -> Result<Self> {
         let mut filters = CompositeFilter::new();
         for filter in config.filters {
-            filters = filters.add(filter);
+            filters = filters.with_filter(filter);
         }
 
         let router = Box::new(BroadcastRouter::new(config.sinks));

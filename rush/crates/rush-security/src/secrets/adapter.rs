@@ -20,16 +20,6 @@ impl<S: SecretsProvider + Send + Sync> SecretsAdapter<S> {
     pub fn new(secrets_provider: S) -> Self {
         Self { secrets_provider }
     }
-
-    /// Helper function to convert Environment enum to string representation
-    fn env_to_string(env: &Environment) -> String {
-        env.to_string()
-    }
-
-    /// Helper function to convert Environment string to enum
-    fn string_to_env(env_str: &str) -> Environment {
-        Environment::from(env_str)
-    }
 }
 
 impl<S: SecretsProvider + Send + Sync> Debug for SecretsAdapter<S> {

@@ -358,7 +358,7 @@ impl CompositeFilter {
     }
 
     /// Add a filter to the composite
-    pub fn add(mut self, filter: Box<dyn OutputFilter>) -> Self {
+    pub fn with_filter(mut self, filter: Box<dyn OutputFilter>) -> Self {
         self.filters.push(filter);
         self
     }

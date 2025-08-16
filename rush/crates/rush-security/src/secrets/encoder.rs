@@ -33,22 +33,20 @@ impl SecretsEncoder for Base64SecretsEncoder {
     }
 }
 
-/// An encoder that encrypts secrets with a provided key
-pub struct EncryptedSecretsEncoder {
-    /// The encryption key
-    encryption_key: Vec<u8>,
-}
+/// An encoder that encrypts secrets (placeholder implementation)
+pub struct EncryptedSecretsEncoder;
 
 impl EncryptedSecretsEncoder {
-    /// Creates a new EncryptedSecretsEncoder with the given key
-    pub fn new(encryption_key: Vec<u8>) -> Self {
-        Self { encryption_key }
+    /// Creates a new EncryptedSecretsEncoder
+    pub fn new(_encryption_key: Vec<u8>) -> Self {
+        // TODO: Use encryption_key when implementing real encryption
+        Self
     }
 }
 
 impl SecretsEncoder for EncryptedSecretsEncoder {
     fn encode_secrets(&self, secrets: HashMap<String, String>) -> HashMap<String, String> {
-        // In a real implementation, this would use the encryption_key to encrypt each value
+        // TODO: In a real implementation, this would use the _encryption_key to encrypt each value
         // For now, we'll just use a placeholder implementation that prefixes values
         secrets
             .into_iter()

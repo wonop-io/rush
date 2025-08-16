@@ -119,5 +119,3 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
-type Result<T> = std::result::Result<T, rush_core::error::Error>;

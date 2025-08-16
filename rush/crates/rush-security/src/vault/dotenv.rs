@@ -11,7 +11,6 @@ use std::path::PathBuf;
 /// Vault implementation that stores secrets in .env.secrets files
 #[derive(Debug)]
 pub struct DotenvVault {
-    product_dir: PathBuf,
     components: HashMap<String, PathBuf>,
 }
 
@@ -46,12 +45,7 @@ impl DotenvVault {
             }
         }
 
-        Self {
-            product_dir: product_dir
-                .canonicalize()
-                .expect("Failed to get absolute path for product_dir"),
-            components,
-        }
+        Self { components }
     }
 
     /// Gets the path to the component's .env.secrets file

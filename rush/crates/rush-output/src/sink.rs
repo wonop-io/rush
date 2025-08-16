@@ -260,7 +260,6 @@ pub struct FileSink {
     formatter: Box<dyn OutputFormatter>,
     format: FileFormat,
     rotation: Option<RotationConfig>,
-    compression: Option<CompressionType>,
     current_size: u64,
 }
 
@@ -281,7 +280,6 @@ impl FileSink {
             formatter: Box::new(PlainFormatter::default()),
             format: FileFormat::PlainText,
             rotation: None,
-            compression: None,
             current_size: 0,
         })
     }
