@@ -113,6 +113,7 @@ pub struct WidgetPosition {
 impl TerminalSink {
     /// Create a new terminal sink with default settings
     pub fn new() -> Self {
+        eprintln!("DEBUG sink.rs: Creating new TerminalSink with Linear layout");
         Self {
             formatter: Box::new(PlainFormatter::default()),
             color_enabled: atty::is(atty::Stream::Stdout),
@@ -129,6 +130,15 @@ impl TerminalSink {
 
     /// Set the layout
     pub fn with_layout(mut self, layout: TerminalLayout) -> Self {
+        eprintln!("DEBUG sink.rs: Setting layout to: {:?}", 
+            match &layout {
+                TerminalLayout::Linear => "Linear",
+                TerminalLayout::Split { .. } => "Split",
+                TerminalLayout::Dashboard { .. } => "Dashboard",
+                TerminalLayout::Tree => "Tree",
+                TerminalLayout::Web => "Web",
+            }
+        );
         self.layout = layout;
         self
     }
@@ -141,40 +151,42 @@ impl TerminalSink {
         Ok(())
     }
 
-    /// Write to split layout (temporary implementation with prefix)
+    /// Write to split layout
     fn write_split(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
         let phase_prefix = match &event.phase {
-            crate::event::ExecutionPhase::CompileTime { .. } => "[BUILD]",
+            crate::event::ExecutionPhase::CompileTime { .. } => "[BUILD]  ",
             crate::event::ExecutionPhase::Runtime { .. } => "[RUNTIME]",
-            crate::event::ExecutionPhase::System { .. } => "[SYSTEM]",
+            crate::event::ExecutionPhase::System { .. } => "[SYSTEM] ",
         };
-        writeln!(self.stdout, "[todo:split] {} {}", phase_prefix, formatted)
+        writeln!(self.stdout, "{} {}", phase_prefix, formatted)
             .map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
-    /// Write to dashboard layout (temporary implementation with prefix)
+    /// Write to dashboard layout
     fn write_dashboard(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
-        writeln!(self.stdout, "[todo:dashboard] {}", formatted)
+        // Dashboard mode would normally show a TUI, for now just format nicely
+        writeln!(self.stdout, "{}", formatted)
             .map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
-    /// Write to tree layout (temporary implementation with prefix)
+    /// Write to tree layout
     fn write_tree(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
         let indent = "  "; // Simple indentation for now
-        writeln!(self.stdout, "[todo:tree] {}{}", indent, formatted)
+        writeln!(self.stdout, "{}{}", indent, formatted)
             .map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
-    /// Write for web mode (temporary implementation with prefix)
+    /// Write for web mode
     fn write_web(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
-        writeln!(self.stdout, "[todo:web @ http://localhost:8080] {}", formatted)
+        // Web mode would normally serve via HTTP, for now just output
+        writeln!(self.stdout, "{}", formatted)
             .map_err(|e| Error::Io(e))?;
         Ok(())
     }
@@ -189,6 +201,20 @@ impl Default for TerminalSink {
 #[async_trait]
 impl OutputSink for TerminalSink {
     async fn write(&mut self, event: OutputEvent) -> Result<()> {
+        // Debug: Log which layout is being used for each write
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            eprintln!("DEBUG sink.rs: First write using layout: {:?}", 
+                match &self.layout {
+                    TerminalLayout::Linear => "Linear",
+                    TerminalLayout::Split { .. } => "Split",
+                    TerminalLayout::Dashboard { .. } => "Dashboard",
+                    TerminalLayout::Tree => "Tree",
+                    TerminalLayout::Web => "Web",
+                }
+            );
+        });
+        
         match &self.layout {
             TerminalLayout::Linear => self.write_linear(&event),
             TerminalLayout::Split { .. } => self.write_split(&event),

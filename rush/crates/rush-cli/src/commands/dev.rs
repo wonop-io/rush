@@ -9,7 +9,9 @@ use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_container::{ContainerReactor, ContainerReactorConfig, DockerCliClient};
 use rush_config::Config;
 use rush_core::error::{Error, Result};
-use rush_output::OutputDirectorFactory;
+// Legacy imports removed - this module is deprecated
+// use rush_output::OutputDirectorFactory;
+// use rush_output::factory::OutputDirectorConfig;
 use rush_output::factory::OutputDirectorConfig;
 use rush_security::{FileVault, NoopEncoder, SecretsProvider};
 use rush_toolchain::ToolchainContext;
@@ -106,12 +108,12 @@ impl DevCommand {
 
         debug!("Container reactor initialized successfully");
 
-        // Create output director based on configuration
-        let _output_director = OutputDirectorFactory::create(self.output_config.clone())
-            .await
-            .map_err(|e| Error::Setup(format!("Failed to create output director: {e}")))?;
+        // Legacy output director creation removed - now handled by execute.rs
+        // let _output_director = OutputDirectorFactory::create(self.output_config.clone())
+        //     .await
+        //     .map_err(|e| Error::Setup(format!("Failed to create output director: {e}")))?;
 
-        debug!("Output director created successfully");
+        debug!("Output system initialized");
 
         // Launch the development environment
         match reactor.launch().await {

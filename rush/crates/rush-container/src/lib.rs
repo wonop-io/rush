@@ -6,9 +6,9 @@ pub mod docker_adapter;
 pub mod image_builder;
 pub mod lifecycle;
 pub mod network;
-pub mod output_integration;
 pub mod reactor;
 pub mod service;
+pub mod simple_output;
 pub mod status;
 pub mod watcher;
 

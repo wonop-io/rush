@@ -301,27 +301,42 @@ impl SessionBuilder {
     pub fn build(self) -> Result<OutputSession> {
         // If no sinks were specified, add default based on mode
         let mut config = self.config;
+        eprintln!("DEBUG session.rs: Building session with mode: {:?}", config.mode);
         if config.sinks.is_empty() {
             config.sinks = match config.mode {
                 OutputMode::Auto => {
                     let mode = OutputMode::auto();
+                    eprintln!("DEBUG session.rs: Auto mode selected: {:?}", mode);
                     Self::default_sinks_for_mode(mode)
                 }
-                mode => Self::default_sinks_for_mode(mode),
+                mode => {
+                    eprintln!("DEBUG session.rs: Using specified mode: {:?}", mode);
+                    Self::default_sinks_for_mode(mode)
+                }
             };
         }
+        eprintln!("DEBUG session.rs: Created {} sinks", config.sinks.len());
         
         OutputSession::new(config)
     }
 
     /// Get default sinks for a mode
     fn default_sinks_for_mode(mode: OutputMode) -> Vec<Box<dyn OutputSink>> {
+        eprintln!("DEBUG session.rs: Creating default sinks for mode: {:?}", mode);
         match mode {
-            OutputMode::Simple | OutputMode::Auto => {
+            OutputMode::Simple => {
+                eprintln!("DEBUG session.rs: Creating Simple mode sink");
                 vec![Box::new(TerminalSink::new()
                     .with_formatter(Box::new(ColoredFormatter::default())))]
             }
+            OutputMode::Auto => {
+                // Auto should actually resolve to a specific mode
+                let resolved_mode = OutputMode::auto();
+                eprintln!("DEBUG session.rs: Auto mode resolved to: {:?}", resolved_mode);
+                Self::default_sinks_for_mode(resolved_mode)
+            }
             OutputMode::Split => {
+                eprintln!("DEBUG session.rs: Creating Split mode sink with panes");
                 vec![Box::new(TerminalSink::new()
                     .with_formatter(Box::new(ColoredFormatter::default()))
                     .with_layout(TerminalLayout::Split {

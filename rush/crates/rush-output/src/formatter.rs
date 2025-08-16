@@ -59,20 +59,22 @@ impl PlainFormatter {
 
 impl OutputFormatter for PlainFormatter {
     fn format(&self, event: &OutputEvent) -> String {
-        let timestamp = event.timestamp.with_timezone(&Local)
+        let timestamp = event
+            .timestamp
+            .with_timezone(&Local)
             .format(&self.timestamp_format);
-        
+
         let source = &event.source.name;
         let content_str = event.stream.as_str();
         let content = content_str.trim_end();
-        
+
         if self.show_phase {
             let phase = match &event.phase {
                 ExecutionPhase::CompileTime { stage, .. } => format!("[{}]", stage.as_str()),
                 ExecutionPhase::Runtime { .. } => "[Runtime]".to_string(),
                 ExecutionPhase::System { subsystem } => format!("[System:{}]", subsystem),
             };
-            
+
             format!("{} {} {} | {}", timestamp, phase, source, content)
         } else {
             format!("{} {} | {}", timestamp, source, content)
@@ -117,13 +119,11 @@ impl OutputFormatter for JsonFormatter {
     fn format(&self, event: &OutputEvent) -> String {
         if self.include_metadata {
             if self.pretty {
-                serde_json::to_string_pretty(event).unwrap_or_else(|e| {
-                    format!("{{\"error\": \"Failed to serialize: {}\"}}", e)
-                })
+                serde_json::to_string_pretty(event)
+                    .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize: {}\"}}", e))
             } else {
-                serde_json::to_string(event).unwrap_or_else(|e| {
-                    format!("{{\"error\": \"Failed to serialize: {}\"}}", e)
-                })
+                serde_json::to_string(event)
+                    .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize: {}\"}}", e))
             }
         } else {
             // Simplified output without full metadata
@@ -132,7 +132,7 @@ impl OutputFormatter for JsonFormatter {
                 "source": event.source.name,
                 "content": event.stream.as_string(),
             });
-            
+
             if self.pretty {
                 serde_json::to_string_pretty(&output).unwrap()
             } else {
@@ -182,7 +182,11 @@ impl ColorTheme {
             runtime: Color::Green,
             system: Color::Cyan,
             error: Color::Red,
-            warning: Color::TrueColor { r: 255, g: 165, b: 0 },
+            warning: Color::TrueColor {
+                r: 255,
+                g: 165,
+                b: 0,
+            },
             info: Color::Blue,
             debug: Color::BrightBlack,
         }
@@ -191,15 +195,51 @@ impl ColorTheme {
     /// Get the dracula theme
     pub fn dracula() -> Self {
         Self {
-            timestamp: Color::TrueColor { r: 98, g: 114, b: 164 },
-            source: Color::TrueColor { r: 139, g: 233, b: 253 },
-            compile_time: Color::TrueColor { r: 241, g: 250, b: 140 },
-            runtime: Color::TrueColor { r: 80, g: 250, b: 123 },
-            system: Color::TrueColor { r: 255, g: 121, b: 198 },
-            error: Color::TrueColor { r: 255, g: 85, b: 85 },
-            warning: Color::TrueColor { r: 255, g: 184, b: 108 },
-            info: Color::TrueColor { r: 189, g: 147, b: 249 },
-            debug: Color::TrueColor { r: 98, g: 114, b: 164 },
+            timestamp: Color::TrueColor {
+                r: 98,
+                g: 114,
+                b: 164,
+            },
+            source: Color::TrueColor {
+                r: 139,
+                g: 233,
+                b: 253,
+            },
+            compile_time: Color::TrueColor {
+                r: 241,
+                g: 250,
+                b: 140,
+            },
+            runtime: Color::TrueColor {
+                r: 80,
+                g: 250,
+                b: 123,
+            },
+            system: Color::TrueColor {
+                r: 255,
+                g: 121,
+                b: 198,
+            },
+            error: Color::TrueColor {
+                r: 255,
+                g: 85,
+                b: 85,
+            },
+            warning: Color::TrueColor {
+                r: 255,
+                g: 184,
+                b: 108,
+            },
+            info: Color::TrueColor {
+                r: 189,
+                g: 147,
+                b: 249,
+            },
+            debug: Color::TrueColor {
+                r: 98,
+                g: 114,
+                b: 164,
+            },
         }
     }
 }
@@ -264,27 +304,36 @@ impl ColoredFormatter {
 
 impl OutputFormatter for ColoredFormatter {
     fn format(&self, event: &OutputEvent) -> String {
-        let timestamp = event.timestamp.with_timezone(&Local)
+        let timestamp = event
+            .timestamp
+            .with_timezone(&Local)
             .format(&self.timestamp_format)
             .to_string()
             .color(self.theme.timestamp);
-        
-        let source_color = self.component_colors
+
+        let source_color = self
+            .component_colors
             .get(&event.source.name)
             .copied()
             .unwrap_or(self.theme.source);
         let source = event.source.name.color(source_color);
-        
+
         let content_str = event.stream.as_str();
         let content = content_str.trim_end();
-        
-        // Color content based on log level if present
-        let content = if let Some(level) = event.metadata.level {
-            content.to_string().color(self.level_color(level))
+
+        // Don't re-color content if it already contains ANSI codes
+        // This preserves colors from Docker containers
+        let has_ansi_codes = content.contains("\x1b[");
+
+        // Color content based on log level if present and no existing ANSI codes
+        let content = if !has_ansi_codes && event.metadata.level.is_some() {
+            content
+                .to_string()
+                .color(self.level_color(event.metadata.level.unwrap()))
         } else {
             content.to_string().normal()
         };
-        
+
         if self.show_phase {
             let phase_str = match &event.phase {
                 ExecutionPhase::CompileTime { stage, .. } => stage.as_str(),
@@ -292,7 +341,7 @@ impl OutputFormatter for ColoredFormatter {
                 ExecutionPhase::System { subsystem } => subsystem.as_str(),
             };
             let phase = phase_str.color(self.phase_color(&event.phase));
-            
+
             format!("{} {} {} | {}", timestamp, phase, source, content)
         } else {
             format!("{} {} | {}", timestamp, source, content)
@@ -327,17 +376,20 @@ impl OutputFormatter for StructuredFormatter {
                 let mut parts = vec![
                     format!("ts={}", event.timestamp.to_rfc3339()),
                     format!("source={}", event.source.name),
-                    format!("msg=\"{}\"", event.stream.as_str().trim_end().replace('"', "\\\"")),
+                    format!(
+                        "msg=\"{}\"",
+                        event.stream.as_str().trim_end().replace('"', "\\\"")
+                    ),
                 ];
-                
+
                 if let Some(level) = event.metadata.level {
                     parts.push(format!("level={:?}", level).to_lowercase());
                 }
-                
+
                 for (key, value) in &event.metadata.tags {
                     parts.push(format!("{}={}", key, value));
                 }
-                
+
                 parts.join(" ")
             }
             StructuredFormat::Json => {
@@ -379,7 +431,7 @@ mod tests {
             OutputStream::stdout(b"Hello, World!\n".to_vec()),
             None,
         );
-        
+
         let formatted = formatter.format(&event);
         assert!(formatted.contains("test"));
         assert!(formatted.contains("Hello, World!"));
@@ -389,12 +441,9 @@ mod tests {
     fn test_json_formatter() {
         let formatter = JsonFormatter::compact();
         let source = OutputSource::new("test", "container");
-        let event = OutputEvent::runtime(
-            source,
-            OutputStream::stdout(b"test message".to_vec()),
-            None,
-        );
-        
+        let event =
+            OutputEvent::runtime(source, OutputStream::stdout(b"test message".to_vec()), None);
+
         let formatted = formatter.format(&event);
         assert!(formatted.contains("\"source\":"));
         assert!(formatted.contains("\"test\""));
@@ -410,7 +459,7 @@ mod tests {
             "backend".to_string(),
             OutputStream::stdout(b"Compiling backend...\n".to_vec()),
         );
-        
+
         let formatted = formatter.format(&event);
         assert!(formatted.contains("backend"));
         assert!(formatted.contains("Compiling backend"));
@@ -420,13 +469,10 @@ mod tests {
     fn test_structured_formatter_logfmt() {
         let formatter = StructuredFormatter::new(StructuredFormat::Logfmt);
         let source = OutputSource::new("test", "container");
-        let mut event = OutputEvent::runtime(
-            source,
-            OutputStream::stdout(b"test message".to_vec()),
-            None,
-        );
+        let mut event =
+            OutputEvent::runtime(source, OutputStream::stdout(b"test message".to_vec()), None);
         event.metadata.level = Some(LogLevel::Info);
-        
+
         let formatted = formatter.format(&event);
         assert!(formatted.contains("source=test"));
         assert!(formatted.contains("level=info"));

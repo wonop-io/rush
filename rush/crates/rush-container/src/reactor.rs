@@ -74,8 +74,8 @@ pub struct ContainerReactor {
     /// Secrets encoder
     secrets_encoder: Arc<dyn SecretsEncoder>,
 
-    /// Output session for handling container logs
-    output_session: Option<Arc<tokio::sync::Mutex<rush_output::session::OutputSession>>>,
+    /// Output sink for handling container logs
+    output_sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>,
 
     /// Mapping of component names to their actual built image names (with git tags)
     built_images: HashMap<String, String>,
@@ -132,11 +132,11 @@ enum WaitResult {
 }
 
 impl ContainerReactor {
-    /// Sets the output session for handling container logs
-    pub fn set_output_session(&mut self, session: rush_output::session::OutputSession) {
-        eprintln!("DEBUG: ContainerReactor::set_output_session called");
-        self.output_session = Some(Arc::new(tokio::sync::Mutex::new(session)));
-        eprintln!("DEBUG: Output session has been set");
+    /// Sets the output sink for handling container logs
+    pub fn set_output_sink(&mut self, sink: Box<dyn rush_output::simple::Sink>) {
+        eprintln!("DEBUG: ContainerReactor::set_output_sink called");
+        self.output_sink = Arc::new(tokio::sync::Mutex::new(sink));
+        eprintln!("DEBUG: Output sink has been set");
     }
     /// Creates a new ContainerReactor
     ///
@@ -179,7 +179,10 @@ impl ContainerReactor {
             available_components: Vec::new(),
             component_specs: Vec::new(),
             secrets_encoder,
-            output_session: None,
+            output_sink: Arc::new(tokio::sync::Mutex::new(
+                // Create a default stdout sink
+                Box::new(rush_output::simple::StdoutSink::new())
+            )),
             built_images: HashMap::new(),
             local_service_manager: None,
         })
@@ -1440,48 +1443,26 @@ impl ContainerReactor {
                     .to_string()
             };
 
-            let color = self.get_color_for_component(&component_name);
+            // Use the output sink for container logs
+            eprintln!("DEBUG: Using simple output sink for container {container_name}");
+            let sink = self.output_sink.clone();
+            let component_name_for_sink = component_name.clone();
 
-            // Use output session if available, otherwise use standard output
-            if let Some(ref output_session) = self.output_session {
-                eprintln!("DEBUG: Using output session for container {container_name}");
-                let session = output_session.clone();
-                let component_name_for_session = component_name.clone();
-
-                tokio::spawn(async move {
-                    eprintln!("DEBUG: Starting log follower for {container_name}");
-                    // Use the new session-based log follower
-                    if let Err(e) = crate::output_integration::follow_container_logs_with_session(
-                        docker_client,
-                        &container_id,
-                        component_name_for_session,
-                        session,
-                    )
-                    .await
-                    {
-                        error!("Error following logs for {}: {}", container_name, e);
-                    }
-                });
-            } else {
-                eprintln!("DEBUG: No output director, using standard output for {container_name}");
-                // Fall back to standard output
-                let component_name_for_logs = component_name.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = docker_client
-                        .follow_container_logs(
-                            &container_id,
-                            component_name_for_logs.clone(),
-                            color,
-                        )
-                        .await
-                    {
-                        error!(
-                            "Error following logs for {}: {}",
-                            component_name_for_logs, e
-                        );
-                    }
-                });
-            }
+            tokio::spawn(async move {
+                eprintln!("DEBUG: Starting simple log follower for {container_name}");
+                // Use the simple sink-based log follower
+                if let Err(e) = crate::simple_output::follow_container_logs_simple(
+                    docker_client,
+                    &container_id,
+                    component_name_for_sink,
+                    sink,
+                    false, // is_build = false for runtime containers
+                )
+                .await
+                {
+                    error!("Error following logs for {}: {}", container_name, e);
+                }
+            });
 
             self.running_services.push(service);
         }
@@ -2278,7 +2259,7 @@ impl ContainerReactor {
         use rush_build::{BuildContext, BuildScript};
         use rush_core::error::Error;
         use rush_toolchain::{Platform, ToolchainContext};
-        use rush_utils::run_command;
+        // run_command no longer needed - using sink directly
 
         // Skip components that don't need build scripts
         if !spec.build_type.requires_docker_build() {
@@ -2401,7 +2382,17 @@ impl ContainerReactor {
         // Use Directory guard to change to build directory and execute the script
         let output = {
             let _dir_guard = rush_utils::Directory::chpath(&build_dir);
-            run_command("Build script", "bash", vec!["./build_script.sh"]).await
+            
+            // Use the sink for build output
+            let sink = self.output_sink.clone();
+            let component_name = spec.component_name.clone();
+            
+            // Run the build command and capture output through our sink
+            crate::simple_output::follow_build_output_simple(
+                component_name,
+                vec!["bash".to_string(), "./build_script.sh".to_string()],
+                sink,
+            ).await.map(|_| String::new())
         };
 
         // Clean up the script file

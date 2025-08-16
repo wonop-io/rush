@@ -4,7 +4,6 @@ use rush_core::error::Result;
 use clap::ArgMatches;
 use log::{error, trace};
 use std::process;
-use colored::Colorize;
 
 /// Execute the appropriate command based on command line arguments
 pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
@@ -37,19 +36,21 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
     } else if let Some(dev_matches) = matches.subcommand_matches("dev") {
         trace!("Executing dev command");
 
-        // Create output session from CLI arguments
-        let output_session = rush_output::cli::create_session_from_cli(dev_matches)
-            .map_err(|e| {
-                error!("Failed to create output session: {}", e);
-                e
-            })?;
+        // Get the output format from CLI arguments
+        let output_format = dev_matches
+            .get_one::<String>("output-format")
+            .map(|s| s.as_str())
+            .unwrap_or("auto");
+        
+        let no_color = dev_matches.get_flag("no-color");
+        
+        eprintln!("DEBUG: Using output format: {} (no-color: {})", output_format, no_color);
 
-        // Debug: Log the output configuration
-        eprintln!("DEBUG: Output session created with CLI arguments");
-        eprintln!("DEBUG: Setting output session on reactor");
-
-        // Set the output session on the reactor
-        ctx.reactor.set_output_session(output_session);
+        // Create a sink using the new simple system
+        let sink = rush_output::simple::create_sink(output_format, no_color);
+        
+        // Set the sink on the reactor
+        ctx.reactor.set_output_sink(sink);
 
         match ctx.reactor.launch().await {
             Ok(_) => {
