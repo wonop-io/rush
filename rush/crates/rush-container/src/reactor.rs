@@ -402,7 +402,7 @@ impl ContainerReactor {
                 if service_type == "stripe-cli" || service_type == "stripe" {
                     info!("Found Stripe CLI service, will handle as local process");
                     // Initialize Stripe handler
-                    let webhook_url = env
+                    let _webhook_url = env
                         .as_ref()
                         .and_then(|e| e.get("STRIPE_WEBHOOK_URL"))
                         .cloned()

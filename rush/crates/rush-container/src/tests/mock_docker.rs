@@ -315,4 +315,47 @@ impl DockerClient for MockDockerClient {
             Err(Error::Docker(format!("Container {name} not found")))
         }
     }
+
+    async fn run_container_with_command(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        _ports: &[String],
+        _volumes: &[String],
+        _command: Option<&[String]>,
+    ) -> Result<String> {
+        self.record_call(format!("run_container_with_command({image}, {name})"))
+            .await;
+
+        let responses = self.responses.lock().await;
+        if responses.should_fail_container_run {
+            return Err(Error::Docker("Failed to run container".to_string()));
+        }
+
+        let container_id = format!("mock_{name}");
+        let mut containers = self.containers.lock().await;
+
+        let mut container = MockContainer {
+            id: container_id.clone(),
+            name: name.to_string(),
+            status: ContainerStatus::Running,
+            image: image.to_string(),
+            network: network.to_string(),
+            env_vars: env_vars.to_vec(),
+            logs: responses.startup_logs.clone(),
+        };
+
+        // Set exit code if configured
+        if let Some(exit_code) = responses.container_exit_code {
+            container.status = ContainerStatus::Exited(exit_code);
+        }
+
+        let container_clone = container.clone();
+        containers.insert(container_id.clone(), container);
+        containers.insert(name.to_string(), container_clone);
+
+        Ok(container_id)
+    }
 }

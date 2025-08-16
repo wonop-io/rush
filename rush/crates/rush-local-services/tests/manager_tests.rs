@@ -16,6 +16,7 @@ impl rush_local_services::docker::DockerClient for MockDockerClient {
         _env_vars: &[String],
         _ports: &[String],
         _volumes: &[String],
+        _command: Option<&[String]>,
     ) -> rush_core::error::Result<String> {
         Ok("mock-container-id".to_string())
     }
