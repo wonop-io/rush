@@ -27,7 +27,11 @@
       "Bash(/Users/tfr/Documents/Projects/rush/rush/target/debug/rush:*)",
       "Bash(true)",
       "Bash(cat:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(cargo install:*)",
+      "Bash(cargo:*)",
+      "Bash(chmod:*)",
+      "Bash(time cargo test:*)"
     ],
     "deny": []
   }
