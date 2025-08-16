@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 
 /// Capabilities of an output sink
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct SinkCapabilities {
     pub supports_color: bool,
     pub supports_unicode: bool,
@@ -19,16 +20,6 @@ pub struct SinkCapabilities {
     pub max_width: Option<usize>,
 }
 
-impl Default for SinkCapabilities {
-    fn default() -> Self {
-        Self {
-            supports_color: false,
-            supports_unicode: false,
-            is_interactive: false,
-            max_width: None,
-        }
-    }
-}
 
 /// Trait for output destinations
 #[async_trait]
@@ -147,7 +138,7 @@ impl TerminalSink {
     /// Write to linear layout
     fn write_linear(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
-        writeln!(self.stdout, "{}", formatted).map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{formatted}").map_err(Error::Io)?;
         Ok(())
     }
 
@@ -159,7 +150,7 @@ impl TerminalSink {
             crate::event::ExecutionPhase::Runtime { .. } => "[RUNTIME]",
             crate::event::ExecutionPhase::System { .. } => "[SYSTEM] ",
         };
-        writeln!(self.stdout, "{} {}", phase_prefix, formatted).map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{phase_prefix} {formatted}").map_err(Error::Io)?;
         Ok(())
     }
 
@@ -167,7 +158,7 @@ impl TerminalSink {
     fn write_dashboard(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
         // Dashboard mode would normally show a TUI, for now just format nicely
-        writeln!(self.stdout, "{}", formatted).map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{formatted}").map_err(Error::Io)?;
         Ok(())
     }
 
@@ -175,7 +166,7 @@ impl TerminalSink {
     fn write_tree(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
         let indent = "  "; // Simple indentation for now
-        writeln!(self.stdout, "{}{}", indent, formatted).map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{indent}{formatted}").map_err(Error::Io)?;
         Ok(())
     }
 
@@ -183,7 +174,7 @@ impl TerminalSink {
     fn write_web(&mut self, event: &OutputEvent) -> Result<()> {
         let formatted = self.formatter.format(event);
         // Web mode would normally serve via HTTP, for now just output
-        writeln!(self.stdout, "{}", formatted).map_err(|e| Error::Io(e))?;
+        writeln!(self.stdout, "{formatted}").map_err(Error::Io)?;
         Ok(())
     }
 }
@@ -222,7 +213,7 @@ impl OutputSink for TerminalSink {
     }
 
     async fn flush(&mut self) -> Result<()> {
-        self.stdout.flush().map_err(|e| Error::Io(e))?;
+        self.stdout.flush().map_err(Error::Io)?;
         Ok(())
     }
 
@@ -283,7 +274,7 @@ impl FileSink {
         // Create parent directories if needed
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| Error::Filesystem(format!("Failed to create log directory: {}", e)))?;
+                .map_err(|e| Error::Filesystem(format!("Failed to create log directory: {e}")))?;
         }
 
         Ok(Self {
@@ -316,7 +307,7 @@ impl FileSink {
                 .create(true)
                 .append(true)
                 .open(&self.path)
-                .map_err(|e| Error::Io(e))?;
+                .map_err(Error::Io)?;
 
             self.current_size = file.metadata().map(|m| m.len()).unwrap_or(0);
 
@@ -338,7 +329,7 @@ impl FileSink {
     fn rotate(&mut self) -> Result<()> {
         // Close current file
         if let Some(mut file) = self.file.take() {
-            file.flush().map_err(|e| Error::Io(e))?;
+            file.flush().map_err(Error::Io)?;
         }
 
         // Rename existing files
@@ -350,7 +341,7 @@ impl FileSink {
                     self.path.with_extension(format!("{}.log", i - 1))
                 };
 
-                let to = self.path.with_extension(format!("{}.log", i));
+                let to = self.path.with_extension(format!("{i}.log"));
 
                 if from.exists() {
                     std::fs::rename(&from, &to).ok();
@@ -373,16 +364,16 @@ impl OutputSink for FileSink {
         let formatted = match self.format {
             FileFormat::PlainText => self.formatter.format(&event),
             FileFormat::Json => serde_json::to_string_pretty(&event)
-                .map_err(|e| Error::Internal(format!("Failed to serialize event: {}", e)))?,
+                .map_err(|e| Error::Internal(format!("Failed to serialize event: {e}")))?,
             FileFormat::JsonLines => serde_json::to_string(&event)
-                .map_err(|e| Error::Internal(format!("Failed to serialize event: {}", e)))?,
+                .map_err(|e| Error::Internal(format!("Failed to serialize event: {e}")))?,
         };
 
-        let bytes = format!("{}\n", formatted).into_bytes();
+        let bytes = format!("{formatted}\n").into_bytes();
         self.current_size += bytes.len() as u64;
 
         if let Some(file) = &mut self.file {
-            file.write_all(&bytes).map_err(|e| Error::Io(e))?;
+            file.write_all(&bytes).map_err(Error::Io)?;
         }
 
         if self.should_rotate() {
@@ -394,7 +385,7 @@ impl OutputSink for FileSink {
 
     async fn flush(&mut self) -> Result<()> {
         if let Some(file) = &mut self.file {
-            file.flush().map_err(|e| Error::Io(e))?;
+            file.flush().map_err(Error::Io)?;
         }
         Ok(())
     }
@@ -560,7 +551,7 @@ mod tests {
             let source = OutputSource::new("test", "container");
             let event = OutputEvent::runtime(
                 source,
-                OutputStream::stdout(format!("event {}", i).into_bytes()),
+                OutputStream::stdout(format!("event {i}").into_bytes()),
                 None,
             );
             sink.write(event).await.unwrap();

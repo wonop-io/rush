@@ -19,7 +19,7 @@ pub fn is_apple_silicon() -> bool {
             .ok()
             .and_then(|o| String::from_utf8(o.stdout).ok());
 
-        output.map_or(false, |s| s.trim() == "arm64")
+        output.is_some_and(|s| s.trim() == "arm64")
     }
 
     #[cfg(not(target_os = "macos"))]

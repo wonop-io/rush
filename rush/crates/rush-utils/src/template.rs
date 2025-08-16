@@ -20,7 +20,7 @@ lazy_static! {
             Ok(t) => t,
             Err(e) => {
                 println!("Parsing error(s): {e}");
-                println!("Looking for templates at: {}", template_path);
+                println!("Looking for templates at: {template_path}");
                 ::std::process::exit(1);
             }
         };

@@ -1,13 +1,10 @@
 //! Tests for image building and architecture validation
 
-use crate::docker::{ContainerStatus, DockerClient};
-use crate::image_builder::ImageBuilder;
+use crate::docker::DockerClient;
 use crate::tests::mock_docker::MockDockerClient;
 use rush_core::error::Result;
 use serial_test::serial;
 use std::sync::Arc;
-use tempfile::TempDir;
-use tokio::process::Command;
 
 #[tokio::test]
 #[serial]

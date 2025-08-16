@@ -4,7 +4,7 @@ use crate::{
     error::{Error, Result},
     health::{HealthCheck, HealthStatus},
 };
-use log::{debug, error, info, warn};
+use log::{debug, info};
 use std::sync::Arc;
 use tokio::time::sleep;
 
@@ -48,7 +48,7 @@ pub struct LocalServiceHandle {
 impl LocalServiceHandle {
     /// Create a new service handle
     pub fn new(config: LocalServiceConfig, docker_client: Arc<dyn DockerClient>) -> Self {
-        let health_check = config.get_health_check().map(|cmd| HealthCheck::new(cmd));
+        let health_check = config.get_health_check().map(HealthCheck::new);
 
         Self {
             config,
@@ -110,7 +110,7 @@ impl LocalServiceHandle {
         let image = self.config.get_image();
         let mut env_vars = Vec::new();
         for (key, value) in &self.config.env {
-            env_vars.push(format!("{}={}", key, value));
+            env_vars.push(format!("{key}={value}"));
         }
 
         let mut ports = Vec::new();
@@ -183,7 +183,7 @@ impl LocalServiceHandle {
             .run_container(
                 &image,
                 &container_name,
-                &self.config.network_mode.as_deref().unwrap_or("bridge"),
+                self.config.network_mode.as_deref().unwrap_or("bridge"),
                 &env_vars,
                 &ports,
                 &volumes,
@@ -259,8 +259,7 @@ impl LocalServiceHandle {
                         match result {
                             Ok(_) => Ok(HealthStatus::Healthy),
                             Err(e) => Ok(HealthStatus::Unhealthy(format!(
-                                "Health check failed: {}",
-                                e
+                                "Health check failed: {e}"
                             ))),
                         }
                     } else {
@@ -269,7 +268,7 @@ impl LocalServiceHandle {
                 }
                 Ok(ContainerStatus::Exited(code)) => {
                     self.status =
-                        ServiceStatus::Failed(format!("Container exited with code {}", code));
+                        ServiceStatus::Failed(format!("Container exited with code {code}"));
                     Ok(HealthStatus::NotRunning)
                 }
                 _ => Ok(HealthStatus::NotRunning),
@@ -311,7 +310,7 @@ impl LocalServiceHandle {
                         if retries >= max_retries {
                             return Err(Error::HealthCheckFailed(
                                 self.config.name.clone(),
-                                format!("Health check failed after {} retries", retries),
+                                format!("Health check failed after {retries} retries"),
                             ));
                         }
 

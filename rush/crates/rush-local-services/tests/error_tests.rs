@@ -24,35 +24,35 @@ fn test_error_variants() {
 #[test]
 fn test_error_display() {
     let config_error = Error::Configuration("Invalid config".to_string());
-    let error_str = format!("{}", config_error);
+    let error_str = format!("{config_error}");
     assert!(error_str.contains("Configuration error"));
     assert!(error_str.contains("Invalid config"));
 
     let docker_error = Error::Docker("Connection refused".to_string());
-    let error_str = format!("{}", docker_error);
+    let error_str = format!("{docker_error}");
     assert!(error_str.contains("Docker error"));
     assert!(error_str.contains("Connection refused"));
 
     let not_found = Error::ServiceNotFound("postgres".to_string());
-    let error_str = format!("{}", not_found);
+    let error_str = format!("{not_found}");
     // The error message format is "Service 'postgres' not found"
     assert!(error_str.contains("not found"));
     assert!(error_str.contains("postgres"));
 
     let already_running = Error::ServiceAlreadyRunning("redis".to_string());
-    let error_str = format!("{}", already_running);
+    let error_str = format!("{already_running}");
     assert!(error_str.contains("already running"));
     assert!(error_str.contains("redis"));
 
     let health_failed = Error::HealthCheckFailed("postgres".to_string(), "timeout".to_string());
-    let error_str = format!("{}", health_failed);
+    let error_str = format!("{health_failed}");
     // The error message format is "Service 'postgres' failed health check: timeout"
     assert!(error_str.contains("failed health check"));
     assert!(error_str.contains("postgres"));
     assert!(error_str.contains("timeout"));
 
     let dependency_failed = Error::DependencyFailed("app".to_string(), "postgres".to_string());
-    let error_str = format!("{}", dependency_failed);
+    let error_str = format!("{dependency_failed}");
     assert!(error_str.contains("Dependency"));
     assert!(error_str.contains("app"));
     assert!(error_str.contains("postgres"));
@@ -77,7 +77,7 @@ fn test_error_equality() {
 #[test]
 fn test_error_debug() {
     let error = Error::ServiceNotFound("test-service".to_string());
-    let debug_str = format!("{:?}", error);
+    let debug_str = format!("{error:?}");
 
     assert!(debug_str.contains("ServiceNotFound"));
     assert!(debug_str.contains("test-service"));

@@ -565,7 +565,7 @@ impl ComponentBuildSpec {
         let service_type = yaml_section
             .get("service_type")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "service_type is required for LocalService and must be a string")
+            .ok_or("service_type is required for LocalService and must be a string")
             .unwrap()
             .to_string();
 
@@ -816,7 +816,7 @@ mod tests {
             } => {
                 assert_eq!(service_type, "postgresql");
                 assert_eq!(version.as_deref(), Some("15"));
-                assert_eq!(*persist_data, true);
+                assert!(*persist_data);
 
                 // Check environment variables
                 let env = env.as_ref().unwrap();
@@ -872,7 +872,7 @@ mod tests {
             } => {
                 assert_eq!(service_type, "redis");
                 assert!(version.is_none());
-                assert_eq!(*persist_data, false);
+                assert!(!(*persist_data));
                 assert!(env.is_none());
                 assert!(health_check.is_none());
                 assert!(init_scripts.is_none());
@@ -913,7 +913,7 @@ mod tests {
             } => {
                 assert_eq!(service_type, "mongodb");
                 assert_eq!(version.as_deref(), Some("6.0"));
-                assert_eq!(*persist_data, true);
+                assert!(*persist_data);
 
                 let env = env.as_ref().unwrap();
                 assert_eq!(env.get("MONGO_PORT"), Some(&"27017".to_string()));

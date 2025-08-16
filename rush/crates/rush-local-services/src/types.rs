@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Represents different types of local services
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -149,7 +148,7 @@ impl VolumeMapping {
         if parts.len() >= 2 {
             let host_path = parts[0].to_string();
             let container_path = parts[1].to_string();
-            let read_only = parts.get(2).map_or(false, |&p| p == "ro");
+            let read_only = parts.get(2).is_some_and(|&p| p == "ro");
             Some(Self::new(host_path, container_path, read_only))
         } else {
             None

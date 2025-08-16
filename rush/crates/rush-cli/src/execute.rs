@@ -45,8 +45,7 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         let no_color = dev_matches.get_flag("no-color");
 
         eprintln!(
-            "DEBUG: Using output format: {} (no-color: {})",
-            output_format, no_color
+            "DEBUG: Using output format: {output_format} (no-color: {no_color})"
         );
 
         // Create a sink using the new simple system

@@ -60,9 +60,9 @@ pub fn check_rust_targets() -> HelperResult<()> {
 
     // Get list of installed targets
     let output = Command::new("rustup")
-        .args(&["target", "list", "--installed"])
+        .args(["target", "list", "--installed"])
         .output()
-        .map_err(|e| HelperError::CommandFailed(format!("Failed to list rustup targets: {}", e)))?;
+        .map_err(|e| HelperError::CommandFailed(format!("Failed to list rustup targets: {e}")))?;
 
     let installed_targets = String::from_utf8_lossy(&output.stdout);
 
@@ -89,7 +89,7 @@ pub fn check_rust_targets() -> HelperResult<()> {
         let mut commands = Vec::new();
 
         for target in missing_targets {
-            errors.push(format!("Missing Rust target: {}", target));
+            errors.push(format!("Missing Rust target: {target}"));
             commands.push(vec![
                 "rustup".to_string(),
                 "target".to_string(),
@@ -127,7 +127,7 @@ pub fn check_docker() -> HelperResult<()> {
     }
 
     // Check for buildx
-    let buildx_output = Command::new("docker").args(&["buildx", "version"]).output();
+    let buildx_output = Command::new("docker").args(["buildx", "version"]).output();
 
     if buildx_output.is_err() || !buildx_output.unwrap().status.success() {
         return Err(HelperError::MissingTool {
@@ -169,7 +169,7 @@ pub fn check_platform_specific() -> HelperResult<()> {
 
 fn check_apple_silicon_toolchain() -> HelperResult<()> {
     // Check for x86_64-unknown-linux-gnu toolchain
-    let output = Command::new("brew").args(&["list", "--formula"]).output();
+    let output = Command::new("brew").args(["list", "--formula"]).output();
 
     if output.is_err() {
         return Err(HelperError::MissingTool {

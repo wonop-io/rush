@@ -1,14 +1,12 @@
 //! Tests for output capture and log completeness
 
 use crate::docker::DockerClient;
-use crate::simple_output::follow_container_logs_from_start;
 use crate::tests::mock_docker::{MockDockerClient, MockResponses};
 use crate::tests::test_helpers::*;
 use rush_core::error::Result;
 use rush_output::simple::{LogEntry, Sink};
 use serial_test::serial;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 #[tokio::test]
 #[serial]
@@ -31,9 +29,8 @@ async fn test_follow_logs_from_start_command() -> Result<()> {
     // These are the actual arguments that should be passed to docker
     for arg in &expected_args {
         assert!(
-            vec!["logs", "--follow", "--since", "0s"].contains(arg),
-            "Argument {} should be included in docker logs command",
-            arg
+            ["logs", "--follow", "--since", "0s"].contains(arg),
+            "Argument {arg} should be included in docker logs command"
         );
     }
 
@@ -81,8 +78,7 @@ async fn test_startup_logs_not_missed() -> Result<()> {
     for log in &early_startup_logs {
         assert!(
             logs.contains(log),
-            "Startup log '{}' should be captured",
-            log
+            "Startup log '{log}' should be captured"
         );
     }
 
@@ -177,13 +173,13 @@ async fn test_multi_container_log_separation() -> Result<()> {
     // Verify each container's logs are separate
     for (name, id) in &containers {
         let logs = docker_client.container_logs(id, 10).await?;
-        assert!(logs.contains(&format!("{}: Starting", name)));
-        assert!(logs.contains(&format!("{}: Ready", name)));
+        assert!(logs.contains(&format!("{name}: Starting")));
+        assert!(logs.contains(&format!("{name}: Ready")));
 
         // Should not contain other containers' logs
         for (other_name, _) in &containers {
             if other_name != name {
-                assert!(!logs.contains(&format!("{}: Starting", other_name)));
+                assert!(!logs.contains(&format!("{other_name}: Starting")));
             }
         }
     }
@@ -220,7 +216,7 @@ async fn test_continuous_log_streaming() -> Result<()> {
 
     for batch in &log_batches {
         for log in batch {
-            assert!(logs.contains(log), "Log '{}' should be present", log);
+            assert!(logs.contains(log), "Log '{log}' should be present");
         }
     }
 
@@ -234,16 +230,12 @@ async fn test_build_vs_runtime_phase_distinction() -> Result<()> {
     let sink = TestSink::new();
 
     // Create build and runtime entries
-    let build_logs = vec![
-        LogEntry::build("builder", "Downloading dependencies..."),
+    let build_logs = [LogEntry::build("builder", "Downloading dependencies..."),
         LogEntry::build("builder", "Compiling source code..."),
-        LogEntry::build("builder", "Build complete"),
-    ];
+        LogEntry::build("builder", "Build complete")];
 
-    let runtime_logs = vec![
-        LogEntry::runtime("app", "Starting application..."),
-        LogEntry::runtime("app", "Server running"),
-    ];
+    let runtime_logs = [LogEntry::runtime("app", "Starting application..."),
+        LogEntry::runtime("app", "Server running")];
 
     let mut sink_mut = sink.clone();
     for entry in build_logs.iter().chain(runtime_logs.iter()) {

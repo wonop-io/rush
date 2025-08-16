@@ -4,7 +4,7 @@
 //! instead of using docker logs, ensuring real-time output and color preservation.
 
 use crate::DockerClient;
-use log::{debug, error, warn};
+use log::{debug, error};
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
 use rush_output::simple::{LogEntry, Sink};
@@ -35,7 +35,7 @@ pub async fn capture_process_output(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| Error::Docker(format!("Failed to spawn process {}: {}", command, e)))?;
+        .map_err(|e| Error::Docker(format!("Failed to spawn process {command}: {e}")))?;
 
     let stdout = child
         .stdout
@@ -111,12 +111,11 @@ pub async fn capture_process_output(
     let status = child
         .wait()
         .await
-        .map_err(|e| Error::Docker(format!("Failed to wait for process: {}", e)))?;
+        .map_err(|e| Error::Docker(format!("Failed to wait for process: {e}")))?;
 
     if !status.success() {
         return Err(Error::Docker(format!(
-            "Process {} failed with status: {}",
-            command, status
+            "Process {command} failed with status: {status}"
         )));
     }
 
@@ -146,7 +145,7 @@ pub async fn capture_process_output_with_shutdown(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| Error::Docker(format!("Failed to spawn process {}: {}", command, e)))?;
+        .map_err(|e| Error::Docker(format!("Failed to spawn process {command}: {e}")))?;
 
     let stdout = child
         .stdout
@@ -264,7 +263,7 @@ pub async fn capture_process_output_with_shutdown(
     let status = child
         .wait()
         .await
-        .map_err(|e| Error::Docker(format!("Failed to wait for process: {}", e)))?;
+        .map_err(|e| Error::Docker(format!("Failed to wait for process: {e}")))?;
 
     // Check exit status, but ignore if we're shutting down
     if !status.success() {
@@ -282,8 +281,7 @@ pub async fn capture_process_output_with_shutdown(
         }
 
         return Err(Error::Docker(format!(
-            "Process {} failed with status: {}",
-            command, status
+            "Process {command} failed with status: {status}"
         )));
     }
 

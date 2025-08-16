@@ -72,12 +72,12 @@ impl OutputFormatter for PlainFormatter {
             let phase = match &event.phase {
                 ExecutionPhase::CompileTime { stage, .. } => format!("[{}]", stage.as_str()),
                 ExecutionPhase::Runtime { .. } => "[Runtime]".to_string(),
-                ExecutionPhase::System { subsystem } => format!("[System:{}]", subsystem),
+                ExecutionPhase::System { subsystem } => format!("[System:{subsystem}]"),
             };
 
-            format!("{} {} {} | {}", timestamp, phase, source, content)
+            format!("{timestamp} {phase} {source} | {content}")
         } else {
-            format!("{} {} | {}", timestamp, source, content)
+            format!("{timestamp} {source} | {content}")
         }
     }
 }
@@ -120,10 +120,10 @@ impl OutputFormatter for JsonFormatter {
         if self.include_metadata {
             if self.pretty {
                 serde_json::to_string_pretty(event)
-                    .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize: {}\"}}", e))
+                    .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize: {e}\"}}"))
             } else {
                 serde_json::to_string(event)
-                    .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize: {}\"}}", e))
+                    .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize: {e}\"}}"))
             }
         } else {
             // Simplified output without full metadata
@@ -342,9 +342,9 @@ impl OutputFormatter for ColoredFormatter {
             };
             let phase = phase_str.color(self.phase_color(&event.phase));
 
-            format!("{} {} {} | {}", timestamp, phase, source, content)
+            format!("{timestamp} {phase} {source} | {content}")
         } else {
-            format!("{} {} | {}", timestamp, source, content)
+            format!("{timestamp} {source} | {content}")
         }
     }
 }
@@ -383,11 +383,11 @@ impl OutputFormatter for StructuredFormatter {
                 ];
 
                 if let Some(level) = event.metadata.level {
-                    parts.push(format!("level={:?}", level).to_lowercase());
+                    parts.push(format!("level={level:?}").to_lowercase());
                 }
 
                 for (key, value) in &event.metadata.tags {
-                    parts.push(format!("{}={}", key, value));
+                    parts.push(format!("{key}={value}"));
                 }
 
                 parts.join(" ")
@@ -397,7 +397,7 @@ impl OutputFormatter for StructuredFormatter {
                     "timestamp": event.timestamp.to_rfc3339(),
                     "source": event.source.name,
                     "message": event.stream.as_string().trim_end(),
-                    "level": event.metadata.level.map(|l| format!("{:?}", l).to_lowercase()),
+                    "level": event.metadata.level.map(|l| format!("{l:?}").to_lowercase()),
                     "tags": event.metadata.tags,
                 });
                 serde_json::to_string(&output).unwrap()

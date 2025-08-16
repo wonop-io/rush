@@ -1,6 +1,5 @@
 //! Test helper utilities
 
-use crate::reactor::ContainerReactor;
 use crate::tests::mock_docker::MockDockerClient;
 use rush_build::{BuildType, ComponentBuildSpec};
 use rush_config::Config;
@@ -9,13 +8,18 @@ use rush_output::simple::{LogEntry, Sink};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tempfile::TempDir;
 use tokio::sync::Mutex;
 
 /// Test sink that captures all output for assertions
 #[derive(Clone)]
 pub struct TestSink {
     pub entries: Arc<Mutex<Vec<LogEntry>>>,
+}
+
+impl Default for TestSink {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TestSink {
@@ -103,11 +107,11 @@ pub fn create_test_component(name: &str, build_type: BuildType) -> ComponentBuil
         variables: rush_build::Variables::new("/test", "test"),
         services: None,
         domains: None,
-        tagged_image_name: Some(format!("{}-image:latest", name)),
+        tagged_image_name: Some(format!("{name}-image:latest")),
         dotenv: HashMap::new(),
         cross_compile: "native".to_string(),
         dotenv_secrets: HashMap::new(),
-        domain: format!("{}.test.app", name),
+        domain: format!("{name}.test.app"),
     }
 }
 

@@ -36,14 +36,14 @@ pub enum HelperError {
 impl HelperError {
     pub fn missing_tool(tool: &str, install_cmd: Vec<String>) -> Self {
         Self::MissingTool {
-            message: format!("{} is not installed or not in PATH", tool),
+            message: format!("{tool} is not installed or not in PATH"),
             command: install_cmd,
         }
     }
 
     pub fn missing_target(target: &str) -> Self {
         Self::MissingTarget {
-            message: format!("Rust target '{}' is not installed", target),
+            message: format!("Rust target '{target}' is not installed"),
             command: vec![
                 "rustup".to_string(),
                 "target".to_string(),

@@ -1,15 +1,13 @@
 //! Tests for graceful shutdown handling
 
 use crate::docker::{ContainerStatus, DockerClient};
-use crate::simple_output::capture_process_output_with_shutdown;
-use crate::tests::mock_docker::{MockDockerClient, MockResponses};
+use crate::tests::mock_docker::MockDockerClient;
 use crate::tests::test_helpers::*;
 use rush_core::error::Result;
 use rush_core::shutdown::{self, ShutdownReason};
-use rush_output::simple::{LogEntry, Sink};
+use rush_output::simple::Sink;
 use serial_test::serial;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 #[tokio::test]
 #[serial]
@@ -31,15 +29,14 @@ async fn test_exit_codes_ignored_during_shutdown() -> Result<()> {
         let is_ignored = code == 255 || code == 1 || code == 125;
         assert!(
             is_ignored,
-            "Exit code {} should be ignored during shutdown",
-            code
+            "Exit code {code} should be ignored during shutdown"
         );
     }
 
     for code in error_codes {
         // These codes should still be treated as errors
         let is_ignored = code == 255 || code == 1 || code == 125;
-        assert!(!is_ignored, "Exit code {} should not be ignored", code);
+        assert!(!is_ignored, "Exit code {code} should not be ignored");
     }
 
     Ok(())

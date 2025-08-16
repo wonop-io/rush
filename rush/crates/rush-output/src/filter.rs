@@ -329,16 +329,16 @@ impl TimeFilter {
 
 impl OutputFilter for TimeFilter {
     fn should_pass(&self, event: &OutputEvent) -> bool {
-        let passes_start = self.start.map_or(true, |s| event.timestamp >= s);
-        let passes_end = self.end.map_or(true, |e| event.timestamp <= e);
+        let passes_start = self.start.is_none_or(|s| event.timestamp >= s);
+        let passes_end = self.end.is_none_or(|e| event.timestamp <= e);
         passes_start && passes_end
     }
 
     fn description(&self) -> String {
         match (self.start, self.end) {
-            (Some(s), Some(e)) => format!("Between {} and {}", s, e),
-            (Some(s), None) => format!("After {}", s),
-            (None, Some(e)) => format!("Before {}", e),
+            (Some(s), Some(e)) => format!("Between {s} and {e}"),
+            (Some(s), None) => format!("After {s}"),
+            (None, Some(e)) => format!("Before {e}"),
             (None, None) => "All times".to_string(),
         }
     }

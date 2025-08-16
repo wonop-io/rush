@@ -28,7 +28,7 @@ pub async fn create_context(matches: &ArgMatches) -> Result<CliContext> {
     let docker_registry = get_docker_registry(matches);
     let product_name = matches
         .get_one::<String>("product_name")
-        .ok_or_else(|| "Product name is required. Usage: rush <product_name> <command>")
+        .ok_or("Product name is required. Usage: rush <product_name> <command>")
         .map_err(|e| rush_core::error::Error::Config(e.to_string()))?
         .clone();
 

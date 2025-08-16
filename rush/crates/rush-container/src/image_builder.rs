@@ -1,5 +1,4 @@
 use crate::docker::{DockerClient, DockerService, DockerServiceConfig};
-use crate::DockerImage;
 use log::warn;
 use rush_build::ComponentBuildSpec;
 use rush_build::{BuildContext, BuildType};
@@ -415,8 +414,7 @@ impl ImageBuilder {
 
         if !status.success() {
             return Err(Error::Docker(format!(
-                "Failed to retag image from {} to {}",
-                old_tag, new_tag
+                "Failed to retag image from {old_tag} to {new_tag}"
             )));
         }
 

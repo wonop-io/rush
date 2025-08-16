@@ -379,7 +379,7 @@ mod tests {
             let source = OutputSource::new("test", "container");
             let event = OutputEvent::runtime(
                 source,
-                OutputStream::stdout(format!("data {}", i).into_bytes()),
+                OutputStream::stdout(format!("data {i}").into_bytes()),
                 None,
             );
             router.route(event).await.unwrap();

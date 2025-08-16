@@ -5,7 +5,7 @@ use crate::{
     health::HealthStatus,
     service::{LocalServiceHandle, ServiceStatus},
 };
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -172,7 +172,7 @@ impl LocalServiceManager {
     /// Check if a service is running
     pub async fn is_running(&self, name: &str) -> bool {
         let services = self.services.read().await;
-        services.get(name).map_or(false, |s| s.is_running())
+        services.get(name).is_some_and(|s| s.is_running())
     }
 
     /// Get the status of all services
@@ -239,21 +239,21 @@ impl LocalServiceManager {
 
                     connections.insert(
                         format!("{}_DATABASE_URL", name.to_uppercase()),
-                        format!("postgres://{}:{}@{}:{}/{}", user, pass, hostname, port, db),
+                        format!("postgres://{user}:{pass}@{hostname}:{port}/{db}"),
                     );
                 }
                 crate::types::LocalServiceType::Redis => {
                     let port = service.port().unwrap_or(6379);
                     connections.insert(
                         format!("{}_REDIS_URL", name.to_uppercase()),
-                        format!("redis://{}:{}", hostname, port),
+                        format!("redis://{hostname}:{port}"),
                     );
                 }
                 crate::types::LocalServiceType::MinIO => {
                     let port = service.port().unwrap_or(9000);
                     connections.insert(
                         format!("{}_S3_ENDPOINT", name.to_uppercase()),
-                        format!("http://{}:{}", hostname, port),
+                        format!("http://{hostname}:{port}"),
                     );
 
                     if let Some(access_key) = config.env.get("MINIO_ROOT_USER") {
@@ -274,7 +274,7 @@ impl LocalServiceManager {
                     let port = service.port().unwrap_or(4566);
                     connections.insert(
                         format!("{}_AWS_ENDPOINT", name.to_uppercase()),
-                        format!("http://{}:{}", hostname, port),
+                        format!("http://{hostname}:{port}"),
                     );
 
                     let default_region = "us-east-1".to_string();
@@ -316,8 +316,7 @@ impl LocalServiceManager {
         if let Some(&in_progress) = visited.get(name) {
             if in_progress {
                 return Err(Error::Configuration(format!(
-                    "Circular dependency detected: {}",
-                    name
+                    "Circular dependency detected: {name}"
                 )));
             }
             return Ok(());
@@ -369,7 +368,7 @@ impl LocalServiceManager {
 
                 if let Err(e) = result {
                     error!("Init script failed for {}: {}", config.name, e);
-                    return Err(Error::Docker(format!("Init script failed: {}", e)));
+                    return Err(Error::Docker(format!("Init script failed: {e}")));
                 }
             }
 

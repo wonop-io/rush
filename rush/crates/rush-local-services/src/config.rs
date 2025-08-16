@@ -153,11 +153,10 @@ impl LocalServiceConfig {
                     .or_insert("minioadmin".to_string());
 
                 // Add MinIO console port if main port is configured
-                if self.ports.iter().any(|p| p.container_port == 9000) {
-                    if !self.ports.iter().any(|p| p.container_port == 9001) {
+                if self.ports.iter().any(|p| p.container_port == 9000)
+                    && !self.ports.iter().any(|p| p.container_port == 9001) {
                         self.ports.push(PortMapping::new(9001, 9001));
                     }
-                }
 
                 // Set default command for MinIO
                 if self.command.is_none() {
@@ -200,7 +199,7 @@ impl ServiceDefaults {
 
     pub fn stripe_cli(name: String, webhook_url: String) -> LocalServiceConfig {
         let mut config = LocalServiceConfig::new(name, LocalServiceType::StripeCLI);
-        config.command = Some(format!("listen --forward-to {}", webhook_url));
+        config.command = Some(format!("listen --forward-to {webhook_url}"));
         config.network_mode = Some("host".to_string());
         config
     }

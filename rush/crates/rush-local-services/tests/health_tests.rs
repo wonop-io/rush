@@ -87,11 +87,11 @@ fn test_health_check_defaults() {
 #[test]
 fn test_health_status_debug() {
     let healthy = HealthStatus::Healthy;
-    let debug_str = format!("{:?}", healthy);
+    let debug_str = format!("{healthy:?}");
     assert!(debug_str.contains("Healthy"));
 
     let unhealthy = HealthStatus::Unhealthy("test error".to_string());
-    let debug_str = format!("{:?}", unhealthy);
+    let debug_str = format!("{unhealthy:?}");
     assert!(debug_str.contains("Unhealthy"));
     assert!(debug_str.contains("test error"));
 }

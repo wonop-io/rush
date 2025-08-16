@@ -187,6 +187,7 @@ pub struct PerformanceMetrics {
 
 /// Additional metadata for output events
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct OutputMetadata {
     /// Log level if applicable
     pub level: Option<LogLevel>,
@@ -201,16 +202,6 @@ pub struct OutputMetadata {
     pub metrics: Option<PerformanceMetrics>,
 }
 
-impl Default for OutputMetadata {
-    fn default() -> Self {
-        Self {
-            level: None,
-            tags: HashMap::new(),
-            retry_count: 0,
-            metrics: None,
-        }
-    }
-}
 
 impl OutputMetadata {
     /// Create metadata with a log level

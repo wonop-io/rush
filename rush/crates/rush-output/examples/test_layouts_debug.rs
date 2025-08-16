@@ -1,6 +1,5 @@
-use rush_output::event::{CompileStage, LogLevel, OutputEvent, OutputMetadata};
+use rush_output::event::{CompileStage, OutputEvent};
 use rush_output::formatter::PlainFormatter;
-use rush_output::session::OutputSession;
 use rush_output::sink::{TerminalLayout, TerminalSink};
 use rush_output::source::OutputSource;
 use rush_output::stream::OutputStream;
@@ -30,7 +29,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     for (name, layout) in layouts {
         println!("\n{}", "=".repeat(60));
-        println!("Testing {} Layout", name);
+        println!("Testing {name} Layout");
         println!("{}\n", "=".repeat(60));
 
         // Create a sink with the specific layout

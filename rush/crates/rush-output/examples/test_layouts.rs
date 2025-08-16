@@ -1,5 +1,5 @@
 use rush_output::event::{CompileStage, LogLevel, OutputEvent, OutputMetadata};
-use rush_output::session::{OutputMode, OutputSession, SessionBuilder};
+use rush_output::session::{OutputMode, SessionBuilder};
 use rush_output::source::OutputSource;
 use rush_output::stream::OutputStream;
 use std::time::Duration;
@@ -17,7 +17,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     for (name, mode) in modes {
         println!("\n{}", "=".repeat(60));
-        println!("Testing {} Mode", name);
+        println!("Testing {name} Mode");
         println!("{}\n", "=".repeat(60));
 
         let mut session = SessionBuilder::new().mode(mode).build()?;

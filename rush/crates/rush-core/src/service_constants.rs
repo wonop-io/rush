@@ -90,8 +90,8 @@ pub mod docker_images {
         };
 
         Some(match version {
-            Some(v) => format!("{}:{}", base_image, v),
-            None => format!("{}:latest", base_image),
+            Some(v) => format!("{base_image}:{v}"),
+            None => format!("{base_image}:latest"),
         })
     }
 }
@@ -127,8 +127,7 @@ pub mod version_validation {
         }
 
         Err(format!(
-            "Invalid version '{}'. Expected semantic version (e.g., '15', '7.2.1') or Docker tag",
-            version
+            "Invalid version '{version}'. Expected semantic version (e.g., '15', '7.2.1') or Docker tag"
         ))
     }
 }

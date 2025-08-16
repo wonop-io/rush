@@ -684,7 +684,7 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::Docker(format!("Command failed: {}", stderr)));
+            return Err(Error::Docker(format!("Command failed: {stderr}")));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -694,7 +694,7 @@ impl DockerClient for DockerCliClient {
         trace!("Getting container by name: {}", name);
 
         let output = Command::new(&self.docker_path)
-            .args(["ps", "-aq", "--filter", &format!("name={}", name)])
+            .args(["ps", "-aq", "--filter", &format!("name={name}")])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
@@ -704,14 +704,13 @@ impl DockerClient for DockerCliClient {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(Error::Docker(format!(
-                "Failed to get container: {}",
-                stderr
+                "Failed to get container: {stderr}"
             )));
         }
 
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if container_id.is_empty() {
-            return Err(Error::Docker(format!("Container '{}' not found", name)));
+            return Err(Error::Docker(format!("Container '{name}' not found")));
         }
 
         Ok(container_id)

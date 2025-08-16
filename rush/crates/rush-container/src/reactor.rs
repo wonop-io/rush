@@ -1038,7 +1038,7 @@ impl ContainerReactor {
                 // Create a temporary ImageBuilder just to check cache status
                 let service_config = DockerServiceConfig {
                     name: image_name.clone(),
-                    image: format!("{}:{}", image_name, image_tag),
+                    image: format!("{image_name}:{image_tag}"),
                     network: self.config.network_name.clone(),
                     env_vars: HashMap::new(),
                     ports: Vec::new(),
@@ -1331,7 +1331,7 @@ impl ContainerReactor {
             manager
                 .start_all()
                 .await
-                .map_err(|e| Error::Docker(format!("Failed to start local services: {}", e)))?;
+                .map_err(|e| Error::Docker(format!("Failed to start local services: {e}")))?;
 
             // Get connection strings and add them to environment
             let connections = manager.get_connection_strings().await;
@@ -1477,8 +1477,7 @@ impl ContainerReactor {
             // Start log following task immediately with minimal delay
             tokio::spawn(async move {
                 eprintln!(
-                    "DEBUG: Following logs for container {} from start",
-                    container_name
+                    "DEBUG: Following logs for container {container_name} from start"
                 );
 
                 // Very small delay to ensure container process has started
@@ -2591,9 +2590,7 @@ impl ContainerReactor {
             .ok_or_else(|| Error::Setup("No dockerfile path specified".into()))?;
         let context_path = image_builder
             .build_config()
-            .context_dir
-            .as_ref()
-            .map(|s| s.as_str())
+            .context_dir.as_deref()
             .unwrap_or(".");
 
         // Build the image using proper stream capture

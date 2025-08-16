@@ -96,6 +96,12 @@ pub struct StdoutSink {
     next_color_index: usize,
 }
 
+impl Default for StdoutSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StdoutSink {
     /// Create a new stdout sink
     pub fn new() -> Self {
@@ -159,9 +165,9 @@ impl StdoutSink {
         };
 
         if self.show_timestamp {
-            format!("{} {} | {}", timestamp, component, content)
+            format!("{timestamp} {component} | {content}")
         } else {
-            format!("{} | {}", component, content)
+            format!("{component} | {content}")
         }
     }
 }
@@ -170,7 +176,7 @@ impl StdoutSink {
 impl Sink for StdoutSink {
     async fn write(&mut self, entry: LogEntry) -> Result<()> {
         let formatted = self.format_entry(&entry);
-        writeln!(self.stdout, "{}", formatted)?;
+        writeln!(self.stdout, "{formatted}")?;
         Ok(())
     }
 
@@ -184,6 +190,12 @@ impl Sink for StdoutSink {
 pub struct NoColorStdoutSink {
     stdout: io::Stdout,
     show_timestamp: bool,
+}
+
+impl Default for NoColorStdoutSink {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NoColorStdoutSink {
@@ -227,7 +239,7 @@ impl NoColorStdoutSink {
 impl Sink for NoColorStdoutSink {
     async fn write(&mut self, entry: LogEntry) -> Result<()> {
         let formatted = self.format_entry(&entry);
-        writeln!(self.stdout, "{}", formatted)?;
+        writeln!(self.stdout, "{formatted}")?;
         Ok(())
     }
 
@@ -243,6 +255,12 @@ pub struct SplitSink {
     show_timestamp: bool,
     component_colors: std::collections::HashMap<String, Color>,
     next_color_index: usize,
+}
+
+impl Default for SplitSink {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SplitSink {
@@ -312,9 +330,9 @@ impl SplitSink {
         };
 
         if self.show_timestamp {
-            format!("{} {} {} | {}", timestamp, phase_label, component, content)
+            format!("{timestamp} {phase_label} {component} | {content}")
         } else {
-            format!("{} {} | {}", phase_label, component, content)
+            format!("{phase_label} {component} | {content}")
         }
     }
 }
@@ -323,7 +341,7 @@ impl SplitSink {
 impl Sink for SplitSink {
     async fn write(&mut self, entry: LogEntry) -> Result<()> {
         let formatted = self.format_entry(&entry);
-        writeln!(self.stdout, "{}", formatted)?;
+        writeln!(self.stdout, "{formatted}")?;
         Ok(())
     }
 
@@ -374,7 +392,7 @@ impl Sink for FileSink {
                     LogPhase::System => "system",
                 }
             });
-            writeln!(self.file, "{}", json)?;
+            writeln!(self.file, "{json}")?;
         } else {
             let timestamp = entry
                 .timestamp

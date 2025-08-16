@@ -5,18 +5,15 @@ use std::fmt;
 
 /// Represents different environments
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum Environment {
+    #[default]
     Development,
     Staging,
     Production,
     Custom(String),
 }
 
-impl Default for Environment {
-    fn default() -> Self {
-        Environment::Development
-    }
-}
 
 impl fmt::Display for Environment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -24,7 +21,7 @@ impl fmt::Display for Environment {
             Environment::Development => write!(f, "dev"),
             Environment::Staging => write!(f, "staging"),
             Environment::Production => write!(f, "prod"),
-            Environment::Custom(s) => write!(f, "{}", s),
+            Environment::Custom(s) => write!(f, "{s}"),
         }
     }
 }

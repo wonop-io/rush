@@ -114,7 +114,7 @@ impl MockDockerClient {
 #[async_trait::async_trait]
 impl DockerClient for MockDockerClient {
     async fn create_network(&self, name: &str) -> Result<()> {
-        self.record_call(format!("create_network({})", name)).await;
+        self.record_call(format!("create_network({name})")).await;
 
         let responses = self.responses.lock().await;
         if responses.should_fail_network_create {
@@ -127,7 +127,7 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn delete_network(&self, name: &str) -> Result<()> {
-        self.record_call(format!("delete_network({})", name)).await;
+        self.record_call(format!("delete_network({name})")).await;
 
         let mut networks = self.networks.lock().await;
         networks.retain(|n| n != name);
@@ -135,19 +135,19 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn network_exists(&self, name: &str) -> Result<bool> {
-        self.record_call(format!("network_exists({})", name)).await;
+        self.record_call(format!("network_exists({name})")).await;
 
         let networks = self.networks.lock().await;
         Ok(networks.contains(&name.to_string()))
     }
 
     async fn pull_image(&self, image: &str) -> Result<()> {
-        self.record_call(format!("pull_image({})", image)).await;
+        self.record_call(format!("pull_image({image})")).await;
         Ok(())
     }
 
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
-        self.record_call(format!("build_image({}, {}, {})", tag, dockerfile, context))
+        self.record_call(format!("build_image({tag}, {dockerfile}, {context})"))
             .await;
 
         let responses = self.responses.lock().await;
@@ -176,7 +176,7 @@ impl DockerClient for MockDockerClient {
         _ports: &[String],
         _volumes: &[String],
     ) -> Result<String> {
-        self.record_call(format!("run_container({}, {})", image, name))
+        self.record_call(format!("run_container({image}, {name})"))
             .await;
 
         let responses = self.responses.lock().await;
@@ -184,7 +184,7 @@ impl DockerClient for MockDockerClient {
             return Err(Error::Docker("Failed to run container".to_string()));
         }
 
-        let container_id = format!("mock_{}", name);
+        let container_id = format!("mock_{name}");
         let mut containers = self.containers.lock().await;
 
         let mut container = MockContainer {
@@ -213,7 +213,7 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn stop_container(&self, container_id: &str) -> Result<()> {
-        self.record_call(format!("stop_container({})", container_id))
+        self.record_call(format!("stop_container({container_id})"))
             .await;
 
         let responses = self.responses.lock().await;
@@ -229,7 +229,7 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn remove_container(&self, container_id: &str) -> Result<()> {
-        self.record_call(format!("remove_container({})", container_id))
+        self.record_call(format!("remove_container({container_id})"))
             .await;
 
         let mut containers = self.containers.lock().await;
@@ -238,7 +238,7 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn container_status(&self, container_id: &str) -> Result<ContainerStatus> {
-        self.record_call(format!("container_status({})", container_id))
+        self.record_call(format!("container_status({container_id})"))
             .await;
 
         let containers = self.containers.lock().await;
@@ -250,7 +250,7 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn container_exists(&self, name: &str) -> Result<bool> {
-        self.record_call(format!("container_exists({})", name))
+        self.record_call(format!("container_exists({name})"))
             .await;
 
         let containers = self.containers.lock().await;
@@ -258,7 +258,7 @@ impl DockerClient for MockDockerClient {
     }
 
     async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String> {
-        self.record_call(format!("container_logs({}, {})", container_id, lines))
+        self.record_call(format!("container_logs({container_id}, {lines})"))
             .await;
 
         let containers = self.containers.lock().await;
@@ -281,15 +281,14 @@ impl DockerClient for MockDockerClient {
         _label: String,
         _color: &str,
     ) -> Result<()> {
-        self.record_call(format!("follow_container_logs({})", container_id))
+        self.record_call(format!("follow_container_logs({container_id})"))
             .await;
         Ok(())
     }
 
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {
         self.record_call(format!(
-            "send_signal_to_container({}, {})",
-            container_id, signal
+            "send_signal_to_container({container_id}, {signal})"
         ))
         .await;
 
@@ -302,22 +301,21 @@ impl DockerClient for MockDockerClient {
 
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
         self.record_call(format!(
-            "exec_in_container({}, {:?})",
-            container_id, command
+            "exec_in_container({container_id}, {command:?})"
         ))
         .await;
         Ok("Mock output".to_string())
     }
 
     async fn get_container_by_name(&self, name: &str) -> Result<String> {
-        self.record_call(format!("get_container_by_name({})", name))
+        self.record_call(format!("get_container_by_name({name})"))
             .await;
 
         let containers = self.containers.lock().await;
         if let Some(container) = containers.get(name) {
             Ok(container.id.clone())
         } else {
-            Err(Error::Docker(format!("Container {} not found", name)))
+            Err(Error::Docker(format!("Container {name} not found")))
         }
     }
 }
