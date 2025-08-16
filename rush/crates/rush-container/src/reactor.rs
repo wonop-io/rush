@@ -1455,16 +1455,23 @@ impl ContainerReactor {
                     .to_string()
             };
 
-            // Use the output sink for container logs
-            eprintln!("DEBUG: Using simple output sink for container {container_name}");
+            // Start following logs immediately to capture all output from the beginning
+            // Use docker logs --follow to ensure we get everything from container start
+            eprintln!("DEBUG: Starting log capture for container {container_name}");
             let sink = self.output_sink.clone();
             let component_name_for_sink = component_name.clone();
             let container_id_clone = container_id.clone();
 
+            // Start log following task immediately with minimal delay
             tokio::spawn(async move {
-                eprintln!("DEBUG: Attaching to container {} for output", container_name);
-                // Attach to the running container to capture its output
-                if let Err(e) = crate::simple_output::attach_to_container(
+                eprintln!("DEBUG: Following logs for container {} from start", container_name);
+                
+                // Very small delay to ensure container process has started
+                // This is much faster than the previous attach approach
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                
+                // Use docker logs --follow to get ALL logs from the beginning
+                if let Err(e) = crate::simple_output::follow_container_logs_from_start(
                     docker_client,
                     &container_id_clone,
                     component_name_for_sink,
@@ -1475,9 +1482,9 @@ impl ContainerReactor {
                     // Only log errors if we're not shutting down
                     let shutdown_token = shutdown::global_shutdown().cancellation_token();
                     if !shutdown_token.is_cancelled() {
-                        error!("Error attaching to container {}: {}", container_name, e);
+                        error!("Error following logs for container {}: {}", container_name, e);
                     } else {
-                        debug!("Container {} detached during shutdown", container_name);
+                        debug!("Container {} log following stopped during shutdown", container_name);
                     }
                 }
             });

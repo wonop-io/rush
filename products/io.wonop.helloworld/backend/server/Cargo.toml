@@ -24,3 +24,4 @@ reqwest = { version = "0.12.2", default-features = false, features = [
     "rustls-tls",
 ] }
 api_types = { path = "../../api/types" }
+colored = "3.0.0"

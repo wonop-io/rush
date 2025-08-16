@@ -1,20 +1,14 @@
 use api_types::{ApiResponse, ExampleApiType};
-use axum::extract::Request;
-use axum::extract::State;
-use axum::middleware::from_fn;
-use axum::middleware::Next;
-// // //
 use axum::{
-    extract::{Path, Query},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
+use colored::Colorize;
 use dotenv::dotenv;
 use log::{error, info};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use tokio::signal;
 use tower_http::cors::CorsLayer;
 
@@ -39,9 +33,15 @@ async fn main() {
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "info");
     }
-
     dotenv().ok();
-    println!("🚀 Server is successfully on FIRE!");
+
+    // Initialize the logger
+    env_logger::init();
+
+    println!(
+        "{}",
+        "🚀 Server is successfully on FIRE!".bright_green().bold()
+    );
 
     let client = Client::new();
     let app = Router::new()
@@ -52,7 +52,7 @@ async fn main() {
 
     let addr = "0.0.0.0:8000";
 
-    info!("Starting server at {}", addr);
+    info!("{}", format!("Starting server at {}", addr).blue());
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
@@ -62,8 +62,14 @@ async fn main() {
     let graceful = server.with_graceful_shutdown(shutdown_signal());
 
     if let Err(e) = graceful.await {
-        error!("Server error: {}", e);
+        error!("{}", format!("Server error: {}", e).red().bold());
     }
+
+    println!(
+        "{} [ {} ]",
+        "Server was terminated!".bold().red(),
+        "DONE".bold().green()
+    );
 }
 
 async fn shutdown_signal() {
@@ -89,15 +95,8 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 
-    info!("Shutdown signal received, starting graceful shutdown");
+    info!(
+        "{}",
+        "Shutdown signal received, starting graceful shutdown".yellow()
+    );
 }
-// Test file change for watching
-// Test change Sat  9 Aug 2025 22:18:10 CEST
-// Test change 1754771171
-// Test change to trigger rebuild 1754771400
-// Another test change 1754771922
-// Final test change 1754772242
-// Test rebuild 1754772567
-// Testing file watch rebuild trigger
-// Test 1754774515
-// Test 1754775288

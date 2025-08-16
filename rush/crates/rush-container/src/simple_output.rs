@@ -267,47 +267,41 @@ pub async fn capture_process_output_with_shutdown(
     Ok(())
 }
 
-/// Run a Docker container in foreground mode and capture its output
+
+/// Follow container logs from the beginning to ensure no output is missed
 /// 
-/// This runs the container without -d flag, allowing us to capture output directly
-/// from the docker run process.
-pub async fn run_container_foreground(
+/// This uses docker logs --follow to get all output from container start,
+/// avoiding the race condition where attach might miss early output.
+/// Handles shutdown gracefully without logging errors when containers are stopped.
+pub async fn follow_container_logs_from_start(
     docker_client: Arc<dyn DockerClient>,
-    container_name: &str,
-    image_name: &str,
-    args: Vec<String>,
+    container_id: &str,
     component_name: String,
     sink: Arc<Mutex<Box<dyn Sink>>>,
 ) -> Result<()> {
-    debug!("Running container {} in foreground", container_name);
+    debug!("Following logs for container {} from start", container_id);
 
-    // Build the docker run command
-    let mut docker_args = vec![
-        "run".to_string(),
-        "--rm".to_string(),           // Remove container when it exits
-        "-t".to_string(),              // Allocate pseudo-TTY for colors
-        "--name".to_string(),
-        container_name.to_string(),
+    let args = vec![
+        "logs".to_string(),
+        "--follow".to_string(),      // Follow log output
+        "--since".to_string(),         
+        "0s".to_string(),             // Get all logs from the beginning
+        container_id.to_string(),
     ];
-    
-    // Add any additional arguments (env vars, ports, volumes, etc.)
-    docker_args.extend(args);
-    
-    // Add the image name
-    docker_args.push(image_name.to_string());
 
-    // Run the container and capture output
-    capture_process_output(
+    // Use the graceful version that handles shutdown
+    capture_process_output_with_shutdown(
         "docker",
-        docker_args,
-        component_name,
-        sink,
+        args,
+        component_name.clone(),
+        sink.clone(),
         false, // is_build = false for runtime containers
     ).await
 }
 
 /// Attach to an already running container and capture its output
 /// 
+/// DEPRECATED: Use follow_container_logs_from_start instead to avoid missing startup logs.
 /// This uses docker attach to get direct stream access to a running container.
 /// Handles shutdown gracefully without logging errors when containers are stopped.
 pub async fn attach_to_container(
@@ -316,22 +310,8 @@ pub async fn attach_to_container(
     component_name: String,
     sink: Arc<Mutex<Box<dyn Sink>>>,
 ) -> Result<()> {
-    debug!("Attaching to container {} for output", container_id);
-
-    let args = vec![
-        "attach".to_string(),
-        "--no-stdin".to_string(),  // Don't attach stdin
-        container_id.to_string(),
-    ];
-
-    // Use the graceful version that handles shutdown
-    capture_process_output_with_shutdown(
-        "docker",
-        args,
-        component_name,
-        sink,
-        false, // is_build = false for runtime containers
-    ).await
+    // Use the new method that captures all logs from the start
+    follow_container_logs_from_start(docker_client, container_id, component_name, sink).await
 }
 
 /// Follow build output using the simplified sink system
