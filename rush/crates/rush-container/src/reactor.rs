@@ -826,17 +826,29 @@ impl ContainerReactor {
                 debug!("Cleared pending file changes after build error");
 
                 info!("Waiting for file changes to retry build...");
-                match self.wait_for_changes_or_termination().await {
-                    WaitResult::FileChanged => {
-                        info!("File changes detected, retrying build...");
-                        continue;
-                    }
-                    WaitResult::Terminated => break,
-                    WaitResult::Timeout => {
-                        warn!("Timeout waiting for changes, retrying anyway...");
-                        continue;
+                info!("💡 Tip: Fix the build error and save a file to trigger rebuild");
+                
+                // Wait indefinitely for file changes - don't retry on timeout
+                loop {
+                    match self.wait_for_changes_or_termination().await {
+                        WaitResult::FileChanged => {
+                            info!("File changes detected, retrying build...");
+                            break; // Exit the inner loop to retry build
+                        }
+                        WaitResult::Terminated => {
+                            info!("Shutdown requested, exiting...");
+                            return Ok(()); // Exit completely
+                        }
+                        WaitResult::Timeout => {
+                            // Don't retry on timeout, just keep waiting
+                            debug!("Still waiting for file changes to fix build error...");
+                            continue; // Keep waiting in the inner loop
+                        }
                     }
                 }
+                
+                // Continue with the outer loop to retry the build
+                continue;
             }
 
             // Check for shutdown before launching containers
@@ -1763,12 +1775,28 @@ impl ContainerReactor {
                                 
                                 info!("Initiating graceful shutdown of all containers due to container exit");
                                 
-                                // Trigger shutdown of all containers
+                                // Trigger global shutdown so all parts of the system know we're shutting down
+                                shutdown::global_shutdown().shutdown(shutdown::ShutdownReason::ContainerExit);
+                                
+                                // Clean up containers
                                 self.cleanup_containers().await?;
                                 return Ok(false); // Signal to stop the reactor
                             }
                             Ok(ContainerStatus::Unknown) => {
-                                warn!("Container {} status unknown", service.id());
+                                // Container might have been removed or doesn't exist
+                                // Check if we expected this container to be running
+                                let container_name = service.name().unwrap_or_else(|| service.id().to_string());
+                                warn!("Container '{}' status unknown - it may have crashed or been removed", container_name);
+                                
+                                // Treat unknown status as a potential crash
+                                info!("Container '{}' is no longer accessible - shutting down all containers", container_name);
+                                
+                                // Trigger global shutdown
+                                shutdown::global_shutdown().shutdown(shutdown::ShutdownReason::ContainerExit);
+                                
+                                // Clean up containers
+                                self.cleanup_containers().await?;
+                                return Ok(false); // Signal to stop the reactor
                             }
                             Err(e) => {
                                 error!("Error checking container status: {}", e);
@@ -2056,7 +2084,8 @@ impl ContainerReactor {
         info!("Waiting for file changes or termination signal");
 
         let mut file_check_interval = tokio::time::interval(Duration::from_millis(100));
-        let wait_timeout = tokio::time::sleep(Duration::from_secs(300)); // 5 minute timeout
+        // Use a very long timeout (1 hour) since we want to wait for user to fix the issue
+        let wait_timeout = tokio::time::sleep(Duration::from_secs(3600)); // 1 hour timeout
         tokio::pin!(wait_timeout);
 
         loop {

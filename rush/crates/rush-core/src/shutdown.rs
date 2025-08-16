@@ -39,6 +39,8 @@ pub enum ShutdownReason {
     Error(String),
     /// Graceful shutdown after successful completion
     Completed,
+    /// Shutdown due to container exit or crash
+    ContainerExit,
 }
 
 impl Default for ShutdownCoordinator {
