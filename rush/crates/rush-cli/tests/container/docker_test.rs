@@ -89,14 +89,14 @@ mod docker_tests {
     fn test_docker_image_toolchain() {
         let config = crate::common::create_test_config();
         let spec = crate::common::create_test_spec(config);
-        let toolchain = crate::common::create_test_toolchain();
+        let _toolchain = crate::common::create_test_toolchain();
 
         let result = DockerImage::from_build_spec(
             spec.clone(),
             Arc::new(DockerCliClient::new("docker".to_string())),
         );
         assert!(result.is_ok());
-        let image = result.unwrap();
+        let _image = result.unwrap();
 
         // Test setting toolchain
         // Note: toolchain is set internally by ImageBuilder

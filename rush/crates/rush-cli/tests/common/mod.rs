@@ -18,6 +18,7 @@ pub fn create_test_variables() -> Arc<Variables> {
 }
 
 // Create a test toolchain context
+#[allow(dead_code)]
 pub fn create_test_toolchain() -> Arc<ToolchainContext> {
     let host = Platform::new("macos", "aarch64");
     let target = Platform::new("linux", "x86_64");

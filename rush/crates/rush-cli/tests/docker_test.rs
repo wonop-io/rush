@@ -93,14 +93,14 @@ mod tests {
     fn test_docker_image_toolchain() {
         let config = create_test_config();
         let spec = create_test_spec(config);
-        let toolchain = create_test_toolchain();
+        let _toolchain = create_test_toolchain();
 
         let result = DockerImage::from_build_spec(
             spec.clone(),
             Arc::new(DockerCliClient::new("docker".to_string())),
         );
         assert!(result.is_ok());
-        let image = result.unwrap();
+        let _image = result.unwrap();
 
         // Test setting toolchain
         // Note: toolchain is set internally by ImageBuilder
@@ -218,8 +218,8 @@ mod tests {
         assert!(result1.is_ok());
         assert!(result2.is_ok());
 
-        let image1 = result1.unwrap();
-        let image2 = result2.unwrap();
+        let _image1 = result1.unwrap();
+        let _image2 = result2.unwrap();
 
         // TODO: Verify dependencies when method is available
         // Dependencies are handled at the build spec level, not the image builder level

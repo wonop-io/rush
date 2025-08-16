@@ -1,14 +1,9 @@
 // Main test runner for Rush CLI tests
-#[path = "common/mod.rs"]
-pub mod common;
 
 // Import test modules
-#[path = "container/mod.rs"]
-mod container_tests;
+// Note: container tests are run separately via container/mod.rs
 
-// Integration tests for Docker
-#[path = "docker_integration_test.rs"]
-mod docker_integration;
+// Integration tests for Docker are run separately via docker_integration_test.rs
 
 // Additional test modules can be added here as they are developed
 

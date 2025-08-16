@@ -48,7 +48,7 @@ async fn test_capture_with_shutdown_handles_cancellation() -> Result<()> {
     // Test that capture_process_output_with_shutdown handles cancellation correctly
 
     let sink = TestSink::new();
-    let sink_box: Box<dyn Sink> = Box::new(sink.clone());
+    let _sink_box: Box<dyn Sink> = Box::new(sink.clone());
 
     // Set up shutdown token
     let shutdown_token = shutdown::global_shutdown().cancellation_token();

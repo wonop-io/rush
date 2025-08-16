@@ -123,12 +123,14 @@ mod tests {
     use tokio::sync::mpsc;
 
     // Mock container for testing
+    #[allow(dead_code)]
     struct MockContainer {
         is_running: Arc<AtomicBool>,
         exit_code: Option<i32>,
     }
 
     impl MockContainer {
+        #[allow(dead_code)]
         fn new(running: bool, exit_code: Option<i32>) -> Self {
             Self {
                 is_running: Arc::new(AtomicBool::new(running)),
@@ -136,14 +138,17 @@ mod tests {
             }
         }
 
+        #[allow(dead_code)]
         fn is_running(&self) -> Result<bool> {
             Ok(self.is_running.load(Ordering::SeqCst))
         }
 
+        #[allow(dead_code)]
         fn exit_code(&self) -> Result<Option<i32>> {
             Ok(self.exit_code)
         }
 
+        #[allow(dead_code)]
         fn stop(&self) {
             self.is_running.store(false, Ordering::SeqCst);
         }
