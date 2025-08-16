@@ -113,7 +113,6 @@ impl LifecycleMonitor {
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]

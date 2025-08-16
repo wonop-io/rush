@@ -46,24 +46,29 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
     async fn create_network(&self, name: &str) -> Result<()>;
     async fn delete_network(&self, name: &str) -> Result<()>;
     async fn network_exists(&self, name: &str) -> Result<bool>;
-    
+
     // Image operations
     async fn pull_image(&self, image: &str) -> Result<()>;
     async fn build_image(&self, config: BuildConfig) -> Result<()>;
     async fn image_exists(&self, image: &str) -> Result<bool>;
     async fn remove_image(&self, image: &str) -> Result<()>;
-    
+
     // Container operations
     async fn run_container(&self, config: RunConfig) -> Result<String>;
     async fn stop_container(&self, container_id: &str) -> Result<()>;
     async fn remove_container(&self, container_id: &str) -> Result<()>;
     async fn container_status(&self, container_id: &str) -> Result<ContainerStatus>;
-    async fn container_logs(&self, container_id: &str, follow: bool, since: Option<&str>) -> Result<String>;
+    async fn container_logs(
+        &self,
+        container_id: &str,
+        follow: bool,
+        since: Option<&str>,
+    ) -> Result<String>;
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String>;
     async fn get_container_by_name(&self, name: &str) -> Result<Option<String>>;
     async fn list_containers(&self, all: bool) -> Result<Vec<String>>;
     async fn inspect_container(&self, container_id: &str) -> Result<String>;
-    
+
     // Utility operations
     async fn get_container_exit_code(&self, container_id: &str) -> Result<Option<i32>>;
     async fn wait_for_container(&self, container_id: &str) -> Result<i32>;

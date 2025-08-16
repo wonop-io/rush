@@ -16,9 +16,6 @@ pub struct PathMatcher {
 pub struct Pattern {
     /// Compiled glob pattern
     pattern: GlobPattern,
-    /// Original pattern string from .gitignore
-    #[allow(dead_code)]
-    original_pattern: String,
     /// Indicates if this is a negation pattern (starts with !)
     is_negation: bool,
     /// Indicates if this pattern applies only to directories (ends with /)
@@ -48,7 +45,6 @@ impl Pattern {
 
         Pattern {
             pattern: glob_pattern,
-            original_pattern: pattern,
             is_negation,
             is_directory_only,
         }

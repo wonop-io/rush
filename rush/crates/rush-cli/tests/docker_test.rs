@@ -9,10 +9,11 @@ mod tests {
     use rush_config::Config;
     use rush_container::{DockerCliClient, DockerImage};
     use rush_toolchain::{Platform, ToolchainContext};
-    
-    // Import common test utilities
-    use crate::common::{create_test_config, create_test_spec, create_test_toolchain, create_test_variables};
 
+    // Import common test utilities
+    use crate::common::{
+        create_test_config, create_test_spec, create_test_toolchain, create_test_variables,
+    };
 
     #[test]
     fn test_docker_image_creation_from_spec() {

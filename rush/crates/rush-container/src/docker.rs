@@ -759,7 +759,11 @@ impl DockerCliClient {
                         Ok(_) => {
                             let output_data = line.as_bytes().to_vec();
                             let stream = OutputStream::stdout(output_data);
-                            if let Err(_) = tx_stdout.send((source_clone.clone(), stream)).await {
+                            if tx_stdout
+                                .send((source_clone.clone(), stream))
+                                .await
+                                .is_err()
+                            {
                                 break; // Receiver dropped
                             }
                         }
@@ -788,7 +792,11 @@ impl DockerCliClient {
                         Ok(_) => {
                             let output_data = line.as_bytes().to_vec();
                             let stream = OutputStream::stderr(output_data);
-                            if let Err(_) = tx_stderr.send((source_clone.clone(), stream)).await {
+                            if tx_stderr
+                                .send((source_clone.clone(), stream))
+                                .await
+                                .is_err()
+                            {
                                 break; // Receiver dropped
                             }
                         }

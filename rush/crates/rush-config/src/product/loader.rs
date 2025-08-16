@@ -36,14 +36,15 @@ impl ProductLoader {
             return Err(err_msg);
         }
 
-        let spec_value: Value = match rush_core::config_loader::ConfigLoader::load_yaml(&stack_spec_path) {
-            Ok(value) => value,
-            Err(e) => {
-                let err_msg = format!("Failed to load stack specification: {e}");
-                error!("{}", err_msg);
-                return Err(err_msg);
-            }
-        };
+        let spec_value: Value =
+            match rush_core::config_loader::ConfigLoader::load_yaml(&stack_spec_path) {
+                Ok(value) => value,
+                Err(e) => {
+                    let err_msg = format!("Failed to load stack specification: {e}");
+                    error!("{}", err_msg);
+                    return Err(err_msg);
+                }
+            };
 
         let components = self.parse_components(&spec_value, &config)?;
         debug!(

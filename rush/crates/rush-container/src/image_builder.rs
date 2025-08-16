@@ -381,7 +381,6 @@ impl ImageBuilder {
         Ok(self.image_exists_in_cache)
     }
 
-
     /// Determines if the image should be rebuilt based on cache and file changes
     pub async fn evaluate_rebuild_needed(&mut self) -> Result<bool> {
         // First check if image exists
@@ -390,6 +389,7 @@ impl ImageBuilder {
     }
 
     /// Generates a build context with secrets from the vault
+    #[allow(clippy::await_holding_lock)]
     pub async fn generate_build_context(&self) -> Result<BuildContext> {
         if let Some(vault) = &self.vault {
             let vault_guard = vault

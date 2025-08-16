@@ -109,10 +109,8 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
                         break;
                     }
                 }
-            } else {
-                if reader.read_line(&mut line).await.unwrap_or(0) == 0 {
-                    break;
-                }
+            } else if reader.read_line(&mut line).await.unwrap_or(0) == 0 {
+                break;
             }
 
             let entry = if is_build {
@@ -123,7 +121,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
 
             let mut sink_guard = sink_clone.lock().await;
             if let Err(e) = sink_guard.write(entry).await {
-                if shutdown_clone.as_ref().map_or(true, |t| !t.is_cancelled()) {
+                if shutdown_clone.as_ref().is_none_or(|t| !t.is_cancelled()) {
                     error!("Failed to write stdout: {}", e);
                 }
             }
@@ -156,10 +154,8 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
                         break;
                     }
                 }
-            } else {
-                if reader.read_line(&mut line).await.unwrap_or(0) == 0 {
-                    break;
-                }
+            } else if reader.read_line(&mut line).await.unwrap_or(0) == 0 {
+                break;
             }
 
             let entry = if is_build {
@@ -170,7 +166,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
 
             let mut sink_guard = sink_clone.lock().await;
             if let Err(e) = sink_guard.write(entry).await {
-                if shutdown_clone.as_ref().map_or(true, |t| !t.is_cancelled()) {
+                if shutdown_clone.as_ref().is_none_or(|t| !t.is_cancelled()) {
                     error!("Failed to write stderr: {}", e);
                 }
             }
@@ -222,7 +218,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
             if token.is_cancelled() {
                 return Ok(());
             }
-            
+
             // Common exit codes that indicate normal termination during shutdown
             let exit_code = status.code().unwrap_or(-1);
             if exit_code == 255 || exit_code == 1 || exit_code == 125 {
@@ -233,7 +229,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
                 return Ok(());
             }
         }
-        
+
         return Err(Error::Docker(format!(
             "Process {command} failed with status: {status}"
         )));
@@ -374,4 +370,3 @@ pub async fn write_system_message(
     let mut sink_guard = sink.lock().await;
     sink_guard.write(entry).await
 }
-
