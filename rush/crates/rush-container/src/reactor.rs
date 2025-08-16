@@ -2075,27 +2075,6 @@ impl ContainerReactor {
         Ok(())
     }
 
-    /// Get color for component based on spec
-    fn get_color_for_component(&self, component_name: &str) -> &'static str {
-        // Find the component spec to get its color
-        for spec in &self.component_specs {
-            if spec.component_name == component_name {
-                // Return the color from the spec, or a default
-                return match spec.color.as_str() {
-                    "red" => "red",
-                    "green" => "green",
-                    "yellow" => "yellow",
-                    "blue" => "blue",
-                    "magenta" => "magenta",
-                    "cyan" => "cyan",
-                    "white" => "white",
-                    _ => "white",
-                };
-            }
-        }
-        "white" // default color
-    }
-
     /// Waits for file changes or a termination signal
     ///
     /// # Returns
