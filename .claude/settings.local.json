@@ -31,7 +31,8 @@
       "Bash(cargo install:*)",
       "Bash(cargo:*)",
       "Bash(chmod:*)",
-      "Bash(time cargo test:*)"
+      "Bash(time cargo test:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }
