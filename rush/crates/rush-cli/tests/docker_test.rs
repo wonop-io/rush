@@ -6,9 +6,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use rush_build::{BuildType, ComponentBuildSpec};
-    
+
     use rush_container::{DockerCliClient, DockerImage};
-    
 
     // Import common test utilities
     use crate::common::{
