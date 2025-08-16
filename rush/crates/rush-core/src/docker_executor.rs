@@ -1,4 +1,4 @@
-use crate::docker::{BuildConfig, ContainerStatus, DockerClient, RunConfig};
+use crate::docker::{ContainerStatus, DockerClient};
 use crate::error::{Error, Result};
 use async_trait::async_trait;
 use log::{debug, error, info};
@@ -36,6 +36,24 @@ impl DockerExecutor {
     pub fn with_timeout(mut self, timeout: u64) -> Self {
         self.timeout = timeout;
         self
+    }
+
+    /// Get container exit code (helper method, not part of trait)
+    async fn get_container_exit_code(&self, container_id: &str) -> Result<Option<i32>> {
+        let args = vec![
+            "inspect".to_string(),
+            "--format".to_string(),
+            "{{.State.ExitCode}}".to_string(),
+            container_id.to_string(),
+        ];
+
+        match self.execute(args).await {
+            Ok(output) => {
+                let code = output.trim().parse::<i32>().ok();
+                Ok(code)
+            }
+            Err(_) => Ok(None),
+        }
     }
 
     /// Execute a docker command with arguments
@@ -118,105 +136,110 @@ impl DockerClient for DockerExecutor {
         Ok(())
     }
 
-    async fn build_image(&self, config: BuildConfig) -> Result<()> {
+    async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         let mut args = vec!["build".to_string()];
 
         args.push("-t".to_string());
-        args.push(config.tag.clone());
+        args.push(tag.to_string());
 
         args.push("-f".to_string());
-        args.push(config.dockerfile.clone());
+        args.push(dockerfile.to_string());
 
-        if let Some(platform) = config.platform {
-            args.push("--platform".to_string());
-            args.push(platform);
-        }
-
-        if let Some(target) = config.target {
-            args.push("--target".to_string());
-            args.push(target);
-        }
-
-        for (key, value) in config.build_args {
-            args.push("--build-arg".to_string());
-            args.push(format!("{key}={value}"));
-        }
-
-        args.push(config.context);
+        args.push(context.to_string());
 
         self.execute(args).await?;
-        info!("Built Docker image: {}", config.tag);
-        Ok(())
-    }
-
-    async fn image_exists(&self, image: &str) -> Result<bool> {
-        let args = vec!["images".to_string(), "-q".to_string(), image.to_string()];
-        let output = self.execute(args).await?;
-        Ok(!output.trim().is_empty())
-    }
-
-    async fn remove_image(&self, image: &str) -> Result<()> {
-        let args = vec!["rmi".to_string(), image.to_string()];
-        self.execute(args).await?;
-        info!("Removed Docker image: {}", image);
+        info!("Built Docker image: {}", tag);
         Ok(())
     }
 
     // Container operations
-    async fn run_container(&self, config: RunConfig) -> Result<String> {
+    async fn run_container(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+    ) -> Result<String> {
         let mut args = vec!["run".to_string()];
 
-        if config.detach {
-            args.push("-d".to_string());
-        }
-
-        if config.remove {
-            args.push("--rm".to_string());
-        }
-
-        if config.privileged {
-            args.push("--privileged".to_string());
-        }
-
+        args.push("-d".to_string()); // detach by default
         args.push("--name".to_string());
-        args.push(config.name.clone());
+        args.push(name.to_string());
+        args.push("--network".to_string());
+        args.push(network.to_string());
 
-        if let Some(network) = config.network {
-            args.push("--network".to_string());
-            args.push(network);
-        }
-
-        if let Some(working_dir) = config.working_dir {
-            args.push("-w".to_string());
-            args.push(working_dir);
-        }
-
-        for env_var in config.env_vars {
+        for env_var in env_vars {
             args.push("-e".to_string());
-            args.push(env_var);
+            args.push(env_var.clone());
         }
 
-        for port in config.ports {
+        for port in ports {
             args.push("-p".to_string());
-            args.push(port);
+            args.push(port.clone());
         }
 
-        for volume in config.volumes {
+        for volume in volumes {
             args.push("-v".to_string());
-            args.push(volume);
+            args.push(volume.clone());
         }
 
-        args.push(config.image.clone());
+        args.push(image.to_string());
 
-        if let Some(command) = config.command {
-            args.extend(command);
+        let output = self.execute(args).await?;
+        let container_id = output.trim().to_string();
+        info!(
+            "Started container {} with ID: {}",
+            name, container_id
+        );
+        Ok(container_id)
+    }
+
+    async fn run_container_with_command(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+    ) -> Result<String> {
+        let mut args = vec!["run".to_string()];
+
+        args.push("-d".to_string()); // detach by default
+        args.push("--name".to_string());
+        args.push(name.to_string());
+        args.push("--network".to_string());
+        args.push(network.to_string());
+
+        for env_var in env_vars {
+            args.push("-e".to_string());
+            args.push(env_var.clone());
+        }
+
+        for port in ports {
+            args.push("-p".to_string());
+            args.push(port.clone());
+        }
+
+        for volume in volumes {
+            args.push("-v".to_string());
+            args.push(volume.clone());
+        }
+
+        args.push(image.to_string());
+
+        if let Some(cmd) = command {
+            args.extend(cmd.iter().cloned());
         }
 
         let output = self.execute(args).await?;
         let container_id = output.trim().to_string();
         info!(
             "Started container {} with ID: {}",
-            config.name, container_id
+            name, container_id
         );
         Ok(container_id)
     }
@@ -253,7 +276,7 @@ impl DockerClient for DockerExecutor {
                         if let Ok(Some(code)) = self.get_container_exit_code(container_id).await {
                             Ok(ContainerStatus::Exited(code))
                         } else {
-                            Ok(ContainerStatus::Stopped)
+                            Ok(ContainerStatus::Unknown)
                         }
                     }
                     _ => Ok(ContainerStatus::Unknown),
@@ -263,26 +286,55 @@ impl DockerClient for DockerExecutor {
         }
     }
 
-    async fn container_logs(
-        &self,
-        container_id: &str,
-        follow: bool,
-        since: Option<&str>,
-    ) -> Result<String> {
+    async fn container_exists(&self, name: &str) -> Result<bool> {
+        let args = vec![
+            "ps".to_string(),
+            "-a".to_string(),
+            "--filter".to_string(),
+            format!("name={}", name),
+            "--format".to_string(),
+            "{{.ID}}".to_string(),
+        ];
+
+        let output = self.execute(args).await?;
+        Ok(!output.trim().is_empty())
+    }
+
+    async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String> {
         let mut args = vec!["logs".to_string()];
-
-        if follow {
-            args.push("--follow".to_string());
-        }
-
-        if let Some(since) = since {
-            args.push("--since".to_string());
-            args.push(since.to_string());
+        
+        if lines > 0 {
+            args.push("--tail".to_string());
+            args.push(lines.to_string());
         }
 
         args.push(container_id.to_string());
 
         self.execute(args).await
+    }
+
+    async fn follow_container_logs(
+        &self,
+        container_id: &str,
+        _label: String,
+        _color: &str,
+    ) -> Result<()> {
+        // This would need a more complex implementation with streaming
+        // For now, just get the logs without following
+        let args = vec!["logs".to_string(), container_id.to_string()];
+        self.execute(args).await?;
+        Ok(())
+    }
+
+    async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {
+        let args = vec![
+            "kill".to_string(),
+            "-s".to_string(),
+            signal.to_string(),
+            container_id.to_string(),
+        ];
+        self.execute(args).await?;
+        Ok(())
     }
 
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
@@ -292,7 +344,7 @@ impl DockerClient for DockerExecutor {
         self.execute(args).await
     }
 
-    async fn get_container_by_name(&self, name: &str) -> Result<Option<String>> {
+    async fn get_container_by_name(&self, name: &str) -> Result<String> {
         let args = vec![
             "ps".to_string(),
             "-a".to_string(),
@@ -306,55 +358,10 @@ impl DockerClient for DockerExecutor {
         let id = output.trim();
 
         if id.is_empty() {
-            Ok(None)
+            Err(Error::Docker(format!("Container {} not found", name)))
         } else {
-            Ok(Some(id.to_string()))
+            Ok(id.to_string())
         }
     }
 
-    async fn list_containers(&self, all: bool) -> Result<Vec<String>> {
-        let mut args = vec!["ps".to_string()];
-
-        if all {
-            args.push("-a".to_string());
-        }
-
-        args.push("--format".to_string());
-        args.push("{{.ID}}".to_string());
-
-        let output = self.execute(args).await?;
-        Ok(output.lines().map(|s| s.to_string()).collect())
-    }
-
-    async fn inspect_container(&self, container_id: &str) -> Result<String> {
-        let args = vec!["inspect".to_string(), container_id.to_string()];
-        self.execute(args).await
-    }
-
-    async fn get_container_exit_code(&self, container_id: &str) -> Result<Option<i32>> {
-        let args = vec![
-            "inspect".to_string(),
-            "--format".to_string(),
-            "{{.State.ExitCode}}".to_string(),
-            container_id.to_string(),
-        ];
-
-        match self.execute(args).await {
-            Ok(output) => {
-                let code = output.trim().parse::<i32>().ok();
-                Ok(code)
-            }
-            Err(_) => Ok(None),
-        }
-    }
-
-    async fn wait_for_container(&self, container_id: &str) -> Result<i32> {
-        let args = vec!["wait".to_string(), container_id.to_string()];
-        let output = self.execute(args).await?;
-
-        output
-            .trim()
-            .parse::<i32>()
-            .map_err(|e| Error::Docker(format!("Failed to parse exit code: {e}")))
-    }
 }

@@ -178,18 +178,30 @@ impl LocalServiceHandle {
         });
 
         // Run the container using the proper method signature
-        let container_id = self
-            .docker_client
-            .run_container(
-                &image,
-                &container_name,
-                self.config.network_mode.as_deref().unwrap_or("bridge"),
-                &env_vars,
-                &ports,
-                &volumes,
-                command_args.as_deref(),
-            )
-            .await
+        let container_id = if command_args.is_some() {
+            self.docker_client
+                .run_container_with_command(
+                    &image,
+                    &container_name,
+                    self.config.network_mode.as_deref().unwrap_or("bridge"),
+                    &env_vars,
+                    &ports,
+                    &volumes,
+                    command_args.as_deref(),
+                )
+                .await
+        } else {
+            self.docker_client
+                .run_container(
+                    &image,
+                    &container_name,
+                    self.config.network_mode.as_deref().unwrap_or("bridge"),
+                    &env_vars,
+                    &ports,
+                    &volumes,
+                )
+                .await
+        }
             .map_err(|e| Error::Docker(format!("Failed to start {}: {}", self.config.name, e)))?;
 
         self.container_id = Some(container_id);

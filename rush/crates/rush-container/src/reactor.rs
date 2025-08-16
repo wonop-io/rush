@@ -379,11 +379,8 @@ impl ContainerReactor {
             .product_dir
             .join("target")
             .join("local-services");
-        let docker_adapter = Arc::new(crate::docker_adapter::LocalServicesDockerAdapter::new(
-            self.docker_client.clone(),
-        ));
         let mut manager =
-            LocalServiceManager::new(docker_adapter, data_dir, self.config.network_name.clone());
+            LocalServiceManager::new(self.docker_client.clone(), data_dir, self.config.network_name.clone());
 
         // Register each LocalService component (except Stripe which we handle separately)
         for spec in &self.component_specs {

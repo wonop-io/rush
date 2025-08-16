@@ -8,7 +8,39 @@ struct MockDockerClient;
 
 #[async_trait::async_trait]
 impl rush_local_services::docker::DockerClient for MockDockerClient {
+    async fn create_network(&self, _name: &str) -> rush_core::error::Result<()> {
+        Ok(())
+    }
+
+    async fn delete_network(&self, _name: &str) -> rush_core::error::Result<()> {
+        Ok(())
+    }
+
+    async fn network_exists(&self, _name: &str) -> rush_core::error::Result<bool> {
+        Ok(true)
+    }
+
+    async fn pull_image(&self, _image: &str) -> rush_core::error::Result<()> {
+        Ok(())
+    }
+
+    async fn build_image(&self, _tag: &str, _dockerfile: &str, _context: &str) -> rush_core::error::Result<()> {
+        Ok(())
+    }
+
     async fn run_container(
+        &self,
+        _image: &str,
+        _name: &str,
+        _network: &str,
+        _env_vars: &[String],
+        _ports: &[String],
+        _volumes: &[String],
+    ) -> rush_core::error::Result<String> {
+        Ok("mock-container-id".to_string())
+    }
+
+    async fn run_container_with_command(
         &self,
         _image: &str,
         _name: &str,
@@ -36,12 +68,29 @@ impl rush_local_services::docker::DockerClient for MockDockerClient {
         Ok(rush_local_services::docker::ContainerStatus::Running)
     }
 
+    async fn container_exists(&self, _name: &str) -> rush_core::error::Result<bool> {
+        Ok(true)
+    }
+
     async fn container_logs(
         &self,
         _container_id: &str,
         _lines: usize,
     ) -> rush_core::error::Result<String> {
         Ok("mock logs".to_string())
+    }
+
+    async fn follow_container_logs(
+        &self,
+        _container_id: &str,
+        _label: String,
+        _color: &str,
+    ) -> rush_core::error::Result<()> {
+        Ok(())
+    }
+
+    async fn send_signal_to_container(&self, _container_id: &str, _signal: i32) -> rush_core::error::Result<()> {
+        Ok(())
     }
 
     async fn exec_in_container(
