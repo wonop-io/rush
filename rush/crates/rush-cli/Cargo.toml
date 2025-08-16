@@ -38,6 +38,7 @@ rush-container = { workspace = true }
 rush-core = { workspace = true }
 rush-helper = { workspace = true }
 rush-k8s = { workspace = true }
+rush-mcp = { workspace = true }
 rush-output = { workspace = true }
 rush-security = { workspace = true }
 rush-toolchain = { workspace = true }

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "rush": {
+      "command": "/Users/tfr/Documents/Projects/rush/rush/target/release/rush",
+      "args": ["mcp", "serve", "--stdio"],
+      "env": {
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}

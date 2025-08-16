@@ -4,6 +4,7 @@
 
 pub mod cli;
 pub mod log_bridge;
+pub mod mcp_sink;
 pub mod simple;
 pub mod sink_proxy;
 

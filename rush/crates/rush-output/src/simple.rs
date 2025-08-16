@@ -448,6 +448,10 @@ pub fn create_sink(format: &str, no_color: bool) -> Box<dyn Sink> {
     match format {
         "split" => Box::new(SplitSink::new()),
         "no-color" | "plain" => Box::new(NoColorStdoutSink::new()),
+        "mcp" => {
+            use crate::mcp_sink::McpSinkBuilder;
+            Box::new(McpSinkBuilder::new().build())
+        }
         _ if no_color => Box::new(NoColorStdoutSink::new()),
         _ => Box::new(StdoutSink::new()),
     }

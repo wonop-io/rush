@@ -137,6 +137,7 @@ pub fn parse_args() -> clap::ArgMatches {
         .subcommand(Command::new("check-deps")
             .about("Check if all required dependencies and tools are installed")
         )
+        .subcommand(crate::commands::mcp::create_command())
         .get_matches()
 }
 

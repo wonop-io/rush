@@ -184,6 +184,8 @@ dependencies = [
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
+ "hyper 1.6.0",
+ "hyper-util",
  "itoa",
  "matchit",
  "memchr",
@@ -192,10 +194,15 @@ dependencies = [
  "pin-project-lite",
  "rustversion",
  "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_urlencoded",
  "sync_wrapper",
+ "tokio",
  "tower 0.5.2",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -216,6 +223,7 @@ dependencies = [
  "sync_wrapper",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
@@ -2467,7 +2475,7 @@ dependencies = [
  "slug",
  "tempfile",
  "tera",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
 ]
 
 [[package]]
@@ -2492,6 +2500,7 @@ dependencies = [
  "rush-core",
  "rush-helper",
  "rush-k8s",
+ "rush-mcp",
  "rush-output",
  "rush-security",
  "rush-toolchain",
@@ -2522,7 +2531,7 @@ dependencies = [
  "slug",
  "tempfile",
  "tera",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
  "toml",
 ]
 
@@ -2549,7 +2558,7 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "tempfile",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
  "tokio",
  "tokio-test",
 ]
@@ -2568,7 +2577,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tempfile",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
  "tokio",
  "tokio-test",
  "tokio-util",
@@ -2583,7 +2592,7 @@ dependencies = [
  "os_info",
  "serde",
  "serde_json",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
  "which",
 ]
 
@@ -2607,7 +2616,7 @@ dependencies = [
  "serde_yaml",
  "tempfile",
  "tera",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
  "tokio",
 ]
 
@@ -2624,9 +2633,31 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
  "tokio",
  "tokio-test",
+ "uuid",
+]
+
+[[package]]
+name = "rush-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "log",
+ "rush-config",
+ "rush-container",
+ "rush-core",
+ "rush-output",
+ "rush-security",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.14",
+ "tokio",
+ "tokio-test",
+ "tower 0.5.2",
  "uuid",
 ]
 
@@ -2677,7 +2708,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "tempfile",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
  "tokio",
  "tokio-test",
  "uuid",
@@ -2718,7 +2749,7 @@ dependencies = [
  "serial_test",
  "tempfile",
  "tera",
- "thiserror 1.0.63",
+ "thiserror 2.0.14",
  "tokio",
  "walkdir",
  "which",
@@ -3017,6 +3048,16 @@ dependencies = [
  "itoa",
  "memchr",
  "ryu",
+ "serde",
+]
+
+[[package]]
+name = "serde_path_to_error"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59fab13f937fa393d08645bf3a84bdfe86e296747b506ada67bb15f10f218b2a"
+dependencies = [
+ "itoa",
  "serde",
 ]
 
@@ -3628,6 +3669,7 @@ dependencies = [
  "tokio",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

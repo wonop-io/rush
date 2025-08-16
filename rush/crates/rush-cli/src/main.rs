@@ -21,6 +21,17 @@ async fn main() -> Result<(), std::io::Error> {
         context_builder::setup_logging(&matches);
     }
 
+    // Handle MCP command early (doesn't need context)
+    if let Some(mcp_matches) = matches.subcommand_matches("mcp") {
+        return match rush_cli::commands::mcp::execute(mcp_matches).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                eprintln!("MCP server error: {}", e);
+                std::process::exit(1);
+            }
+        };
+    }
+
     // Handle check-deps command early (doesn't need context)
     if matches.subcommand_matches("check-deps").is_some() {
         println!("{}", "🔍 Checking rush dependencies...".cyan().bold());

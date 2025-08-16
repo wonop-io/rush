@@ -8,6 +8,7 @@ members = [
     "crates/rush-helper",
     "crates/rush-k8s",
     "crates/rush-local-services",
+    "crates/rush-mcp",
     "crates/rush-output",
     "crates/rush-security",
     "crates/rush-toolchain",
@@ -71,6 +72,7 @@ rush-core = { path = "crates/rush-core" }
 rush-helper = { path = "crates/rush-helper" }
 rush-k8s = { path = "crates/rush-k8s" }
 rush-local-services = { path = "crates/rush-local-services" }
+rush-mcp = { path = "crates/rush-mcp" }
 rush-output = { path = "crates/rush-output" }
 rush-security = { path = "crates/rush-security" }
 rush-toolchain = { path = "crates/rush-toolchain" }
@@ -98,7 +100,7 @@ ssh-key = { version = "0.6.7", features = [
 ] }
 tempfile = "3.8"
 tera = "1.19.1"
-thiserror = "1.0"
+thiserror = "2.0"
 tokio = { version = "1.36.0", features = ["full"] }
 tokio-test = "0.4"
 tokio-util = "0.7.10"

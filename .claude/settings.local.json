@@ -39,8 +39,20 @@
       "Bash(./test_logging.sh:*)",
       "Bash(./rush/target/release/rush:*)",
       "Bash(./test_complete_logging.sh:*)",
-      "Bash(./test_phase_labels.sh:*)"
+      "Bash(./test_phase_labels.sh:*)",
+      "Bash(./test_mcp.sh:*)",
+      "Bash(./test_mcp_direct.sh:*)"
     ],
     "deny": []
+  },
+  "mcpServers": {
+    "rush": {
+      "command": "/Users/tfr/Documents/Projects/rush/rush/target/release/rush",
+      "args": ["mcp", "serve", "--stdio"],
+      "env": {
+        "RUSHD_ROOT": "/Users/tfr/Documents/Projects/rush",
+        "RUST_LOG": "info"
+      }
+    }
   }
 }

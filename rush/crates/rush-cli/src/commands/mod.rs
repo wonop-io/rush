@@ -6,6 +6,7 @@ pub mod deploy;
 pub mod describe;
 pub mod dev;
 pub mod install;
+pub mod mcp;
 pub mod rollout;
 pub mod secrets;
 pub mod unapply;
