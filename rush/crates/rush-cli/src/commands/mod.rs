@@ -1,3 +1,5 @@
+#![allow(clippy::await_holding_lock)]
+
 pub mod apply;
 pub mod build;
 pub mod deploy;

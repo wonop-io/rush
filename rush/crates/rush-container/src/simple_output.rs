@@ -293,8 +293,6 @@ pub async fn follow_container_logs_from_start(
 }
 
 /// Attach to an already running container and capture its output
-///
-
 /// Follow build output using the simplified sink system
 ///
 /// This captures output directly from the build command process.

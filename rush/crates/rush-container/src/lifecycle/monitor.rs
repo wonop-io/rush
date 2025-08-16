@@ -158,6 +158,7 @@ mod tests {
     // The test needs to be refactored to use tokio::sync::Mutex or a different approach
     #[ignore]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_monitor_detects_container_stopping() {
         // Create a proper DockerService for testing
         use crate::docker::{DockerCliClient, DockerService, DockerServiceConfig};
@@ -192,7 +193,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(60)).await;
 
         // Stop the container
-        mock_container.lock().unwrap().stop().await.unwrap();
+        {
+            #[allow(clippy::await_holding_lock)]
+            mock_container.lock().unwrap().stop().await.unwrap();
+        }
 
         // Wait for monitor to detect stopped container
         tokio::time::sleep(Duration::from_millis(60)).await;

@@ -249,15 +249,15 @@ async fn test_build_vs_runtime_phase_distinction() -> Result<()> {
 
     // Check phases are correct
     use rush_output::simple::LogPhase;
-    for i in 0..3 {
+    for entry in entries.iter().take(3) {
         assert!(
-            matches!(entries[i].phase, LogPhase::Build),
+            matches!(entry.phase, LogPhase::Build),
             "First 3 should be build phase"
         );
     }
-    for i in 3..5 {
+    for entry in entries.iter().skip(3).take(2) {
         assert!(
-            matches!(entries[i].phase, LogPhase::Runtime),
+            matches!(entry.phase, LogPhase::Runtime),
             "Last 2 should be runtime phase"
         );
     }

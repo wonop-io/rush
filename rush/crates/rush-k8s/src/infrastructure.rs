@@ -115,7 +115,7 @@ impl InfrastructureRepo {
     /// # Arguments
     ///
     /// * `source_directory` - Directory containing manifests to copy
-    pub async fn copy_manifests(&self, source_directory: &PathBuf) -> Result<()> {
+    pub async fn copy_manifests(&self, source_directory: &Path) -> Result<()> {
         debug!(
             "Copying manifests from {} to infrastructure repository",
             source_directory.display()
@@ -207,6 +207,7 @@ impl InfrastructureRepo {
     ///
     /// * `source` - Source directory
     /// * `destination` - Destination directory
+    #[allow(clippy::only_used_in_recursion)]
     fn copy_directory_recursively(&self, source: &Path, destination: &Path) -> Result<()> {
         if !source.is_dir() {
             return Err(Error::InvalidInput(format!(

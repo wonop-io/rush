@@ -1319,6 +1319,7 @@ impl ContainerReactor {
     /// # Returns
     ///
     /// Result indicating success or failure
+    #[allow(clippy::await_holding_lock)]
     async fn launch_containers(&mut self) -> Result<()> {
         info!("Launching containers");
 
@@ -1351,15 +1352,19 @@ impl ContainerReactor {
 
                 if !should_redirect {
                     // Load secrets for this component from vault
-                    let vault_guard = self.vault.lock().unwrap();
-                    let secrets = vault_guard
-                        .get(
-                            &self.config.product_name,
-                            &service.name,
-                            &self.config.environment,
-                        )
-                        .await
-                        .unwrap_or_default();
+                    // Note: We need to hold the lock across the await because Vault methods are async
+                    #[allow(clippy::await_holding_lock)]
+                    let secrets = {
+                        let vault_guard = self.vault.lock().unwrap();
+                        vault_guard
+                            .get(
+                                &self.config.product_name,
+                                &service.name,
+                                &self.config.environment,
+                            )
+                            .await
+                            .unwrap_or_default()
+                    };
 
                     // Load environment variables for this component
                     let component_spec = self
@@ -2233,11 +2238,7 @@ impl ContainerReactor {
             for (input_path, output_name) in artefacts.iter() {
                 // Make input path absolute relative to product directory
                 // First normalize the path to handle './' prefixes
-                let normalized_input_path = if input_path.starts_with("./") {
-                    &input_path[2..] // Remove './' prefix
-                } else {
-                    input_path
-                };
+                let normalized_input_path = input_path.strip_prefix("./").unwrap_or(input_path);
 
                 let absolute_input_path = if Path::new(normalized_input_path).is_absolute() {
                     PathBuf::from(normalized_input_path)
@@ -2502,8 +2503,8 @@ impl ContainerReactor {
         &self,
         image_name: &str,
         image_tag: &str,
-        context_dir: &PathBuf,
-        dockerfile: &PathBuf,
+        context_dir: &Path,
+        dockerfile: &Path,
         spec: &ComponentBuildSpec,
     ) -> Result<String> {
         // Note: We already checked if rebuild is needed in build_all() before calling this

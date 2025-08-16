@@ -15,10 +15,7 @@ mod basic_tests {
 
     #[test]
     fn test_basic_vectors() {
-        let mut v = Vec::new();
-        v.push(1);
-        v.push(2);
-        v.push(3);
+        let v = [1, 2, 3];
 
         assert_eq!(v.len(), 3);
         assert_eq!(v[0], 1);

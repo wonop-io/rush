@@ -114,7 +114,6 @@ impl BuildProcessor {
     /// # Returns
     ///
     /// Optional build script string
-
     /// Handles a build error and determines what to do next
     ///
     /// # Arguments

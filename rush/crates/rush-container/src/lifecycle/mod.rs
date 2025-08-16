@@ -52,9 +52,4 @@ impl LifecycleManager {
 
         Ok(())
     }
-
-    /// Default implementation
-    pub fn default() -> Self {
-        Self::new()
-    }
 }

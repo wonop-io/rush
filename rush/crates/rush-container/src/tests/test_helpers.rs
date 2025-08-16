@@ -6,7 +6,7 @@ use rush_config::Config;
 use rush_core::shutdown;
 use rush_output::simple::{LogEntry, Sink};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -140,7 +140,7 @@ where
 }
 
 /// Simulate a file change for testing
-pub async fn trigger_file_change(path: &PathBuf) {
+pub async fn trigger_file_change(path: &Path) {
     // Create a temporary file to trigger a change
     let test_file = path.join("test_change.txt");
     tokio::fs::write(&test_file, "test").await.unwrap();

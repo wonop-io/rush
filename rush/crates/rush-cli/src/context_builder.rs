@@ -13,7 +13,7 @@ use rush_toolchain::{Platform, ToolchainContext};
 use rush_utils::Directory;
 use std::collections::HashMap;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::{Arc, Mutex};
 
@@ -222,18 +222,14 @@ fn setup_secrets(
     Ok((secrets_context, vault))
 }
 
-fn create_vault(
-    product_path: &PathBuf,
-    config: &Config,
-    name: &str,
-) -> Arc<Mutex<dyn Vault + Send>> {
+fn create_vault(product_path: &Path, config: &Config, name: &str) -> Arc<Mutex<dyn Vault + Send>> {
     use rush_security::vault::OnePassword;
     use rush_security::{DotenvVault, FileVault};
 
     match name {
         ".env" => {
             info!("Vault: .env");
-            Arc::new(Mutex::new(DotenvVault::new(product_path.clone())))
+            Arc::new(Mutex::new(DotenvVault::new(product_path.to_path_buf())))
                 as Arc<Mutex<dyn Vault + Send>>
         }
         "1Password" => {

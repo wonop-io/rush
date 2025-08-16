@@ -13,6 +13,6 @@ mod tests {
     // This test is just a placeholder to ensure the test infrastructure is working
     #[test]
     fn test_sanity_check() {
-        assert!(true, "Basic sanity check");
+        assert_eq!(1 + 1, 2, "Basic sanity check");
     }
 }

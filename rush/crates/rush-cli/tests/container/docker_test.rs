@@ -221,8 +221,8 @@ mod docker_tests {
         assert!(result1.is_ok());
         assert!(result2.is_ok());
 
-        let image1 = result1.unwrap();
-        let image2 = result2.unwrap();
+        let _image1 = result1.unwrap();
+        let _image2 = result2.unwrap();
 
         // TODO: Verify dependencies when method is available
         // Dependencies are handled at the build spec level, not the image builder level
