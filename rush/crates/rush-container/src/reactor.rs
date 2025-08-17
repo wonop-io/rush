@@ -7,7 +7,6 @@ use crate::Status;
 use crate::{
     docker::{ContainerStatus, DockerClient, DockerService, DockerServiceConfig},
     network::setup_network,
-    stripe_handler::StripeCliHandler,
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
     BuildProcessor, ContainerService, ServiceCollection,
 };
@@ -79,9 +78,6 @@ pub struct ContainerReactor {
 
     /// Mapping of component names to their actual built image names (with git tags)
     built_images: HashMap<String, String>,
-
-    /// Stripe CLI handler (runs as local process)
-    stripe_handler: Option<StripeCliHandler>,
     
     /// Additional environment variables from external sources
     additional_env: HashMap<String, String>,
@@ -191,7 +187,6 @@ impl ContainerReactor {
                 Box::new(rush_output::simple::StdoutSink::new()),
             )),
             built_images: HashMap::new(),
-            stripe_handler: None,
             additional_env: HashMap::new(),
         })
     }
@@ -355,8 +350,8 @@ impl ContainerReactor {
         reactor.available_components = available_components;
         reactor.component_specs = component_specs;
 
-        // Initialize LocalServiceManager if we have LocalService components
-        reactor.initialize_stripe_handler()?;
+        // Note: Local services (including Stripe) are now started by local_services_startup.rs
+        // before the reactor is created, so we don't handle them here anymore
 
         // Build services collection
         let services = reactor.build_services_collection()?;
@@ -366,37 +361,6 @@ impl ContainerReactor {
         Ok(reactor)
     }
 
-    /// Initialize Stripe handler if there are Stripe CLI components
-    fn initialize_stripe_handler(&mut self) -> Result<()> {
-        // Check for Stripe CLI service
-        for spec in &self.component_specs {
-            if let BuildType::LocalService {
-                service_type,
-                env,
-                ..
-            } = &spec.build_type
-            {
-                // Check if this is a Stripe CLI service
-                if service_type == "stripe-cli" || service_type == "stripe" {
-                    info!("Found Stripe CLI service, will handle as local process");
-                    // Initialize Stripe handler
-                    let _webhook_url = env
-                        .as_ref()
-                        .and_then(|e| e.get("STRIPE_WEBHOOK_URL"))
-                        .cloned()
-                        .unwrap_or_else(|| "http://localhost:8080/api/stripe/webhook".to_string());
-                    
-                    let stripe_handler = StripeCliHandler::new(
-                        spec.component_name.clone(),
-                        self.output_sink.clone(),
-                    );
-                    self.stripe_handler = Some(stripe_handler);
-                    info!("Stripe CLI handler initialized");
-                }
-            }
-        }
-        Ok(())
-    }
 
     /// Builds a collection of services from component specs
     fn build_services_collection(&self) -> Result<ServiceCollection> {
@@ -819,13 +783,8 @@ impl ContainerReactor {
             Err(_) => warn!("Container cleanup timed out"),
         }
 
-        // Stop Stripe CLI if running
-        if let Some(ref mut stripe_handler) = self.stripe_handler {
-            info!("Stopping Stripe CLI");
-            if let Err(e) = stripe_handler.stop().await {
-                warn!("Failed to stop Stripe CLI: {}", e);
-            }
-        }
+        // Note: Stripe is now managed by local_services_startup.rs and will be
+        // stopped when the process exits
 
         // Note: Local services are now managed by DevEnvironment
 
@@ -1241,38 +1200,8 @@ impl ContainerReactor {
     async fn launch_containers(&mut self) -> Result<()> {
         info!("Launching containers");
 
-        // Note: Local services are now started by DevEnvironment before the reactor
-
-        // Start Stripe CLI if configured
-        info!("Checking for Stripe handler: {:?}", self.stripe_handler.is_some());
-        if let Some(ref mut stripe_handler) = self.stripe_handler {
-            info!("Starting Stripe CLI webhook forwarding");
-            
-            // Get webhook URL and API key from component specs
-            let (webhook_url, api_key) = self.component_specs
-                .iter()
-                .find_map(|spec| {
-                    if let BuildType::LocalService { service_type, env, .. } = &spec.build_type {
-                        if service_type == "stripe-cli" || service_type == "stripe" {
-                            let url = env.as_ref()
-                                .and_then(|e| e.get("STRIPE_WEBHOOK_URL"))
-                                .cloned()
-                                .unwrap_or_else(|| "http://localhost:8080/api/stripe/webhook".to_string());
-                            let key = env.as_ref()
-                                .and_then(|e| e.get("STRIPE_API_KEY"))
-                                .cloned();
-                            return Some((url, key));
-                        }
-                    }
-                    None
-                })
-                .unwrap_or_else(|| ("http://localhost:8080/api/stripe/webhook".to_string(), None));
-            
-            stripe_handler.start(&webhook_url, api_key.as_deref()).await
-                .map_err(|e| Error::Docker(format!("Failed to start Stripe CLI: {e}")))?;
-        }
-
-        // Note: Local service logs are now handled by DevEnvironment
+        // Note: Local services (including Stripe) are now started by local_services_startup.rs
+        // before the reactor is created, so we don't handle them here anymore
 
         let (_status_sender, _status_receiver) = mpsc::channel::<Status>(100);
 
