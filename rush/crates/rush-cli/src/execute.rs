@@ -50,6 +50,8 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         // Set the sink on the reactor
         ctx.reactor.set_output_sink(sink);
 
+        // Note: Local services are already started in context_builder before .env generation
+        // We just need to launch the application containers now
         match ctx.reactor.launch().await {
             Ok(_) => {
                 trace!("Development environment launched successfully");

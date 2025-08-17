@@ -1,396 +1,220 @@
-use crate::docker::DockerClient;
-use crate::{
-    config::LocalServiceConfig,
-    error::{Error, Result},
-    health::HealthStatus,
-    service::{LocalServiceHandle, ServiceStatus},
-};
-use log::{debug, error, info};
+//! Trait-based local service manager
+//!
+//! This module provides a manager for trait-based local services.
+
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::time::Duration;
+use tokio::time::{sleep, timeout};
 
-/// Manages local services lifecycle
+use crate::error::{Error, Result};
+
+use crate::r#trait::LocalService;
+
+/// Manages a collection of local services
 pub struct LocalServiceManager {
-    /// Docker client for service management
-    docker_client: Arc<dyn DockerClient>,
-
-    /// Running local services
-    services: Arc<RwLock<HashMap<String, LocalServiceHandle>>>,
-
-    /// Service configurations
-    configs: HashMap<String, LocalServiceConfig>,
-
-    /// Data persistence directory
-    #[allow(dead_code)]
-    data_dir: PathBuf,
-
-    /// Network name for services
-    #[allow(dead_code)]
-    network_name: String,
+    /// Collection of local services
+    services: Vec<Box<dyn LocalService>>,
+    
+    /// Service startup order based on dependencies
+    startup_order: Vec<String>,
+    
+    /// Aggregated environment variables from all services
+    env_vars: HashMap<String, String>,
+    
+    /// Aggregated secrets from all services
+    env_secrets: HashMap<String, String>,
 }
 
 impl LocalServiceManager {
     /// Create a new LocalServiceManager
-    pub fn new(
-        docker_client: Arc<dyn DockerClient>,
-        data_dir: PathBuf,
-        network_name: String,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
-            docker_client,
-            services: Arc::new(RwLock::new(HashMap::new())),
-            configs: HashMap::new(),
-            data_dir,
-            network_name,
+            services: Vec::new(),
+            startup_order: Vec::new(),
+            env_vars: HashMap::new(),
+            env_secrets: HashMap::new(),
         }
     }
-
-    /// Register a service configuration
-    pub fn register(&mut self, config: LocalServiceConfig) {
-        self.configs.insert(config.name.clone(), config);
+    
+    /// Register a new service
+    pub fn register(&mut self, service: Box<dyn LocalService>) {
+        let name = service.name().to_string();
+        info!("Registering local service: {}", name);
+        
+        // Add to startup order (simple for now - could be enhanced with dependency resolution)
+        self.startup_order.push(name.clone());
+        self.services.push(service);
     }
-
-    /// Start all registered services in dependency order
-    pub async fn start_all(&self) -> Result<()> {
+    
+    /// Start all services in order
+    pub async fn start_all(&mut self) -> Result<()> {
         info!("Starting all local services");
-
-        // Get dependency order
-        let start_order = self.get_start_order()?;
-
-        for service_name in start_order {
-            self.start(&service_name).await?;
+        
+        for service in &mut self.services {
+            let name = service.name().to_string();
+            info!("Starting service: {}", name);
+            
+            if let Err(e) = service.start().await {
+                error!("Failed to start service {}: {}", name, e);
+                // Stop already started services
+                self.stop_all().await?;
+                return Err(Error::Docker(format!("Failed to start {}: {}", name, e)));
+            }
+            
+            // Give the service a moment to stabilize
+            sleep(Duration::from_millis(500)).await;
         }
-
+        
+        // Collect environment variables and secrets
+        self.collect_env_vars().await?;
+        
         info!("All local services started successfully");
         Ok(())
     }
-
-    /// Start a specific service (internal implementation)
-    fn start_internal<'a>(
-        &'a self,
-        name: &'a str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
-        Box::pin(async move { self.start_impl(name).await })
-    }
-
-    /// Start a specific service
-    pub async fn start(&self, name: &str) -> Result<()> {
-        self.start_internal(name).await
-    }
-
-    /// Internal implementation of start
-    async fn start_impl(&self, name: &str) -> Result<()> {
-        let config = self
-            .configs
-            .get(name)
-            .ok_or_else(|| Error::ServiceNotFound(name.to_string()))?;
-
-        // Check dependencies
-        for dep in &config.depends_on {
-            if !self.is_running(dep).await {
-                self.start_internal(dep).await?;
-            }
-        }
-
-        let mut services = self.services.write().await;
-
-        // Check if already running
-        if let Some(service) = services.get(name) {
-            if service.is_running() {
-                info!("Service {} is already running", name);
-                return Ok(());
-            }
-        }
-
-        // Create and start service
-        let mut service = LocalServiceHandle::new(config.clone(), self.docker_client.clone());
-
-        service.start().await?;
-
-        // Run initialization scripts if any
-        if !config.init_scripts.is_empty() {
-            self.run_init_scripts(&service, config).await?;
-        }
-
-        services.insert(name.to_string(), service);
-
-        Ok(())
-    }
-
-    /// Stop a specific service (internal implementation)
-    fn stop_internal<'a>(
-        &'a self,
-        name: &'a str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
-        Box::pin(async move { self.stop_impl(name).await })
-    }
-
-    /// Stop a specific service (and dependents)
-    pub async fn stop(&self, name: &str) -> Result<()> {
-        self.stop_internal(name).await
-    }
-
-    /// Internal implementation of stop
-    async fn stop_impl(&self, name: &str) -> Result<()> {
-        // Find services that depend on this one
-        let dependents = self.get_dependents(name);
-
-        // Stop dependents first
-        for dep in dependents {
-            self.stop_internal(&dep).await?;
-        }
-
-        // Stop the service
-        let mut services = self.services.write().await;
-        if let Some(mut service) = services.remove(name) {
-            service.stop().await?;
-        }
-
-        Ok(())
-    }
-
+    
     /// Stop all services
-    pub async fn stop_all(&self) -> Result<()> {
+    pub async fn stop_all(&mut self) -> Result<()> {
         info!("Stopping all local services");
-
-        let mut services = self.services.write().await;
-        for (name, mut service) in services.drain() {
+        
+        // Stop in reverse order
+        for service in self.services.iter_mut().rev() {
+            let name = service.name().to_string();
+            info!("Stopping service: {}", name);
+            
             if let Err(e) = service.stop().await {
-                error!("Failed to stop service {}: {}", name, e);
+                warn!("Failed to stop service {}: {}", name, e);
+                // Continue stopping other services
             }
         }
-
+        
+        // Clear environment variables
+        self.env_vars.clear();
+        self.env_secrets.clear();
+        
+        info!("All local services stopped");
         Ok(())
     }
-
-    /// Restart a specific service
-    pub async fn restart(&self, name: &str) -> Result<()> {
-        self.stop(name).await?;
-        self.start(name).await
-    }
-
-    /// Check if a service is running
-    pub async fn is_running(&self, name: &str) -> bool {
-        let services = self.services.read().await;
-        services.get(name).is_some_and(|s| s.is_running())
-    }
-
-    /// Get the status of all services
-    pub async fn get_status(&self) -> HashMap<String, ServiceStatus> {
-        let services = self.services.read().await;
-        services
-            .iter()
-            .map(|(name, service)| (name.clone(), service.status()))
-            .collect()
-    }
-
-    /// Check health of all services
-    pub async fn health_check_all(&self) -> Result<HashMap<String, HealthStatus>> {
-        let mut results = HashMap::new();
-        let mut services = self.services.write().await;
-
-        for (name, service) in services.iter_mut() {
-            match service.check_health().await {
-                Ok(status) => {
-                    results.insert(name.clone(), status);
-                }
-                Err(e) => {
-                    error!("Health check failed for {}: {}", name, e);
-                    results.insert(name.clone(), HealthStatus::Unhealthy(e.to_string()));
-                }
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Get logs for a service
-    pub async fn get_logs(&self, name: &str, lines: usize) -> Result<String> {
-        let services = self.services.read().await;
-        let service = services
-            .get(name)
-            .ok_or_else(|| Error::ServiceNotFound(name.to_string()))?;
-
-        service.logs(lines).await
-    }
-
-    /// Get container IDs for all running services
-    pub async fn get_container_ids(&self) -> HashMap<String, String> {
-        let mut container_ids = HashMap::new();
-        let services = self.services.read().await;
+    
+    /// Wait for all services to be healthy
+    pub async fn wait_for_healthy(&self, timeout_duration: Duration) -> Result<()> {
+        info!("Waiting for all services to be healthy (timeout: {:?})", timeout_duration);
         
-        for (name, service) in services.iter() {
-            if let Some(container_id) = service.container_id() {
-                container_ids.insert(name.clone(), container_id.to_string());
-            }
-        }
+        let start_time = std::time::Instant::now();
         
-        container_ids
-    }
-
-    /// Get connection strings for all services
-    pub async fn get_connection_strings(&self) -> HashMap<String, String> {
-        let mut connections = HashMap::new();
-        let services = self.services.read().await;
-
-        for (name, service) in services.iter() {
-            if !service.is_running() {
-                continue;
-            }
-
-            let config = &service.config;
-            let hostname = service.hostname();
-
-            match &config.service_type {
-                crate::types::LocalServiceType::PostgreSQL => {
-                    let port = service.port().unwrap_or(5432);
-                    let default_user = "postgres".to_string();
-                    let default_pass = "postgres".to_string();
-                    let default_db = "postgres".to_string();
-                    let user = config.env.get("POSTGRES_USER").unwrap_or(&default_user);
-                    let pass = config.env.get("POSTGRES_PASSWORD").unwrap_or(&default_pass);
-                    let db = config.env.get("POSTGRES_DB").unwrap_or(&default_db);
-
-                    connections.insert(
-                        format!("{}_DATABASE_URL", name.to_uppercase()),
-                        format!("postgres://{user}:{pass}@{hostname}:{port}/{db}"),
-                    );
-                }
-                crate::types::LocalServiceType::Redis => {
-                    let port = service.port().unwrap_or(6379);
-                    connections.insert(
-                        format!("{}_REDIS_URL", name.to_uppercase()),
-                        format!("redis://{hostname}:{port}"),
-                    );
-                }
-                crate::types::LocalServiceType::MinIO => {
-                    let port = service.port().unwrap_or(9000);
-                    connections.insert(
-                        format!("{}_S3_ENDPOINT", name.to_uppercase()),
-                        format!("http://{hostname}:{port}"),
-                    );
-
-                    if let Some(access_key) = config.env.get("MINIO_ROOT_USER") {
-                        connections.insert(
-                            format!("{}_S3_ACCESS_KEY", name.to_uppercase()),
-                            access_key.clone(),
-                        );
-                    }
-
-                    if let Some(secret_key) = config.env.get("MINIO_ROOT_PASSWORD") {
-                        connections.insert(
-                            format!("{}_S3_SECRET_KEY", name.to_uppercase()),
-                            secret_key.clone(),
-                        );
-                    }
-                }
-                crate::types::LocalServiceType::LocalStack => {
-                    let port = service.port().unwrap_or(4566);
-                    connections.insert(
-                        format!("{}_AWS_ENDPOINT", name.to_uppercase()),
-                        format!("http://{hostname}:{port}"),
-                    );
-
-                    let default_region = "us-east-1".to_string();
-                    connections.insert(
-                        format!("{}_AWS_REGION", name.to_uppercase()),
-                        config
-                            .env
-                            .get("AWS_DEFAULT_REGION")
-                            .unwrap_or(&default_region)
-                            .clone(),
-                    );
-                }
-                _ => {}
-            }
-        }
-
-        connections
-    }
-
-    /// Get the start order based on dependencies
-    fn get_start_order(&self) -> Result<Vec<String>> {
-        let mut order = Vec::new();
-        let mut visited = HashMap::new();
-
-        for name in self.configs.keys() {
-            self.visit_dependencies(name, &mut visited, &mut order)?;
-        }
-
-        Ok(order)
-    }
-
-    /// Visit dependencies recursively (topological sort)
-    fn visit_dependencies(
-        &self,
-        name: &str,
-        visited: &mut HashMap<String, bool>,
-        order: &mut Vec<String>,
-    ) -> Result<()> {
-        if let Some(&in_progress) = visited.get(name) {
-            if in_progress {
+        for service in &self.services {
+            let name = service.name();
+            let remaining = timeout_duration.saturating_sub(start_time.elapsed());
+            
+            if remaining.is_zero() {
                 return Err(Error::Configuration(format!(
-                    "Circular dependency detected: {name}"
+                    "Timeout waiting for services to be healthy"
                 )));
             }
-            return Ok(());
-        }
-
-        visited.insert(name.to_string(), true);
-
-        if let Some(config) = self.configs.get(name) {
-            for dep in &config.depends_on {
-                self.visit_dependencies(dep, visited, order)?;
-            }
-        }
-
-        visited.insert(name.to_string(), false);
-        order.push(name.to_string());
-
-        Ok(())
-    }
-
-    /// Get services that depend on the given service
-    fn get_dependents(&self, name: &str) -> Vec<String> {
-        let mut dependents = Vec::new();
-
-        for (service_name, config) in &self.configs {
-            if config.depends_on.contains(&name.to_string()) {
-                dependents.push(service_name.clone());
-            }
-        }
-
-        dependents
-    }
-
-    /// Run initialization scripts for a service
-    async fn run_init_scripts(
-        &self,
-        service: &LocalServiceHandle,
-        config: &LocalServiceConfig,
-    ) -> Result<()> {
-        if let Some(container_id) = service.container_id() {
-            info!("Running initialization scripts for {}", config.name);
-
-            for script in &config.init_scripts {
-                debug!("Running init script: {}", script);
-
-                let result = self
-                    .docker_client
-                    .exec_in_container(container_id, &["sh", "-c", script])
-                    .await;
-
-                if let Err(e) = result {
-                    error!("Init script failed for {}: {}", config.name, e);
-                    return Err(Error::Docker(format!("Init script failed: {e}")));
+            
+            info!("Waiting for {} to be healthy...", name);
+            
+            // Wait for this service to be healthy
+            let result = timeout(remaining, async {
+                loop {
+                    match service.is_healthy().await {
+                        Ok(true) => {
+                            info!("{} is healthy", name);
+                            return Ok::<(), Error>(());
+                        }
+                        Ok(false) => {
+                            debug!("{} is not healthy yet, waiting...", name);
+                            sleep(Duration::from_secs(1)).await;
+                        }
+                        Err(e) => {
+                            warn!("Health check failed for {}: {}", name, e);
+                            sleep(Duration::from_secs(1)).await;
+                        }
+                    }
+                }
+            }).await;
+            
+            match result {
+                Ok(Ok(())) => continue,
+                Ok(Err(e)) => return Err(Error::Docker(format!("Health check error: {}", e))),
+                Err(_) => {
+                    return Err(Error::Configuration(format!(
+                        "Timeout waiting for {} to be healthy",
+                        name
+                    )));
                 }
             }
-
-            info!("Initialization scripts completed for {}", config.name);
         }
-
+        
+        info!("All services are healthy");
         Ok(())
+    }
+    
+    /// Collect environment variables and secrets from all services
+    async fn collect_env_vars(&mut self) -> Result<()> {
+        self.env_vars.clear();
+        self.env_secrets.clear();
+        
+        for service in &self.services {
+            // Collect regular environment variables
+            match service.generated_env_vars().await {
+                Ok(vars) => {
+                    for (key, value) in vars {
+                        debug!("Adding env var from {}: {}=...", service.name(), key);
+                        self.env_vars.insert(key, value);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to get env vars from {}: {}", service.name(), e);
+                }
+            }
+            
+            // Collect secrets
+            match service.generated_env_secrets().await {
+                Ok(secrets) => {
+                    for (key, value) in secrets {
+                        debug!("Adding secret from {}: {}=...", service.name(), key);
+                        self.env_secrets.insert(key, value);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to get secrets from {}: {}", service.name(), e);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get aggregated environment variables from all services
+    pub fn get_env_vars(&self) -> &HashMap<String, String> {
+        &self.env_vars
+    }
+    
+    /// Get aggregated secrets from all services
+    pub fn get_env_secrets(&self) -> &HashMap<String, String> {
+        &self.env_secrets
+    }
+    
+    /// Get status of all services
+    pub async fn get_status(&self) -> Vec<(String, bool)> {
+        let mut status = Vec::new();
+        
+        for service in &self.services {
+            let name = service.name().to_string();
+            let healthy = service.is_healthy().await.unwrap_or(false);
+            status.push((name, healthy));
+        }
+        
+        status
+    }
+    
+    /// Check if a specific service is running
+    pub fn is_service_running(&self, name: &str) -> bool {
+        self.services
+            .iter()
+            .find(|s| s.name() == name)
+            .map(|s| s.is_running())
+            .unwrap_or(false)
     }
 }

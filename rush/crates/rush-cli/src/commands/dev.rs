@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -8,7 +8,7 @@ use rush_output::simple::Sink as OutputSink;
 use tokio::sync::Mutex as TokioMutex;
 
 use rush_config::Config;
-use rush_container::{ContainerReactor, ContainerReactorConfig, DockerCliClient};
+use rush_container::{ContainerReactor, DevEnvironment, DockerCliClient};
 use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_core::error::{Error, Result};
 // Legacy imports removed - this module is deprecated
@@ -82,29 +82,10 @@ impl DevCommand {
         let secrets_encoder = Arc::new(NoopEncoder);
 
         // Create docker client
-        let _docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));
-
-        // Create the container reactor config
-        let _reactor_config = ContainerReactorConfig {
-            product_name: self.product_name.clone(),
-            product_dir: self.config.product_path().clone(),
-            network_name: self.config.network_name().to_string(),
-            environment: self.config.environment().to_string(),
-            docker_registry: self.config.docker_registry().to_string(),
-            redirected_components: self.redirect_components.clone(),
-            silenced_components: self
-                .silence_components
-                .clone()
-                .into_iter()
-                .collect::<HashSet<_>>(),
-            verbose: false,
-            watch_config: Default::default(),
-            git_hash,
-            start_port: self.config.start_port(),
-        };
+        let docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));
 
         // Create the container reactor from product directory
-        let mut reactor = ContainerReactor::from_product_dir(
+        let reactor = ContainerReactor::from_product_dir(
             self.config.clone(),
             vault_adapter,
             secrets_encoder,
@@ -112,6 +93,53 @@ impl DevCommand {
             self.silence_components.clone(),
         )
         .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {e}")))?;
+        
+        // Create development environment with both local services and reactor
+        let data_dir = self.config.product_path().join("target").join("local-services");
+        let mut dev_env = DevEnvironment::new(
+            reactor,
+            docker_client,
+            self.config.network_name().to_string(),
+            data_dir,
+        );
+        
+        // Get component specs from the product directory to register local services
+        let stack_spec_path = self.config.product_path().join("stack.spec.yaml");
+        if stack_spec_path.exists() {
+            // Load component specs and register local services
+            let spec_content = std::fs::read_to_string(&stack_spec_path)
+                .map_err(|e| Error::Setup(format!("Failed to read stack spec: {e}")))?;
+            let yaml: serde_yaml::Value = serde_yaml::from_str(&spec_content)
+                .map_err(|e| Error::Setup(format!("Failed to parse stack spec: {e}")))?;
+            
+            // Parse component specs
+            let mut component_specs = Vec::new();
+            let variables = rush_build::Variables::empty();
+            if let Some(components) = yaml.as_mapping() {
+                for (name, spec_yaml) in components {
+                    if let (Some(_name_str), Some(spec_obj)) = (name.as_str(), spec_yaml.as_mapping()) {
+                        // Create a minimal ComponentBuildSpec for local services
+                        if let Some(build_type) = spec_obj.get(&serde_yaml::Value::String("build_type".to_string())) {
+                            if let Some(build_type_str) = build_type.as_str() {
+                                if build_type_str == "LocalService" {
+                                    // Parse the component spec
+                                    let spec = rush_build::ComponentBuildSpec::from_yaml(
+                                        self.config.clone(),
+                                        variables.clone(),
+                                        spec_yaml,
+                                    );
+                                    component_specs.push(spec);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Register local services
+            dev_env.register_local_services(&component_specs)
+                .map_err(|e| Error::Setup(format!("Failed to register local services: {e}")))?;
+        }
 
         debug!("Container reactor initialized successfully");
 
@@ -132,7 +160,7 @@ impl DevCommand {
         debug!("Output system initialized");
 
         // Launch the development environment
-        match reactor.launch().await {
+        match dev_env.start().await {
             Ok(_) => {
                 info!("Development environment launched successfully");
                 Ok(())

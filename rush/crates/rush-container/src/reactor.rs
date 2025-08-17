@@ -17,7 +17,6 @@ use rush_config::Config;
 use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
-use rush_local_services::LocalServiceManager;
 use rush_security::{FileVault, SecretsEncoder, Vault};
 
 use log::{debug, error, info, trace, warn};
@@ -81,13 +80,10 @@ pub struct ContainerReactor {
     /// Mapping of component names to their actual built image names (with git tags)
     built_images: HashMap<String, String>,
 
-    /// Manager for local development services
-    local_service_manager: Option<LocalServiceManager>,
-    
     /// Stripe CLI handler (runs as local process)
     stripe_handler: Option<StripeCliHandler>,
     
-    /// Additional environment variables from local services
+    /// Additional environment variables from external sources
     additional_env: HashMap<String, String>,
 }
 
@@ -195,7 +191,6 @@ impl ContainerReactor {
                 Box::new(rush_output::simple::StdoutSink::new()),
             )),
             built_images: HashMap::new(),
-            local_service_manager: None,
             stripe_handler: None,
             additional_env: HashMap::new(),
         })
@@ -361,7 +356,7 @@ impl ContainerReactor {
         reactor.component_specs = component_specs;
 
         // Initialize LocalServiceManager if we have LocalService components
-        reactor.initialize_local_services()?;
+        reactor.initialize_stripe_handler()?;
 
         // Build services collection
         let services = reactor.build_services_collection()?;
@@ -371,41 +366,17 @@ impl ContainerReactor {
         Ok(reactor)
     }
 
-    /// Initialize LocalServiceManager if there are LocalService components
-    fn initialize_local_services(&mut self) -> Result<()> {
-        // Check if we have any LocalService components
-        let has_local_services = self
-            .component_specs
-            .iter()
-            .any(|spec| matches!(spec.build_type, BuildType::LocalService { .. }));
-
-        if !has_local_services {
-            return Ok(());
-        }
-
-        // Create LocalServiceManager with adapter
-        let data_dir = self
-            .config
-            .product_dir
-            .join("target")
-            .join("local-services");
-        let mut manager =
-            LocalServiceManager::new(self.docker_client.clone(), data_dir, self.config.network_name.clone());
-
-        // Register each LocalService component (except Stripe which we handle separately)
+    /// Initialize Stripe handler if there are Stripe CLI components
+    fn initialize_stripe_handler(&mut self) -> Result<()> {
+        // Check for Stripe CLI service
         for spec in &self.component_specs {
             if let BuildType::LocalService {
                 service_type,
-                version,
                 env,
-                persist_data,
-                health_check,
-                init_scripts,
-                depends_on,
-                command,
+                ..
             } = &spec.build_type
             {
-                // Skip Stripe CLI - it will be handled separately as a local process
+                // Check if this is a Stripe CLI service
                 if service_type == "stripe-cli" || service_type == "stripe" {
                     info!("Found Stripe CLI service, will handle as local process");
                     // Initialize Stripe handler
@@ -421,93 +392,9 @@ impl ContainerReactor {
                     );
                     self.stripe_handler = Some(stripe_handler);
                     info!("Stripe CLI handler initialized");
-                    continue;
                 }
-                
-                // Parse service type using constants
-                use rush_core::service_constants::service_types;
-                let service_type_enum = match service_type.as_str() {
-                    service_types::POSTGRESQL | service_types::POSTGRES => {
-                        rush_local_services::LocalServiceType::PostgreSQL
-                    }
-                    service_types::REDIS => rush_local_services::LocalServiceType::Redis,
-                    service_types::MINIO => rush_local_services::LocalServiceType::MinIO,
-                    service_types::LOCALSTACK => rush_local_services::LocalServiceType::LocalStack,
-                    service_types::STRIPE_CLI => rush_local_services::LocalServiceType::StripeCLI,
-                    _ => rush_local_services::LocalServiceType::Custom(service_type.clone()),
-                };
-
-                // Extract ports from environment variables based on service type
-                use log::warn;
-                use rush_core::service_constants::port_env_vars;
-
-                let parsed_ports: Vec<rush_local_services::PortMapping> = {
-                    let mut ports = Vec::new();
-                    if let Some(env_vars) = env {
-                        // Get main port environment variable
-                        if let Some(port_var) = port_env_vars::get_port_var(service_type) {
-                            match env_vars.get(port_var).and_then(|p| p.parse::<u16>().ok()) {
-                                Some(port) => {
-                                    ports.push(rush_local_services::PortMapping {
-                                        host_port: port,
-                                        container_port: port,
-                                    });
-                                }
-                                None => {
-                                    warn!("LocalService '{}': Expected port in {} environment variable",
-                                         spec.component_name, port_var);
-                                }
-                            }
-                        }
-
-                        // Handle additional ports
-                        for additional_var in port_env_vars::get_additional_port_vars(service_type)
-                        {
-                            if let Some(port) = env_vars
-                                .get(additional_var)
-                                .and_then(|p| p.parse::<u16>().ok())
-                            {
-                                ports.push(rush_local_services::PortMapping {
-                                    host_port: port,
-                                    container_port: port,
-                                });
-                            }
-                        }
-                    }
-                    ports
-                };
-
-                // LocalService manages volumes internally based on persist_data flag
-                let parsed_volumes: Vec<rush_local_services::VolumeMapping> = Vec::new();
-
-                // Determine image based on service type and version
-                use rush_core::service_constants::docker_images;
-                let image = docker_images::get_default_image(service_type, version.as_deref());
-
-                // Create LocalServiceConfig
-                let service_config = rush_local_services::LocalServiceConfig {
-                    name: spec.component_name.clone(),
-                    service_type: service_type_enum,
-                    image,
-                    ports: parsed_ports,
-                    env: env.clone().unwrap_or_default(),
-                    volumes: parsed_volumes,
-                    persist_data: *persist_data,
-                    health_check: health_check.clone(),
-                    init_scripts: init_scripts.clone().unwrap_or_default(),
-                    depends_on: depends_on.clone().unwrap_or_default(),
-                    docker_args: Vec::new(), // LocalService doesn't expose docker args
-                    command: command.clone(),
-                    network_mode: Some(self.config.network_name.clone()),
-                    resources: None,
-                    container_name: None, // Use default container name
-                };
-
-                manager.register(service_config);
             }
         }
-
-        self.local_service_manager = Some(manager);
         Ok(())
     }
 
@@ -940,13 +827,7 @@ impl ContainerReactor {
             }
         }
 
-        // Stop local services on final shutdown
-        if let Some(ref manager) = self.local_service_manager {
-            info!("Stopping local development services");
-            if let Err(e) = manager.stop_all().await {
-                warn!("Failed to stop local services: {}", e);
-            }
-        }
+        // Note: Local services are now managed by DevEnvironment
 
         Ok(())
     }
@@ -1360,21 +1241,7 @@ impl ContainerReactor {
     async fn launch_containers(&mut self) -> Result<()> {
         info!("Launching containers");
 
-        // Start local services first if configured
-        if let Some(ref manager) = self.local_service_manager {
-            info!("Starting local development services");
-            manager
-                .start_all()
-                .await
-                .map_err(|e| Error::Docker(format!("Failed to start local services: {e}")))?;
-
-            // Get connection strings and add them to environment
-            let connections = manager.get_connection_strings().await;
-            for (key, value) in connections {
-                info!("Local service connection: {} = {}", key, value);
-            }
-
-        }
+        // Note: Local services are now started by DevEnvironment before the reactor
 
         // Start Stripe CLI if configured
         info!("Checking for Stripe handler: {:?}", self.stripe_handler.is_some());
@@ -1405,43 +1272,7 @@ impl ContainerReactor {
                 .map_err(|e| Error::Docker(format!("Failed to start Stripe CLI: {e}")))?;
         }
 
-        // Follow logs for local services  
-        if let Some(ref manager) = self.local_service_manager {
-            let container_ids = manager.get_container_ids().await;
-            for (name, container_id) in container_ids {
-                let docker_client = self.docker_client.clone();
-                let container_id_clone = container_id.clone();
-                let component_name = name.clone();
-                let sink = self.output_sink.clone();
-                
-                // Find the component spec to get the color - local services don't have specs
-                // so we just use a default color
-                let _color = "cyan".to_string();
-
-                tokio::spawn(async move {
-                    // Small delay to ensure container process has started
-                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-                    if let Err(e) = crate::simple_output::follow_container_logs_from_start(
-                        docker_client,
-                        &container_id_clone,
-                        component_name,
-                        sink,
-                    )
-                    .await
-                    {
-                        // Only log errors if we're not shutting down
-                        let shutdown_token = shutdown::global_shutdown().cancellation_token();
-                        if !shutdown_token.is_cancelled() {
-                            error!(
-                                "Error following logs for local service container {}: {}",
-                                container_id_clone, e
-                            );
-                        }
-                    }
-                });
-            }
-        }
+        // Note: Local service logs are now handled by DevEnvironment
 
         let (_status_sender, _status_receiver) = mpsc::channel::<Status>(100);
 

@@ -3,7 +3,7 @@
 //! This module provides a LocalService implementation for local processes like Stripe CLI.
 
 use async_trait::async_trait;
-use log::{debug, info, warn};
+use log::{info, warn};
 use rush_core::error::{Error, Result};
 use std::collections::HashMap;
 use std::process::Stdio;
@@ -38,6 +38,9 @@ pub struct ProcessLocalService {
     /// Generated webhook secret (for Stripe)
     webhook_secret: Arc<Mutex<Option<String>>>,
     
+    /// Whether the service is ready
+    is_ready: Arc<Mutex<bool>>,
+    
     /// Whether to use PTY (for Stripe CLI)
     use_pty: bool,
 }
@@ -60,13 +63,40 @@ impl ProcessLocalService {
             args,
             env_vars,
             webhook_secret: Arc::new(Mutex::new(None)),
+            is_ready: Arc::new(Mutex::new(false)),
             use_pty,
         }
     }
     
     /// Create a Stripe CLI service
     pub fn stripe_cli(name: String, webhook_url: String) -> Self {
-        let mut args = vec![
+        // Try to find stripe in PATH, otherwise use common locations
+        let stripe_path = std::process::Command::new("which")
+            .arg("stripe")
+            .output()
+            .ok()
+            .and_then(|output| {
+                if output.status.success() {
+                    String::from_utf8(output.stdout).ok()
+                        .map(|s| s.trim().to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| {
+                // Try common locations
+                if std::path::Path::new("/opt/homebrew/bin/stripe").exists() {
+                    "/opt/homebrew/bin/stripe".to_string()
+                } else if std::path::Path::new("/usr/local/bin/stripe").exists() {
+                    "/usr/local/bin/stripe".to_string()
+                } else {
+                    "stripe".to_string() // Fallback to PATH
+                }
+            });
+        
+        info!("Using Stripe CLI at: {}", stripe_path);
+        
+        let args = vec![
             "listen".to_string(),
             "--forward-to".to_string(),
             webhook_url,
@@ -82,7 +112,7 @@ impl ProcessLocalService {
         Self::new(
             name,
             LocalServiceType::StripeCLI,
-            "stripe".to_string(),
+            stripe_path,
             args,
             env_vars,
             true, // Use PTY for Stripe CLI
@@ -91,13 +121,31 @@ impl ProcessLocalService {
     
     /// Start the process with PTY allocation
     async fn start_with_pty(&mut self) -> Result<Child> {
-        // Use the 'script' command to allocate a PTY
-        let mut cmd = Command::new("script");
-        cmd.arg("-q")
-            .arg("-c")
-            .arg(format!("{} {}", self.command, self.args.join(" ")))
-            .arg("/dev/null")
-            .stdin(Stdio::null())
+        // Build the command with PTY support using script command for proper PTY allocation
+        let mut cmd = if cfg!(target_os = "macos") {
+            // macOS: use script to allocate PTY
+            // Pass command and args directly to script
+            let mut c = Command::new("script");
+            c.arg("-q");
+            c.arg("/dev/null");
+            c.arg(&self.command);
+            for arg in &self.args {
+                c.arg(arg);
+            }
+            c
+        } else {
+            // Linux: use script with -c flag
+            // Format: script [-q] [-c command] output_file
+            let mut c = Command::new("script");
+            c.arg("-q");
+            c.arg("-c");
+            c.arg(format!("{} {}", self.command, self.args.join(" ")));
+            c.arg("/dev/null");
+            c
+        };
+        
+        // Set up stdio for capturing output
+        cmd.stdin(Stdio::piped())  // Important: Use piped for PTY to work properly
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         
@@ -105,6 +153,9 @@ impl ProcessLocalService {
         for (key, value) in &self.env_vars {
             cmd.env(key, value);
         }
+        
+        // Kill on drop to ensure cleanup
+        cmd.kill_on_drop(true);
         
         cmd.spawn()
             .map_err(|e| Error::Docker(format!(
@@ -133,10 +184,14 @@ impl ProcessLocalService {
             )))
     }
     
-    /// Parse Stripe CLI output for webhook secret
-    async fn parse_stripe_output(output: String, webhook_secret: Arc<Mutex<Option<String>>>) {
+    /// Parse Stripe CLI output for webhook secret and ready state
+    async fn parse_stripe_output(
+        output: String, 
+        webhook_secret: Arc<Mutex<Option<String>>>,
+        is_ready: Arc<Mutex<bool>>
+    ) {
         // Look for webhook signing secret in output
-        if output.contains("webhook signing secret is") {
+        if output.contains("webhook signing secret is") || output.contains("whsec_") {
             if let Some(secret_start) = output.find("whsec_") {
                 let secret_end = output[secret_start..]
                     .find(|c: char| c.is_whitespace() || c == '(' || c == ')')
@@ -145,8 +200,15 @@ impl ProcessLocalService {
                 
                 let mut webhook_secret_guard = webhook_secret.lock().await;
                 *webhook_secret_guard = Some(secret.to_string());
-                info!("Captured Stripe webhook signing secret");
+                info!("Captured Stripe webhook signing secret: whsec_...");
             }
+        }
+        
+        // Check if Stripe is ready
+        if output.contains("Ready!") && output.contains("You are using Stripe API") {
+            let mut is_ready_guard = is_ready.lock().await;
+            *is_ready_guard = true;
+            info!("Stripe CLI is ready and listening for webhooks");
         }
     }
     
@@ -156,19 +218,22 @@ impl ProcessLocalService {
         name: String,
         service_type: LocalServiceType,
         webhook_secret: Arc<Mutex<Option<String>>>,
+        is_ready: Arc<Mutex<bool>>,
     ) {
         if let Some(stdout) = child.stdout.take() {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             let name_clone = name.clone();
+            let is_ready_clone = is_ready.clone();
             
             tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
-                    debug!("[{}] {}", name_clone, line);
+                    // Output to stdout so it's visible
+                    println!("[{}] {}", name_clone, line);
                     
                     // Parse Stripe output if applicable
                     if matches!(service_type, LocalServiceType::StripeCLI) {
-                        Self::parse_stripe_output(line, webhook_secret.clone()).await;
+                        Self::parse_stripe_output(line.clone(), webhook_secret.clone(), is_ready_clone.clone()).await;
                     }
                 }
             });
@@ -180,7 +245,8 @@ impl ProcessLocalService {
             
             tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
-                    warn!("[{}] {}", name, line);
+                    // Output stderr to stdout so it's visible
+                    eprintln!("[{}] ERROR: {}", name, line);
                 }
             });
         }
@@ -201,11 +267,13 @@ impl LocalService for ProcessLocalService {
         
         // Monitor output
         let webhook_secret = self.webhook_secret.clone();
+        let is_ready = self.is_ready.clone();
         Self::monitor_output(
             &mut child,
             self.name.clone(),
             self.service_type.clone(),
             webhook_secret,
+            is_ready,
         ).await;
         
         // Store the process handle
@@ -234,10 +302,15 @@ impl LocalService for ProcessLocalService {
     
     async fn is_healthy(&self) -> Result<bool> {
         let process_guard = self.process.lock().await;
-        if let Some(child) = process_guard.as_ref() {
-            // Check if process is still running
-            // Note: This is a simplified check
-            Ok(true)
+        if process_guard.is_some() {
+            // For Stripe CLI, check if it's ready
+            if matches!(self.service_type, LocalServiceType::StripeCLI) {
+                let is_ready_guard = self.is_ready.lock().await;
+                Ok(*is_ready_guard)
+            } else {
+                // For other processes, just check if running
+                Ok(true)
+            }
         } else {
             Ok(false)
         }

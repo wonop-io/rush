@@ -7,7 +7,7 @@ use rush_build::{BuildType, ComponentBuildSpec};
 use rush_core::docker::DockerClient;
 use rush_core::error::{Error, Result};
 use rush_local_services::{
-    DockerLocalService, LocalService, LocalServiceConfig, LocalServiceManagerV2,
+    DockerLocalService, LocalServiceConfig, LocalServiceManager,
     LocalServiceType, ProcessLocalService,
 };
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ use crate::reactor::ContainerReactor;
 /// Manages the complete development environment
 pub struct DevEnvironment {
     /// Manages local services (databases, etc.)
-    local_services: LocalServiceManagerV2,
+    local_services: LocalServiceManager,
     
     /// Manages application containers
     reactor: ContainerReactor,
@@ -44,7 +44,7 @@ impl DevEnvironment {
         data_dir: PathBuf,
     ) -> Self {
         Self {
-            local_services: LocalServiceManagerV2::new(),
+            local_services: LocalServiceManager::new(),
             reactor,
             docker_client,
             network_name,

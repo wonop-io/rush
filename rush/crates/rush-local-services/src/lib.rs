@@ -64,7 +64,6 @@ pub mod docker_service;
 pub mod error;
 pub mod health;
 pub mod manager;
-pub mod manager_v2;
 pub mod process_service;
 pub mod service;
 #[allow(clippy::module_name_repetitions)]
@@ -76,7 +75,6 @@ pub use docker_service::DockerLocalService;
 pub use error::{Error, Result};
 pub use health::{HealthCheck, HealthStatus};
 pub use manager::LocalServiceManager;
-pub use manager_v2::LocalServiceManager as LocalServiceManagerV2;
 pub use process_service::ProcessLocalService;
 pub use r#trait::LocalService;
 pub use service::{LocalServiceHandle, ServiceStatus};

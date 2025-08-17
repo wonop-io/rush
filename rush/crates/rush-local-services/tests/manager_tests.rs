@@ -1,219 +1,143 @@
-use rush_local_services::{LocalServiceConfig, LocalServiceManager, LocalServiceType};
-use std::path::PathBuf;
-use std::sync::Arc;
+use rush_local_services::{LocalServiceManager, LocalService, LocalServiceType};
+use std::collections::HashMap;
+use async_trait::async_trait;
 
-// Mock DockerClient for testing
+// Mock LocalService for testing
 #[derive(Debug)]
-struct MockDockerClient;
+struct MockLocalService {
+    name: String,
+    service_type: LocalServiceType,
+    is_running: bool,
+    is_healthy: bool,
+}
 
-#[async_trait::async_trait]
-impl rush_local_services::docker::DockerClient for MockDockerClient {
-    async fn create_network(&self, _name: &str) -> rush_core::error::Result<()> {
-        Ok(())
-    }
-
-    async fn delete_network(&self, _name: &str) -> rush_core::error::Result<()> {
-        Ok(())
-    }
-
-    async fn network_exists(&self, _name: &str) -> rush_core::error::Result<bool> {
-        Ok(true)
-    }
-
-    async fn pull_image(&self, _image: &str) -> rush_core::error::Result<()> {
-        Ok(())
-    }
-
-    async fn build_image(&self, _tag: &str, _dockerfile: &str, _context: &str) -> rush_core::error::Result<()> {
-        Ok(())
-    }
-
-    async fn run_container(
-        &self,
-        _image: &str,
-        _name: &str,
-        _network: &str,
-        _env_vars: &[String],
-        _ports: &[String],
-        _volumes: &[String],
-    ) -> rush_core::error::Result<String> {
-        Ok("mock-container-id".to_string())
-    }
-
-    async fn run_container_with_command(
-        &self,
-        _image: &str,
-        _name: &str,
-        _network: &str,
-        _env_vars: &[String],
-        _ports: &[String],
-        _volumes: &[String],
-        _command: Option<&[String]>,
-    ) -> rush_core::error::Result<String> {
-        Ok("mock-container-id".to_string())
-    }
-
-    async fn stop_container(&self, _container_id: &str) -> rush_core::error::Result<()> {
-        Ok(())
-    }
-
-    async fn remove_container(&self, _container_id: &str) -> rush_core::error::Result<()> {
-        Ok(())
-    }
-
-    async fn container_status(
-        &self,
-        _container_id: &str,
-    ) -> rush_core::error::Result<rush_local_services::docker::ContainerStatus> {
-        Ok(rush_local_services::docker::ContainerStatus::Running)
-    }
-
-    async fn container_exists(&self, _name: &str) -> rush_core::error::Result<bool> {
-        Ok(true)
-    }
-
-    async fn container_logs(
-        &self,
-        _container_id: &str,
-        _lines: usize,
-    ) -> rush_core::error::Result<String> {
-        Ok("mock logs".to_string())
-    }
-
-    async fn follow_container_logs(
-        &self,
-        _container_id: &str,
-        _label: String,
-        _color: &str,
-    ) -> rush_core::error::Result<()> {
-        Ok(())
-    }
-
-    async fn send_signal_to_container(&self, _container_id: &str, _signal: i32) -> rush_core::error::Result<()> {
-        Ok(())
-    }
-
-    async fn exec_in_container(
-        &self,
-        _container_id: &str,
-        _command: &[&str],
-    ) -> rush_core::error::Result<String> {
-        Ok("command output".to_string())
-    }
-
-    async fn get_container_by_name(&self, _name: &str) -> rush_core::error::Result<String> {
-        Ok("mock-container-id".to_string())
+impl MockLocalService {
+    fn new(name: String, service_type: LocalServiceType) -> Self {
+        Self {
+            name,
+            service_type,
+            is_running: false,
+            is_healthy: false,
+        }
     }
 }
 
+#[async_trait]
+impl LocalService for MockLocalService {
+    async fn start(&mut self) -> rush_core::error::Result<()> {
+        self.is_running = true;
+        Ok(())
+    }
+    
+    async fn stop(&mut self) -> rush_core::error::Result<()> {
+        self.is_running = false;
+        self.is_healthy = false;
+        Ok(())
+    }
+    
+    async fn is_healthy(&self) -> rush_core::error::Result<bool> {
+        Ok(self.is_healthy)
+    }
+    
+    async fn generated_env_vars(&self) -> rush_core::error::Result<HashMap<String, String>> {
+        Ok(HashMap::new())
+    }
+    
+    async fn generated_env_secrets(&self) -> rush_core::error::Result<HashMap<String, String>> {
+        Ok(HashMap::new())
+    }
+    
+    fn name(&self) -> &str {
+        &self.name
+    }
+    
+    fn service_type(&self) -> LocalServiceType {
+        self.service_type.clone()
+    }
+    
+    fn is_running(&self) -> bool {
+        self.is_running
+    }
+}
+
+
 #[test]
 fn test_manager_creation() {
-    let docker_client = Arc::new(MockDockerClient);
-    let data_dir = PathBuf::from("/tmp/test");
-    let network_name = "test-network".to_string();
-
-    let _manager = LocalServiceManager::new(docker_client, data_dir.clone(), network_name.clone());
-
+    let _manager = LocalServiceManager::new();
     // Test passes if manager is created without panic
 }
 
 #[test]
 fn test_manager_register_service() {
-    let docker_client = Arc::new(MockDockerClient);
-    let data_dir = PathBuf::from("/tmp/test");
-    let network_name = "test-network".to_string();
-
-    let mut manager = LocalServiceManager::new(docker_client, data_dir, network_name);
-
-    let config = LocalServiceConfig::new("test-postgres".to_string(), LocalServiceType::PostgreSQL);
-
-    manager.register(config);
-
+    let mut manager = LocalServiceManager::new();
+    
+    let service = MockLocalService::new("test-postgres".to_string(), LocalServiceType::PostgreSQL);
+    manager.register(Box::new(service));
+    
     // Test passes if service is registered without panic
 }
 
-#[tokio::test]
-async fn test_manager_is_running() {
-    let docker_client = Arc::new(MockDockerClient);
-    let data_dir = PathBuf::from("/tmp/test");
-    let network_name = "test-network".to_string();
-
-    let manager = LocalServiceManager::new(docker_client, data_dir, network_name);
-
+#[test]
+fn test_manager_is_running() {
+    let manager = LocalServiceManager::new();
+    
     // Should return false for non-existent service
-    assert!(!manager.is_running("non-existent").await);
+    assert!(!manager.is_service_running("non-existent"));
 }
 
 #[tokio::test]
 async fn test_manager_get_status() {
-    let docker_client = Arc::new(MockDockerClient);
-    let data_dir = PathBuf::from("/tmp/test");
-    let network_name = "test-network".to_string();
-
-    let manager = LocalServiceManager::new(docker_client, data_dir, network_name);
-
+    let mut manager = LocalServiceManager::new();
+    
+    let service = MockLocalService::new("test-postgres".to_string(), LocalServiceType::PostgreSQL);
+    manager.register(Box::new(service));
+    
     let status = manager.get_status().await;
-    assert!(status.is_empty());
-}
-
-#[tokio::test]
-async fn test_manager_get_connection_strings() {
-    let docker_client = Arc::new(MockDockerClient);
-    let data_dir = PathBuf::from("/tmp/test");
-    let network_name = "test-network".to_string();
-
-    let manager = LocalServiceManager::new(docker_client, data_dir, network_name);
-
-    let connections = manager.get_connection_strings().await;
-    assert!(connections.is_empty());
+    assert_eq!(status.len(), 1);
+    assert_eq!(status[0].0, "test-postgres");
+    assert_eq!(status[0].1, false); // Not healthy yet
 }
 
 #[test]
 fn test_register_multiple_services() {
-    let docker_client = Arc::new(MockDockerClient);
-    let data_dir = PathBuf::from("/tmp/test");
-    let network_name = "test-network".to_string();
-
-    let mut manager = LocalServiceManager::new(docker_client, data_dir, network_name);
-
-    // Register multiple services
-    let postgres_config =
-        LocalServiceConfig::new("postgres".to_string(), LocalServiceType::PostgreSQL);
-
-    let redis_config = LocalServiceConfig::new("redis".to_string(), LocalServiceType::Redis);
-
-    let minio_config = LocalServiceConfig::new("minio".to_string(), LocalServiceType::MinIO);
-
-    manager.register(postgres_config);
-    manager.register(redis_config);
-    manager.register(minio_config);
-
-    // Test passes if all services are registered without issues
+    let mut manager = LocalServiceManager::new();
+    
+    let postgres = MockLocalService::new("postgres".to_string(), LocalServiceType::PostgreSQL);
+    let redis = MockLocalService::new("redis".to_string(), LocalServiceType::Redis);
+    let minio = MockLocalService::new("minio".to_string(), LocalServiceType::MinIO);
+    
+    manager.register(Box::new(postgres));
+    manager.register(Box::new(redis));
+    manager.register(Box::new(minio));
+    
+    // Test passes if all services are registered without panic
 }
 
 #[test]
 fn test_service_with_dependencies() {
-    let docker_client = Arc::new(MockDockerClient);
-    let data_dir = PathBuf::from("/tmp/test");
-    let network_name = "test-network".to_string();
+    let mut manager = LocalServiceManager::new();
+    
+    // Create services with dependencies
+    let postgres = MockLocalService::new("postgres".to_string(), LocalServiceType::PostgreSQL);
+    let redis = MockLocalService::new("redis".to_string(), LocalServiceType::Redis);
+    let app = MockLocalService::new("app".to_string(), LocalServiceType::Custom("app".to_string()));
+    
+    manager.register(Box::new(postgres));
+    manager.register(Box::new(redis));
+    manager.register(Box::new(app));
+    
+    // Test passes if services with dependencies are registered
+}
 
-    let mut manager = LocalServiceManager::new(docker_client, data_dir, network_name);
-
-    // Create service with dependencies
-    let mut app_config = LocalServiceConfig::new(
-        "app".to_string(),
-        LocalServiceType::Custom("app".to_string()),
-    );
-    app_config.depends_on = vec!["postgres".to_string(), "redis".to_string()];
-
-    let postgres_config =
-        LocalServiceConfig::new("postgres".to_string(), LocalServiceType::PostgreSQL);
-
-    let redis_config = LocalServiceConfig::new("redis".to_string(), LocalServiceType::Redis);
-
-    manager.register(postgres_config);
-    manager.register(redis_config);
-    manager.register(app_config);
-
-    // Test passes if services with dependencies are registered correctly
+#[test]
+fn test_manager_get_connection_strings() {
+    let manager = LocalServiceManager::new();
+    
+    // Get environment variables (should be empty initially)
+    let env_vars = manager.get_env_vars();
+    assert_eq!(env_vars.len(), 0);
+    
+    // Get secrets (should be empty initially)
+    let secrets = manager.get_env_secrets();
+    assert_eq!(secrets.len(), 0);
 }

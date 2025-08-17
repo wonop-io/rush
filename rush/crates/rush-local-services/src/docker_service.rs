@@ -235,8 +235,21 @@ impl LocalService for DockerLocalService {
                 .await?
         };
         
-        self.container_id = Some(container_id);
+        self.container_id = Some(container_id.clone());
         info!("Docker local service {} started successfully", self.name);
+        
+        // Start following container logs
+        let docker_client = self.docker_client.clone();
+        let name = self.name.clone();
+        let container_id_clone = container_id.clone();
+        tokio::spawn(async move {
+            // Follow container logs continuously
+            let _ = docker_client.follow_container_logs(
+                &container_id_clone,
+                name,
+                "cyan"  // Use cyan color for local services
+            ).await;
+        });
         
         // Run initialization scripts if any
         if !self.config.init_scripts.is_empty() {

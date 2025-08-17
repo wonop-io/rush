@@ -2500,6 +2500,7 @@ dependencies = [
  "rush-core",
  "rush-helper",
  "rush-k8s",
+ "rush-local-services",
  "rush-mcp",
  "rush-output",
  "rush-security",
