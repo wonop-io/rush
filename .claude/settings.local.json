@@ -41,14 +41,33 @@
       "Bash(./test_complete_logging.sh:*)",
       "Bash(./test_phase_labels.sh:*)",
       "Bash(./test_mcp.sh:*)",
-      "Bash(./test_mcp_direct.sh:*)"
+      "Bash(./test_mcp_direct.sh:*)",
+      "Bash(docker rm:*)",
+      "Bash(git checkout:*)",
+      "Bash(stripe listen:*)",
+      "Bash(./test_stripe_once.sh:*)",
+      "Bash(/tmp/test_cleanup.sh:*)",
+      "Bash(./test_cleanup.sh:*)",
+      "Bash(kill:*)",
+      "Bash(/tmp/test_env_injection.sh:*)",
+      "Bash(docker exec:*)",
+      "Bash(/tmp/test_complete_injection.sh:*)",
+      "Bash(/tmp/test_secrets_quick.sh:*)",
+      "Bash(/tmp/test_final_verification.sh:*)"
     ],
-    "deny": []
+    "deny": [],
+    "additionalDirectories": [
+      "/private/tmp"
+    ]
   },
   "mcpServers": {
     "rush": {
       "command": "/Users/tfr/Documents/Projects/rush/rush/target/release/rush",
-      "args": ["mcp", "serve", "--stdio"],
+      "args": [
+        "mcp",
+        "serve",
+        "--stdio"
+      ],
       "env": {
         "RUSHD_ROOT": "/Users/tfr/Documents/Projects/rush",
         "RUST_LOG": "info"

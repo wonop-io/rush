@@ -39,7 +39,9 @@ stripe:
   persist_data: false
   env:
     STRIPE_WEBHOOK_URL: "http://localhost:8080/api/stripe/webhook"
-  command: "listen --forward-to http://localhost:8080/api/stripe/webhook"
+    # Set STRIPE_API_KEY in your .env file or secrets to avoid interactive auth
+    # STRIPE_API_KEY: "sk_test_..."
+  command: "listen --forward-to http://localhost:8080/api/stripe/webhook --skip-verify"
 
 ingress:
   build_type: "Ingress"
