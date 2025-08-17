@@ -86,6 +86,9 @@ pub struct ContainerReactor {
     
     /// Stripe CLI handler (runs as local process)
     stripe_handler: Option<StripeCliHandler>,
+    
+    /// Additional environment variables from local services
+    additional_env: HashMap<String, String>,
 }
 
 /// Configuration for the ContainerReactor
@@ -140,6 +143,12 @@ impl ContainerReactor {
     pub fn set_output_sink(&mut self, sink: Box<dyn rush_output::simple::Sink>) {
         self.output_sink = Arc::new(tokio::sync::Mutex::new(sink));
     }
+    
+    /// Add an environment variable to be injected into all containers
+    pub fn add_env_var(&mut self, key: String, value: String) {
+        self.additional_env.insert(key, value);
+    }
+    
     /// Creates a new ContainerReactor
     ///
     /// # Arguments
@@ -188,6 +197,7 @@ impl ContainerReactor {
             built_images: HashMap::new(),
             local_service_manager: None,
             stripe_handler: None,
+            additional_env: HashMap::new(),
         })
     }
 
@@ -1488,6 +1498,11 @@ impl ContainerReactor {
                     let encoded_secrets = self.secrets_encoder.encode_secrets(secrets);
                     for (key, value) in encoded_secrets {
                         env_vars.insert(key, value);
+                    }
+                    
+                    // Add additional environment variables from local services
+                    for (key, value) in &self.additional_env {
+                        env_vars.insert(key.clone(), value.clone());
                     }
 
                     // Collect volumes from component spec

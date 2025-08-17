@@ -38,6 +38,19 @@ impl LocalServiceType {
             Self::Custom(image) => image.clone(),
         }
     }
+    
+    /// Get the environment variable suffix for connection strings
+    pub fn env_var_suffix(&self) -> &str {
+        match self {
+            Self::PostgreSQL => "DATABASE",
+            Self::MySQL => "DATABASE",
+            Self::MongoDB => "MONGODB",
+            Self::Redis => "REDIS",
+            Self::MinIO => "S3",
+            Self::LocalStack => "AWS",
+            _ => "SERVICE",
+        }
+    }
 
     /// Get the default port for this service type
     pub fn default_port(&self) -> Option<u16> {

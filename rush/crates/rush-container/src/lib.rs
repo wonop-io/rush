@@ -1,6 +1,7 @@
 //! Rush Container - Docker and container orchestration
 
 pub mod build;
+pub mod dev_environment;
 pub mod docker;
 pub mod image_builder;
 pub mod lifecycle;
@@ -15,6 +16,7 @@ pub mod watcher;
 #[cfg(test)]
 pub mod tests;
 
+pub use dev_environment::DevEnvironment;
 pub use docker::{DockerCliClient, DockerClient, DockerImage, DockerService};
 pub use image_builder::{BuildConfig, ImageBuilder};
 pub use reactor::{ContainerReactor, ContainerReactorConfig};
