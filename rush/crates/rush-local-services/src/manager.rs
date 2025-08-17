@@ -2,13 +2,16 @@
 //!
 //! This module provides a manager for trait-based local services.
 
-use log::{debug, error, info, warn};
+use log::{error, warn};
+use rush_output::simple::{LogEntry, Sink};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tokio::time::{sleep, timeout};
 
 use crate::error::{Error, Result};
-
+use crate::output::ServiceOutput;
 use crate::r#trait::LocalService;
 
 /// Manages a collection of local services
@@ -24,36 +27,69 @@ pub struct LocalServiceManager {
     
     /// Aggregated secrets from all services
     env_secrets: HashMap<String, String>,
+    
+    /// Output sink for logging
+    output_sink: Option<Arc<Mutex<Box<dyn Sink>>>>,
+    
+    /// Service output handler
+    output: ServiceOutput,
 }
 
 impl LocalServiceManager {
     /// Create a new LocalServiceManager
     pub fn new() -> Self {
+        let output = ServiceOutput::new("LocalServiceManager".to_string());
         Self {
             services: Vec::new(),
             startup_order: Vec::new(),
             env_vars: HashMap::new(),
             env_secrets: HashMap::new(),
+            output_sink: None,
+            output,
+        }
+    }
+    
+    /// Create with an output sink
+    pub fn with_output_sink(sink: Arc<Mutex<Box<dyn Sink>>>) -> Self {
+        let mut output = ServiceOutput::new("LocalServiceManager".to_string());
+        output.set_sink(sink.clone());
+        Self {
+            services: Vec::new(),
+            startup_order: Vec::new(),
+            env_vars: HashMap::new(),
+            env_secrets: HashMap::new(),
+            output_sink: Some(sink),
+            output,
         }
     }
     
     /// Register a new service
-    pub fn register(&mut self, service: Box<dyn LocalService>) {
+    pub fn register(&mut self, mut service: Box<dyn LocalService>) {
         let name = service.name().to_string();
-        info!("Registering local service: {}", name);
+        
+        // Set the output sink on the service if we have one
+        if let Some(ref sink) = self.output_sink {
+            service.set_output_sink(sink.clone());
+        }
+        
+        // Log registration using runtime context
+        let output = self.output.clone();
+        tokio::spawn(async move {
+            output.info(format!("Registering local service: {}", name)).await;
+        });
         
         // Add to startup order (simple for now - could be enhanced with dependency resolution)
-        self.startup_order.push(name.clone());
+        self.startup_order.push(service.name().to_string());
         self.services.push(service);
     }
     
     /// Start all services in order
     pub async fn start_all(&mut self) -> Result<()> {
-        info!("Starting all local services");
+        self.output.info("Starting all local services").await;
         
         for service in &mut self.services {
             let name = service.name().to_string();
-            info!("Starting service: {}", name);
+            self.output.info(format!("Starting service: {}", name)).await;
             
             if let Err(e) = service.start().await {
                 error!("Failed to start service {}: {}", name, e);
@@ -69,18 +105,18 @@ impl LocalServiceManager {
         // Collect environment variables and secrets
         self.collect_env_vars().await?;
         
-        info!("All local services started successfully");
+        self.output.info("All local services started successfully").await;
         Ok(())
     }
     
     /// Stop all services
     pub async fn stop_all(&mut self) -> Result<()> {
-        info!("Stopping all local services");
+        self.output.info("Stopping all local services").await;
         
         // Stop in reverse order
         for service in self.services.iter_mut().rev() {
             let name = service.name().to_string();
-            info!("Stopping service: {}", name);
+            self.output.info(format!("Stopping service: {}", name)).await;
             
             if let Err(e) = service.stop().await {
                 warn!("Failed to stop service {}: {}", name, e);
@@ -92,13 +128,13 @@ impl LocalServiceManager {
         self.env_vars.clear();
         self.env_secrets.clear();
         
-        info!("All local services stopped");
+        self.output.info("All local services stopped").await;
         Ok(())
     }
     
     /// Wait for all services to be healthy
     pub async fn wait_for_healthy(&self, timeout_duration: Duration) -> Result<()> {
-        info!("Waiting for all services to be healthy (timeout: {:?})", timeout_duration);
+        self.output.info(format!("Waiting for all services to be healthy (timeout: {:?})", timeout_duration)).await;
         
         let start_time = std::time::Instant::now();
         
@@ -112,18 +148,18 @@ impl LocalServiceManager {
                 )));
             }
             
-            info!("Waiting for {} to be healthy...", name);
+            self.output.info(format!("Waiting for {} to be healthy...", name)).await;
             
             // Wait for this service to be healthy
             let result = timeout(remaining, async {
                 loop {
                     match service.is_healthy().await {
                         Ok(true) => {
-                            info!("{} is healthy", name);
+                            self.output.info(format!("{} is healthy", name)).await;
                             return Ok::<(), Error>(());
                         }
                         Ok(false) => {
-                            debug!("{} is not healthy yet, waiting...", name);
+                            // Service not healthy yet, waiting...
                             sleep(Duration::from_secs(1)).await;
                         }
                         Err(e) => {
@@ -146,7 +182,7 @@ impl LocalServiceManager {
             }
         }
         
-        info!("All services are healthy");
+        self.output.info("All services are healthy").await;
         Ok(())
     }
     
@@ -160,7 +196,7 @@ impl LocalServiceManager {
             match service.generated_env_vars().await {
                 Ok(vars) => {
                     for (key, value) in vars {
-                        debug!("Adding env var from {}: {}=...", service.name(), key);
+                        // Adding env var from service
                         self.env_vars.insert(key, value);
                     }
                 }
@@ -173,7 +209,7 @@ impl LocalServiceManager {
             match service.generated_env_secrets().await {
                 Ok(secrets) => {
                     for (key, value) in secrets {
-                        debug!("Adding secret from {}: {}=...", service.name(), key);
+                        // Adding secret from service
                         self.env_secrets.insert(key, value);
                     }
                 }

@@ -16,10 +16,12 @@ async-trait = { workspace = true }
 bollard = { workspace = true }
 log = { workspace = true }
 rush-core = { workspace = true }
+rush-output = { workspace = true }
 rush-utils = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+strip-ansi-escapes = "0.2"
 thiserror = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }

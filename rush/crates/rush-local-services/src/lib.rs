@@ -58,12 +58,14 @@
 //!       command: "my-command"
 //! ```
 
+pub mod base;
 pub mod config;
 pub mod docker;
 pub mod docker_service;
 pub mod error;
 pub mod health;
 pub mod manager;
+pub mod output;
 pub mod process_service;
 pub mod service;
 #[allow(clippy::module_name_repetitions)]

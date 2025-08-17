@@ -3,13 +3,19 @@
 //! This module provides a LocalService implementation for Docker containers.
 
 use async_trait::async_trait;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use rush_core::docker::{ContainerStatus, DockerClient};
 use rush_core::error::{Error, Result};
+use rush_output::simple::Sink;
 use std::collections::HashMap;
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+use tokio::sync::Mutex;
 
 use crate::config::LocalServiceConfig;
+use crate::output::ServiceOutput;
 use crate::r#trait::LocalService;
 use crate::types::LocalServiceType;
 
@@ -35,9 +41,78 @@ pub struct DockerLocalService {
     
     /// Data directory for persistence
     data_dir: std::path::PathBuf,
+    
+    /// Output handler
+    output: ServiceOutput,
 }
 
 impl DockerLocalService {
+    /// Follow container logs and send to output sink
+    async fn follow_logs_to_output(
+        container_id: String,
+        output: ServiceOutput,
+    ) {
+        // Use docker logs -f to follow the container logs
+        let mut child = match Command::new("docker")
+            .args(["logs", "-f", "--tail", "0", &container_id])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(e) => {
+                log::error!("Failed to follow container logs: {}", e);
+                return;
+            }
+        };
+
+        // Handle stdout
+        if let Some(stdout) = child.stdout.take() {
+            let output_clone = output.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stdout);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            // Remove trailing newline
+                            let clean_line = line.trim_end().to_string();
+                            if !clean_line.is_empty() {
+                                output_clone.info(clean_line).await;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
+        // Handle stderr
+        if let Some(stderr) = child.stderr.take() {
+            let output_clone = output.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            // Remove trailing newline
+                            let clean_line = line.trim_end().to_string();
+                            if !clean_line.is_empty() {
+                                output_clone.error(clean_line).await;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+    }
+    
     /// Create a new Docker-based local service
     pub fn new(
         name: String,
@@ -47,6 +122,7 @@ impl DockerLocalService {
         network_name: String,
         data_dir: std::path::PathBuf,
     ) -> Self {
+        let output = ServiceOutput::new(name.clone());
         Self {
             name,
             service_type,
@@ -55,6 +131,7 @@ impl DockerLocalService {
             config,
             network_name,
             data_dir,
+            output,
         }
     }
     
@@ -150,18 +227,18 @@ impl DockerLocalService {
 #[async_trait]
 impl LocalService for DockerLocalService {
     async fn start(&mut self) -> Result<()> {
-        info!("Starting Docker local service: {}", self.name);
+        self.output.info(format!("Starting Docker local service: {}", self.name)).await;
         
         // Check if container already exists
         let container_name = self.get_container_name();
         match self.docker_client.get_container_by_name(&container_name).await {
             Ok(existing_id) => {
-                info!("Found existing container for {}, removing it", self.name);
+                self.output.info(format!("Found existing container for {}, removing it", self.name)).await;
                 let _ = self.docker_client.stop_container(&existing_id).await;
                 let _ = self.docker_client.remove_container(&existing_id).await;
             }
             Err(_) => {
-                debug!("No existing container found for {}", self.name);
+                // No existing container found
             }
         }
         
@@ -201,7 +278,7 @@ impl LocalService for DockerLocalService {
         let image = self.get_image();
         
         // Pull the image if needed
-        debug!("Pulling image {} if needed", image);
+        self.output.info(format!("Pulling image {} if needed", image)).await;
         self.docker_client.pull_image(&image).await?;
         
         // Prepare command if specified
@@ -236,26 +313,26 @@ impl LocalService for DockerLocalService {
         };
         
         self.container_id = Some(container_id.clone());
-        info!("Docker local service {} started successfully", self.name);
+        self.output.info(format!("Docker local service {} started successfully", self.name)).await;
         
-        // Start following container logs
-        let docker_client = self.docker_client.clone();
-        let name = self.name.clone();
-        let container_id_clone = container_id.clone();
-        tokio::spawn(async move {
-            // Follow container logs continuously
-            let _ = docker_client.follow_container_logs(
-                &container_id_clone,
-                name,
-                "cyan"  // Use cyan color for local services
-            ).await;
-        });
+        // Start following container logs if we have an output sink
+        if self.output.has_sink() {
+            let container_id_clone = container_id.clone();
+            let output_clone = self.output.clone();
+            
+            tokio::spawn(async move {
+                Self::follow_logs_to_output(
+                    container_id_clone,
+                    output_clone,
+                ).await;
+            });
+        }
         
         // Run initialization scripts if any
         if !self.config.init_scripts.is_empty() {
-            info!("Running initialization scripts for {}", self.name);
+            self.output.info(format!("Running initialization scripts for {}", self.name)).await;
             for script in &self.config.init_scripts {
-                debug!("Running init script: {}", script);
+                self.output.info(format!("Running init script: {}", script)).await;
                 let command: Vec<&str> = script.split_whitespace().collect();
                 if let Some(container_id) = &self.container_id {
                     self.docker_client
@@ -274,7 +351,7 @@ impl LocalService for DockerLocalService {
     
     async fn stop(&mut self) -> Result<()> {
         if let Some(container_id) = &self.container_id {
-            info!("Stopping Docker local service: {}", self.name);
+            self.output.info(format!("Stopping Docker local service: {}", self.name)).await;
             
             self.docker_client
                 .stop_container(container_id)
@@ -296,7 +373,7 @@ impl LocalService for DockerLocalService {
             }
             
             self.container_id = None;
-            info!("Docker local service {} stopped", self.name);
+            self.output.info(format!("Docker local service {} stopped", self.name)).await;
         }
         
         Ok(())
@@ -356,5 +433,9 @@ impl LocalService for DockerLocalService {
     
     fn is_running(&self) -> bool {
         self.container_id.is_some()
+    }
+    
+    fn set_output_sink(&mut self, sink: Arc<Mutex<Box<dyn Sink>>>) {
+        self.output.set_sink(sink);
     }
 }

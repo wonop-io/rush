@@ -4,7 +4,10 @@
 
 use async_trait::async_trait;
 use rush_core::error::Result;
+use rush_output::simple::Sink;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::types::LocalServiceType;
 
@@ -36,4 +39,9 @@ pub trait LocalService: Send + Sync {
     
     /// Check if the service is currently running
     fn is_running(&self) -> bool;
+    
+    /// Set the output sink for logging (optional - default implementation does nothing)
+    fn set_output_sink(&mut self, _sink: Arc<Mutex<Box<dyn Sink>>>) {
+        // Default implementation - services can override if they support output sinks
+    }
 }
