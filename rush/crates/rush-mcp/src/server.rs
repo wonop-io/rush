@@ -1,13 +1,13 @@
 //! Main MCP server implementation
 
-use crate::error::{McpError, Result};
+use crate::error::Result;
 use crate::protocol::*;
 use crate::resources::ResourceRegistry;
 use crate::tools::ToolRegistry;
 use crate::transport::{error_response, success_response, Transport};
 use log::{debug, error, info, warn};
 use rush_output::mcp_sink::{McpLogEntry, McpSink, McpSinkBuilder};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -79,7 +79,7 @@ impl McpServer {
     }
 
     /// Run the server with the given transport
-    pub async fn run<T: Transport>(mut self, mut transport: T) -> Result<()> {
+    pub async fn run<T: Transport>(self, mut transport: T) -> Result<()> {
         info!("Starting MCP server: {} v{}", self.config.name, self.config.version);
 
         loop {

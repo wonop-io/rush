@@ -3,7 +3,7 @@
 //! This module provides a LocalService implementation for Docker containers.
 
 use async_trait::async_trait;
-use log::{debug, warn};
+use log::warn;
 use rush_core::docker::{ContainerStatus, DockerClient};
 use rush_core::error::{Error, Result};
 use rush_output::simple::Sink;
@@ -40,7 +40,7 @@ pub struct DockerLocalService {
     network_name: String,
     
     /// Data directory for persistence
-    data_dir: std::path::PathBuf,
+    _data_dir: std::path::PathBuf,
     
     /// Output handler
     output: ServiceOutput,
@@ -130,7 +130,7 @@ impl DockerLocalService {
             container_id: None,
             config,
             network_name,
-            data_dir,
+            _data_dir: data_dir,
             output,
         }
     }

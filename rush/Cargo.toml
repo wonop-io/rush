@@ -56,7 +56,7 @@ indicatif = "0.17"
 k8s-openapi = { version = "0.20", features = ["v1_28"] }
 kube = { version = "0.87", features = ["runtime", "derive"] }
 lazy_static = "1.4.0"
-log = "0.4.22"
+log = { version = "0.4.22", features = ["std"] }
 notify = "6.1.1"
 once_cell = "1.19"
 openssl = "0.10.66"

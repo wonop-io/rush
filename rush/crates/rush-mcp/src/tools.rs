@@ -2,12 +2,10 @@
 
 use crate::error::{McpError, Result};
 use crate::protocol::{ToolCall, ToolInfo, ToolResult};
-use log::{debug, error, info};
-use rush_core::error::Error as RushError;
+use log::info;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// Tool registry for Rush MCP server
 pub struct ToolRegistry {
@@ -467,7 +465,7 @@ impl StatusToolHandler {
 #[async_trait::async_trait]
 impl ToolHandler for StatusToolHandler {
     async fn execute(&self, args: HashMap<String, Value>) -> Result<ToolResult> {
-        let product_name = args
+        let _product_name = args
             .get("product_name")
             .and_then(|v| v.as_str());
 
@@ -565,7 +563,7 @@ impl ToolHandler for LogsToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
-        let lines = args
+        let _lines = args
             .get("lines")
             .and_then(|v| v.as_u64())
             .unwrap_or(100);

@@ -52,7 +52,7 @@ pub async fn execute(matches: &ArgMatches) -> Result<()> {
 /// Start the MCP server
 async fn serve(matches: &ArgMatches) -> Result<()> {
     let use_stdio = matches.get_flag("stdio");
-    let port = *matches.get_one::<u16>("port").unwrap_or(&3333);
+    let _port = *matches.get_one::<u16>("port").unwrap_or(&3333);
     let buffer_size = *matches.get_one::<usize>("buffer-size").unwrap_or(&1000);
 
     let config = McpServerConfig {

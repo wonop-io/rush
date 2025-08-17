@@ -3,7 +3,7 @@
 //! This module provides a manager for trait-based local services.
 
 use log::{error, warn};
-use rush_output::simple::{LogEntry, Sink};
+use rush_output::simple::Sink;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -73,10 +73,13 @@ impl LocalServiceManager {
         }
         
         // Log registration using runtime context
-        let output = self.output.clone();
-        tokio::spawn(async move {
-            output.info(format!("Registering local service: {}", name)).await;
-        });
+        // Only spawn if we're in an async context (check if there's a runtime)
+        if tokio::runtime::Handle::try_current().is_ok() {
+            let output = self.output.clone();
+            tokio::spawn(async move {
+                output.info(format!("Registering local service: {}", name)).await;
+            });
+        }
         
         // Add to startup order (simple for now - could be enhanced with dependency resolution)
         self.startup_order.push(service.name().to_string());

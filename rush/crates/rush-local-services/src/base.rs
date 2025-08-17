@@ -3,14 +3,11 @@
 //! This module provides a base implementation with common functionality
 //! that can be shared by all local service implementations.
 
-use async_trait::async_trait;
-use rush_core::error::Result;
 use rush_output::simple::{LogEntry, Sink};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::r#trait::LocalService;
 use crate::types::LocalServiceType;
 
 /// Base implementation for local services with common functionality

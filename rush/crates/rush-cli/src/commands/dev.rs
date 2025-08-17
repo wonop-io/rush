@@ -60,7 +60,7 @@ impl DevCommand {
         trace!("Starting development environment for {}", self.product_name);
 
         // Get the git hash for tagging
-        let git_hash = match self
+        let _git_hash = match self
             .toolchain
             .get_git_folder_hash(&self.config.product_path().display().to_string())
         {

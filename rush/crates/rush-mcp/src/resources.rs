@@ -2,10 +2,8 @@
 
 use crate::error::{McpError, Result};
 use crate::protocol::{ResourceContent, ResourceInfo, ResourceRead};
-use log::{debug, info};
 use rush_output::mcp_sink::McpLogEntry;
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -35,7 +33,7 @@ impl ResourceRegistry {
     /// Read a resource
     pub async fn read(&self, request: ResourceRead) -> Result<ResourceContent> {
         let uri = &request.uri;
-        debug!("Reading resource: {}", uri);
+        log::debug!("Reading resource: {}", uri);
 
         // Parse URI
         if let Some(path) = uri.strip_prefix("logs://") {
