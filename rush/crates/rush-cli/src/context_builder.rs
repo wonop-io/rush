@@ -89,6 +89,7 @@ pub async fn create_context(
         vault.clone(),
         redirected_components,
         silence_components,
+        local_service_env_vars,
     )?;
     
     // Set the output sink on the reactor
@@ -354,6 +355,7 @@ fn create_reactor(
     vault: Arc<Mutex<dyn Vault + Send>>,
     redirected_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
+    local_service_env_vars: HashMap<String, String>,
 ) -> Result<ContainerReactor> {
     // TODO: Resolve conflicting name for NoopEncoder
     let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
@@ -378,7 +380,13 @@ fn create_reactor(
         redirected_components,
         silence_components,
     ) {
-        Ok(reactor) => Ok(reactor),
+        Ok(mut reactor) => {
+            // Add local service environment variables to the reactor
+            for (key, value) in local_service_env_vars {
+                reactor.add_env_var(key, value);
+            }
+            Ok(reactor)
+        }
         Err(e) => {
             error!("Failed to create Reactor: {}", e);
             eprintln!("{e}");

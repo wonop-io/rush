@@ -102,8 +102,8 @@ impl LocalServiceManager {
             sleep(Duration::from_millis(500)).await;
         }
         
-        // Collect environment variables and secrets
-        self.collect_env_vars().await?;
+        // Don't collect env vars here - they should be collected after wait_for_healthy
+        // to ensure services like Stripe have generated their secrets
         
         self.output.info("All local services started successfully").await;
         Ok(())
@@ -133,7 +133,7 @@ impl LocalServiceManager {
     }
     
     /// Wait for all services to be healthy
-    pub async fn wait_for_healthy(&self, timeout_duration: Duration) -> Result<()> {
+    pub async fn wait_for_healthy(&mut self, timeout_duration: Duration) -> Result<()> {
         self.output.info(format!("Waiting for all services to be healthy (timeout: {:?})", timeout_duration)).await;
         
         let start_time = std::time::Instant::now();
@@ -183,6 +183,11 @@ impl LocalServiceManager {
         }
         
         self.output.info("All services are healthy").await;
+        
+        // Collect environment variables and secrets after all services are healthy
+        // This ensures services like Stripe have had time to generate their secrets
+        self.collect_env_vars().await?;
+        
         Ok(())
     }
     
