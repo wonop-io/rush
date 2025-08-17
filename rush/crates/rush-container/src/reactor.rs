@@ -1770,13 +1770,40 @@ impl ContainerReactor {
     async fn cleanup_containers_by_name(&self) -> Result<()> {
         trace!("Cleaning up containers by name pattern");
 
+        // Clean up application containers
         for spec in &self.component_specs {
+            // Skip LocalService specs as they have different naming
+            if matches!(spec.build_type, BuildType::LocalService { .. }) {
+                continue;
+            }
+            
             // Use product_name-component_name to match the container naming convention
             let container_name = format!("{}-{}", self.config.product_name, spec.component_name);
 
             // Try to kill and remove with retries
             self.kill_and_remove_container_with_retry(&container_name, 3)
                 .await?;
+        }
+        
+        // Clean up local service containers (rush-local-* pattern)
+        info!("Cleaning up local service containers");
+        for spec in &self.component_specs {
+            if let BuildType::LocalService { service_type, .. } = &spec.build_type {
+                // Handle Stripe CLI specially - it runs as a local process, not a container
+                if service_type == "stripe-cli" || service_type == "stripe" {
+                    info!("Stripe CLI will be terminated when the process exits");
+                    // The Stripe process has kill_on_drop(true) so it will be killed automatically
+                    continue;
+                }
+                
+                let container_name = format!("rush-local-{}", spec.component_name);
+                
+                // Try to kill and remove local service container
+                match self.kill_and_remove_container_with_retry(&container_name, 3).await {
+                    Ok(_) => info!("Cleaned up local service container: {}", container_name),
+                    Err(e) => warn!("Failed to clean up local service container {}: {}", container_name, e),
+                }
+            }
         }
 
         trace!("Container cleanup by name completed");
