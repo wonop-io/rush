@@ -19,19 +19,20 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Starts local services and returns their environment variables
+/// Starts local services and returns their environment variables and the manager
 pub async fn start_local_services(
     config: &Config,
     product_name: &str,
     docker_command: &str,
-) -> Result<HashMap<String, String>> {
+) -> Result<(HashMap<String, String>, LocalServiceManager)> {
     info!("Starting local services for {}", product_name);
     
     // Parse stack.spec.yaml to find local services
     let stack_spec_path = config.product_path().join("stack.spec.yaml");
     if !stack_spec_path.exists() {
         info!("No stack.spec.yaml found, skipping local services");
-        return Ok(HashMap::new());
+        let manager = LocalServiceManager::new();
+        return Ok((HashMap::new(), manager));
     }
     
     // Load and parse the stack spec
@@ -99,7 +100,7 @@ pub async fn start_local_services(
     
     if !has_local_services {
         info!("No local services found in stack.spec.yaml");
-        return Ok(HashMap::new());
+        return Ok((HashMap::new(), manager));
     }
     
     // Start all local services
@@ -128,7 +129,7 @@ pub async fn start_local_services(
     }
     
     info!("Local services started successfully with {} environment variables", all_env_vars.len());
-    Ok(all_env_vars)
+    Ok((all_env_vars, manager))
 }
 
 /// Register a local service based on its component spec

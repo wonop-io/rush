@@ -50,21 +50,21 @@ pub async fn create_context(
     )?;
 
     // Start local services BEFORE creating .env files (if this is for the dev command)
-    let local_service_env_vars = if matches.subcommand_matches("dev").is_some() {
+    let (local_service_env_vars, local_services_manager) = if matches.subcommand_matches("dev").is_some() {
         info!("Starting local services before environment file generation...");
         let docker_command = env::var("DOCKER_COMMAND").unwrap_or_else(|_| "docker".to_string());
         match crate::local_services_startup::start_local_services(&config, &product_name, &docker_command).await {
-            Ok(env_vars) => {
+            Ok((env_vars, manager)) => {
                 info!("Local services started with {} environment variables", env_vars.len());
-                env_vars
+                (env_vars, Some(manager))
             }
             Err(e) => {
                 warn!("Failed to start local services: {}", e);
-                HashMap::new()
+                (HashMap::new(), None)
             }
         }
     } else {
-        HashMap::new()
+        (HashMap::new(), None)
     };
 
     // Inject local service environment variables into the process environment
@@ -111,6 +111,7 @@ pub async fn create_context(
         vault,
         secrets_context,
         output_sink,
+        local_services_manager,
     ))
 }
 

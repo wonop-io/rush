@@ -350,31 +350,43 @@ impl LocalService for DockerLocalService {
     }
     
     async fn stop(&mut self) -> Result<()> {
+        self.output.info(format!("Stopping Docker local service: {}", self.name)).await;
+        
+        // Always try to stop by name to ensure we clean up properly
+        // This handles cases where container_id might not be set correctly
+        let container_name = self.get_container_name();
+        
+        // First try to stop using the container ID if we have it
         if let Some(container_id) = &self.container_id {
-            self.output.info(format!("Stopping Docker local service: {}", self.name)).await;
-            
-            self.docker_client
-                .stop_container(container_id)
-                .await
-                .map_err(|e| Error::Docker(format!(
-                    "Failed to stop {}: {}",
-                    self.name, e
-                )))?;
-            
-            // Only remove if not persisting data
-            if !self.config.persist_data {
-                self.docker_client
-                    .remove_container(container_id)
-                    .await
-                    .map_err(|e| Error::Docker(format!(
-                        "Failed to remove {}: {}",
-                        self.name, e
-                    )))?;
-            }
-            
-            self.container_id = None;
-            self.output.info(format!("Docker local service {} stopped", self.name)).await;
+            let _ = self.docker_client.stop_container(container_id).await;
         }
+        
+        // Also try to stop by name to ensure cleanup
+        // This catches containers that might have been started but not tracked properly
+        match self.docker_client.get_container_by_name(&container_name).await {
+            Ok(existing_id) => {
+                self.output.info(format!("Stopping container {} by name", container_name)).await;
+                
+                // Stop the container
+                if let Err(e) = self.docker_client.stop_container(&existing_id).await {
+                    self.output.error(format!("Failed to stop container {}: {}", container_name, e)).await;
+                }
+                
+                // Always remove the container on shutdown (even if persist_data is true)
+                // When the program restarts, it will create a new container
+                self.output.info(format!("Removing container {}", container_name)).await;
+                if let Err(e) = self.docker_client.remove_container(&existing_id).await {
+                    self.output.error(format!("Failed to remove container {}: {}", container_name, e)).await;
+                }
+            }
+            Err(_) => {
+                // Container doesn't exist or already stopped
+                self.output.info(format!("Container {} not found or already stopped", container_name)).await;
+            }
+        }
+        
+        self.container_id = None;
+        self.output.info(format!("Docker local service {} stopped", self.name)).await;
         
         Ok(())
     }

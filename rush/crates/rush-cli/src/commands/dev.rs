@@ -160,13 +160,23 @@ impl DevCommand {
         debug!("Output system initialized");
 
         // Launch the development environment
-        match dev_env.start().await {
+        let result = dev_env.start().await;
+        
+        // Always try to stop the dev environment after it completes
+        // This is crucial for cleanup
+        info!("Stopping development environment and local services...");
+        if let Err(e) = dev_env.stop().await {
+            error!("Error during development environment stop: {}", e);
+        }
+        
+        // Return the original result
+        match result {
             Ok(_) => {
-                info!("Development environment launched successfully");
+                info!("Development environment completed successfully");
                 Ok(())
             }
             Err(e) => {
-                error!("Failed to launch development environment: {}", e);
+                error!("Development environment failed: {}", e);
                 Err(Error::LaunchFailed(e.to_string()))
             }
         }

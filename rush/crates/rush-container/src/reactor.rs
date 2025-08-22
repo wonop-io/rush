@@ -770,7 +770,7 @@ impl ContainerReactor {
 
         info!("Container reactor shutting down");
 
-        // Cleanup containers on shutdown (with timeout to prevent hanging)
+        // Cleanup application containers on shutdown (with timeout to prevent hanging)
         let cleanup_result = tokio::time::timeout(
             std::time::Duration::from_secs(10),
             self.cleanup_containers(),
@@ -778,15 +778,15 @@ impl ContainerReactor {
         .await;
 
         match cleanup_result {
-            Ok(Ok(())) => info!("Container cleanup completed successfully"),
-            Ok(Err(e)) => warn!("Container cleanup failed: {}", e),
-            Err(_) => warn!("Container cleanup timed out"),
+            Ok(Ok(())) => info!("Application container cleanup completed successfully"),
+            Ok(Err(e)) => warn!("Application container cleanup failed: {}", e),
+            Err(_) => warn!("Application container cleanup timed out"),
         }
 
-        // Note: Stripe is now managed by local_services_startup.rs and will be
-        // stopped when the process exits
-
-        // Note: Local services are now managed by DevEnvironment
+        // IMPORTANT: Local services are NOT cleaned up here
+        // They persist across reactor restarts and are only stopped on final program termination
+        // Local services are managed by DevEnvironment and will be stopped when the process exits
+        info!("Local services will continue running (they persist across rebuilds)");
 
         Ok(())
     }
@@ -1658,16 +1658,18 @@ impl ContainerReactor {
                 _ = status_check_interval.tick() => {
                     // Check container statuses
                     for service in &self.running_services {
+                        let container_name = service.name().unwrap_or_else(|| service.id().to_string());
+                        
                         match service.status().await {
                             Ok(ContainerStatus::Exited(code)) => {
-                                let container_name = service.name().unwrap_or_else(|| service.id().to_string());
+                                // Container has exited
                                 if code != 0 {
-                                    error!("Container '{}' failed with exit code {} - shutting down all containers", container_name, code);
+                                    error!("Container '{}' failed with exit code {} - initiating shutdown", container_name, code);
                                 } else {
-                                    warn!("Container '{}' exited with code 0 - shutting down all containers", container_name);
+                                    warn!("Container '{}' exited with code 0 - initiating shutdown", container_name);
                                 }
 
-                                info!("Initiating graceful shutdown of all containers due to container exit");
+                                info!("Shutting down all application containers due to container exit");
 
                                 // Trigger global shutdown so all parts of the system know we're shutting down
                                 shutdown::global_shutdown().shutdown(shutdown::ShutdownReason::ContainerExit);
@@ -1678,24 +1680,19 @@ impl ContainerReactor {
                             }
                             Ok(ContainerStatus::Unknown) => {
                                 // Container might have been removed or doesn't exist
-                                // Check if we expected this container to be running
-                                let container_name = service.name().unwrap_or_else(|| service.id().to_string());
                                 warn!("Container '{}' status unknown - it may have crashed or been removed", container_name);
 
-                                // Treat unknown status as a potential crash
-                                info!("Container '{}' is no longer accessible - shutting down all containers", container_name);
-
-                                // Trigger global shutdown
-                                shutdown::global_shutdown().shutdown(shutdown::ShutdownReason::ContainerExit);
-
-                                // Clean up containers
-                                self.cleanup_containers().await?;
-                                return Ok(false); // Signal to stop the reactor
+                                // Don't immediately shutdown for unknown status - wait a bit
+                                // The container might be restarting or temporarily unreachable
+                                debug!("Will check again on next interval");
+                            }
+                            Ok(ContainerStatus::Running) => {
+                                // Container is running normally
+                                trace!("Container '{}' is running", container_name);
                             }
                             Err(e) => {
-                                error!("Error checking container status: {}", e);
+                                warn!("Error checking status for container '{}': {}", container_name, e);
                             }
-                            _ => {}
                         }
                     }
                 }
@@ -1709,15 +1706,14 @@ impl ContainerReactor {
     ///
     /// Result indicating success or failure
     async fn cleanup_containers(&mut self) -> Result<()> {
-        info!("Cleaning up containers");
+        info!("Cleaning up application containers (preserving local services)");
 
         // Clear any pending file changes to prevent processing during shutdown
         self.change_processor.clear();
         debug!("Cleared pending file changes");
 
-        // Stop local services if configured (they persist between rebuilds)
-        // Note: We're not stopping them here because they should persist
-        // Only stop them on final shutdown
+        // IMPORTANT: Local services should persist and only be stopped on final program termination
+        // They are managed by DevEnvironment, not the reactor
 
         // Broadcast shutdown signal to all services
         let _ = self.shutdown_sender.send(());
@@ -1768,12 +1764,13 @@ impl ContainerReactor {
     /// Clean up containers by name pattern (like old implementation)
     /// This handles containers that might exist from previous failed attempts
     async fn cleanup_containers_by_name(&self) -> Result<()> {
-        trace!("Cleaning up containers by name pattern");
+        trace!("Cleaning up application containers by name pattern (excluding local services)");
 
-        // Clean up application containers
+        // Clean up application containers ONLY
         for spec in &self.component_specs {
-            // Skip LocalService specs as they have different naming
+            // Skip LocalService specs - they should persist
             if matches!(spec.build_type, BuildType::LocalService { .. }) {
+                debug!("Skipping local service {} - it should persist", spec.component_name);
                 continue;
             }
             
@@ -1785,26 +1782,10 @@ impl ContainerReactor {
                 .await?;
         }
         
-        // Clean up local service containers (rush-local-* pattern)
-        info!("Cleaning up local service containers");
-        for spec in &self.component_specs {
-            if let BuildType::LocalService { service_type, .. } = &spec.build_type {
-                // Handle Stripe CLI specially - it runs as a local process, not a container
-                if service_type == "stripe-cli" || service_type == "stripe" {
-                    info!("Stripe CLI will be terminated when the process exits");
-                    // The Stripe process has kill_on_drop(true) so it will be killed automatically
-                    continue;
-                }
-                
-                let container_name = format!("rush-local-{}", spec.component_name);
-                
-                // Try to kill and remove local service container
-                match self.kill_and_remove_container_with_retry(&container_name, 3).await {
-                    Ok(_) => info!("Cleaned up local service container: {}", container_name),
-                    Err(e) => warn!("Failed to clean up local service container {}: {}", container_name, e),
-                }
-            }
-        }
+        // DO NOT clean up local service containers during reactor cleanup
+        // Local services (rush-local-*) should only be stopped on final program termination
+        // They are managed by DevEnvironment, not the reactor
+        debug!("Preserving local service containers - they persist across rebuilds");
 
         trace!("Container cleanup by name completed");
         Ok(())

@@ -52,9 +52,15 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
 
         // Note: Local services are already started in context_builder before .env generation
         // We just need to launch the application containers now
-        match ctx.reactor.launch().await {
+        let result = ctx.reactor.launch().await;
+        
+        // Stop local services when the reactor exits
+        // The component that started them is responsible for stopping them
+        ctx.stop_local_services().await;
+        
+        match result {
             Ok(_) => {
-                trace!("Development environment launched successfully");
+                trace!("Development environment completed successfully");
                 Ok(())
             }
             Err(e) => {

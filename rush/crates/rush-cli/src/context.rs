@@ -1,5 +1,6 @@
 use rush_config::Config;
 use rush_container::ContainerReactor;
+use rush_local_services::LocalServiceManager;
 use rush_output::simple::Sink;
 use rush_security::{SecretsDefinitions, Vault};
 use rush_toolchain::ToolchainContext;
@@ -15,6 +16,7 @@ pub struct CliContext {
     pub vault: Arc<Mutex<dyn Vault + Send>>,
     pub secrets_context: SecretsDefinitions,
     pub output_sink: Arc<TokioMutex<Box<dyn Sink>>>,
+    pub local_services: Option<LocalServiceManager>,
 }
 
 impl CliContext {
@@ -27,6 +29,7 @@ impl CliContext {
         vault: Arc<Mutex<dyn Vault + Send>>,
         secrets_context: SecretsDefinitions,
         output_sink: Arc<TokioMutex<Box<dyn Sink>>>,
+        local_services: Option<LocalServiceManager>,
     ) -> Self {
         Self {
             config,
@@ -37,6 +40,17 @@ impl CliContext {
             vault,
             secrets_context,
             output_sink,
+            local_services,
+        }
+    }
+    
+    /// Stop local services if they are running
+    pub async fn stop_local_services(&mut self) {
+        if let Some(ref mut local_services) = self.local_services {
+            log::info!("Stopping local services from context...");
+            if let Err(e) = local_services.stop_all().await {
+                log::error!("Failed to stop local services: {}", e);
+            }
         }
     }
 }

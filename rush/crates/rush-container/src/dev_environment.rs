@@ -2,7 +2,7 @@
 //!
 //! This module coordinates local services and application containers.
 
-use log::{info, warn};
+use log::{error, info, warn};
 use rush_build::{BuildType, ComponentBuildSpec};
 use rush_core::docker::DockerClient;
 use rush_core::error::{Error, Result};
@@ -34,6 +34,7 @@ pub struct DevEnvironment {
     /// Data directory for local services
     data_dir: PathBuf,
 }
+
 
 impl DevEnvironment {
     /// Create a new development environment
@@ -203,20 +204,30 @@ impl DevEnvironment {
         
         // Phase 4: Start application containers
         info!("Phase 4: Starting application containers...");
+        
+        // Run the reactor - it will handle its own lifecycle
         self.reactor.launch().await
     }
     
     /// Stop the development environment
     pub async fn stop(&mut self) -> Result<()> {
         // The reactor handles its own cleanup through the shutdown signal
-        info!("Stopping development environment...");
+        info!("DevEnvironment::stop() called - stopping all local services");
         
-        // Stop local services
-        info!("Stopping local services...");
-        if let Err(e) = self.local_services.stop_all().await {
-            warn!("Error stopping local services: {}", e);
+        // Check if we're in a shutdown scenario
+        let shutdown_token = rush_core::shutdown::global_shutdown().cancellation_token();
+        if shutdown_token.is_cancelled() {
+            info!("Shutdown detected in stop() - will forcefully stop local services");
         }
         
+        // Stop local services
+        info!("Calling local_services.stop_all()...");
+        match self.local_services.stop_all().await {
+            Ok(()) => info!("Local services stopped successfully"),
+            Err(e) => error!("Failed to stop local services: {}", e),
+        }
+        
+        info!("DevEnvironment::stop() completed");
         Ok(())
     }
     
