@@ -6,7 +6,6 @@ pub mod context;
 pub mod script;
 pub mod spec;
 pub mod strategy;
-pub mod types;
 pub mod variables;
 
 pub use artefact::Artefact;

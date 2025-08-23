@@ -8,7 +8,6 @@ mod build_type;
 mod context;
 mod script;
 mod spec;
-mod types;
 mod variables;
 
 // Re-export key components
@@ -17,8 +16,6 @@ pub use build_type::BuildType;
 pub use context::BuildContext;
 pub use script::BuildScript;
 pub use spec::{ComponentBuildSpec, ServiceSpec};
-//pub use types::BuildStatus;
 pub use variables::Variables;
 
 // Re-export templates for use in other modules
-//pub(crate) use templates::TEMPLATES;
