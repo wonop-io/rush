@@ -4,13 +4,16 @@
 //! all other Rush crates.
 
 pub mod config_loader;
+pub mod config_repository;
 pub mod constants;
 pub mod dotenv;
 pub mod error;
 pub mod error_context;
 pub mod events;
+pub mod plugin;
 pub mod service_constants;
 pub mod shutdown;
+pub mod state_machine;
 pub mod types;
 
 // Re-export commonly used items
