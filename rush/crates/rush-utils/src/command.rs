@@ -3,12 +3,13 @@
 //! This module provides a consistent interface for executing external commands
 //! with proper error handling, logging, and timeout support.
 
-use crate::error::{Error, Result};
-use crate::error_context::ErrorContext;
 use log::{debug, error, trace};
+use rush_core::{Error, ErrorContext, Result};
 use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Command as TokioCommand;
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 /// Configuration for command execution
@@ -207,4 +208,87 @@ pub async fn run_command(program: &str, args: &[&str]) -> Result<CommandOutput> 
 pub async fn get_command_output(program: &str, args: &[&str]) -> Result<String> {
     CommandRunner::run_output(CommandConfig::new(program).args(args.iter().map(|s| s.to_string())))
         .await
+}
+
+// Keep the existing run_command for backward compatibility, but with a different signature
+/// Executes a command and captures its output with formatted label
+///
+/// # Arguments
+///
+/// * `formatted_label` - A label to display with command output
+/// * `command` - The command to execute
+/// * `args` - Arguments for the command
+///
+/// # Returns
+///
+/// * `Result<String, String>` - The command output or an error message
+pub async fn run_command_with_label(
+    formatted_label: &str,
+    command: &str,
+    args: Vec<&str>,
+) -> std::result::Result<String, String> {
+    let debug_args = args.join(" ");
+    trace!("Running command: {} {}", command, debug_args);
+
+    // Create process
+    let mut child = TokioCommand::new(command)
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to execute command: {e}"))?;
+
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    // Create channels for handling output
+    let (tx, mut rx) = mpsc::channel(100);
+    let stdout_task = tokio::spawn(handle_stream(stdout, tx.clone()));
+    let stderr_task = tokio::spawn(handle_stream(stderr, tx));
+
+    // Collect output
+    let mut lines = Vec::new();
+    while let Some(line) = rx.recv().await {
+        trace!("Received line: {}", line.trim_end());
+        lines.push(line.trim_end().to_string());
+        let clean_line = line.trim_end().replace(['\x1B', '\r', '\n'], "");
+        println!("{} {}", formatted_label, clean_line);
+    }
+
+    // Wait for tasks to complete
+    let _ = tokio::join!(stdout_task, stderr_task);
+
+    // Wait for child process
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Failed to wait for process: {e}"))?;
+
+    let output = lines.join("\n");
+
+    if status.success() {
+        Ok(output)
+    } else {
+        Err(format!(
+            "Command failed with status {:?}: {}",
+            status.code(),
+            output
+        ))
+    }
+}
+
+/// Helper function to handle async reading from a stream
+async fn handle_stream<R: AsyncRead + Unpin>(
+    stream: R,
+    tx: mpsc::Sender<String>,
+) -> Result<()> {
+    let reader = BufReader::new(stream);
+    let mut lines = reader.lines();
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        if tx.send(line).await.is_err() {
+            break; // Receiver dropped
+        }
+    }
+    Ok(())
 }

@@ -1,22 +1,9 @@
-//! Docker client interface for container management
-//!
-//! This module provides abstractions for interacting with Docker to create,
-//! manage, and monitor containers.
+//! Docker client trait definitions
 
-use crate::error::Result;
+use crate::status::ContainerStatus;
 use async_trait::async_trait;
+use rush_core::Result;
 use std::fmt;
-
-/// Status of a Docker container
-#[derive(Debug, Clone, PartialEq)]
-pub enum ContainerStatus {
-    /// Container is running
-    Running,
-    /// Container has exited with a status code
-    Exited(i32),
-    /// Container status couldn't be determined
-    Unknown,
-}
 
 /// Defines operations that can be performed on Docker containers
 #[async_trait]

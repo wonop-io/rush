@@ -17,6 +17,7 @@ notify = { workspace = true }
 rush-build = { workspace = true }
 rush-config = { workspace = true }
 rush-core = { workspace = true }
+rush-docker = { workspace = true }
 rush-local-services = { workspace = true }
 rush-output = { workspace = true }
 rush-security = { workspace = true }

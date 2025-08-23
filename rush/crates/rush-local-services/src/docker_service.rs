@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use log::warn;
-use rush_core::docker::{ContainerStatus, DockerClient};
+use rush_docker::{ContainerStatus, DockerClient};
 use rush_core::error::{Error, Result};
 use rush_output::simple::Sink;
 use std::collections::HashMap;

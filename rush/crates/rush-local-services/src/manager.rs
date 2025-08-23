@@ -146,7 +146,7 @@ impl LocalServiceManager {
             let remaining = timeout_duration.saturating_sub(start_time.elapsed());
             
             if remaining.is_zero() {
-                return Err(Error::Configuration(format!(
+                return Err(Error::Config(format!(
                     "Timeout waiting for services to be healthy"
                 )));
             }
@@ -177,7 +177,7 @@ impl LocalServiceManager {
                 Ok(Ok(())) => continue,
                 Ok(Err(e)) => return Err(Error::Docker(format!("Health check error: {}", e))),
                 Err(_) => {
-                    return Err(Error::Configuration(format!(
+                    return Err(Error::Config(format!(
                         "Timeout waiting for {} to be healthy",
                         name
                     )));

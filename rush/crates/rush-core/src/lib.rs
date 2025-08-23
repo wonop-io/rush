@@ -3,11 +3,8 @@
 //! This crate provides the core types, traits, and utilities used across
 //! all other Rush crates.
 
-pub mod command;
 pub mod config_loader;
 pub mod constants;
-pub mod docker;
-pub mod docker_executor;
 pub mod dotenv;
 pub mod error;
 pub mod error_context;
@@ -18,6 +15,7 @@ pub mod types;
 // Re-export commonly used items
 pub use constants::*;
 pub use error::{Error, Result};
+pub use error_context::{ErrorContext, OptionContext};
 pub use shutdown::{global_shutdown, ShutdownCoordinator, ShutdownReason};
 
 /// Rush version

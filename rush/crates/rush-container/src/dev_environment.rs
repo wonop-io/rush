@@ -2,9 +2,9 @@
 //!
 //! This module coordinates local services and application containers.
 
-use log::{error, info, warn};
+use log::{error, info};
 use rush_build::{BuildType, ComponentBuildSpec};
-use rush_core::docker::DockerClient;
+use rush_docker::DockerClient;
 use rush_core::error::{Error, Result};
 use rush_local_services::{
     DockerLocalService, LocalServiceConfig, LocalServiceManager,

@@ -2498,6 +2498,7 @@ dependencies = [
  "rush-config",
  "rush-container",
  "rush-core",
+ "rush-docker",
  "rush-helper",
  "rush-k8s",
  "rush-local-services",
@@ -2551,6 +2552,7 @@ dependencies = [
  "rush-build",
  "rush-config",
  "rush-core",
+ "rush-docker",
  "rush-local-services",
  "rush-output",
  "rush-security",
@@ -2584,6 +2586,19 @@ dependencies = [
  "tokio-test",
  "tokio-util",
  "toml",
+]
+
+[[package]]
+name = "rush-docker"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bollard",
+ "futures",
+ "log",
+ "rush-core",
+ "tokio",
+ "tokio-test",
 ]
 
 [[package]]
@@ -2631,6 +2646,7 @@ dependencies = [
  "bollard",
  "log",
  "rush-core",
+ "rush-docker",
  "rush-output",
  "rush-utils",
  "serde",

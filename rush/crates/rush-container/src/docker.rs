@@ -11,8 +11,8 @@ use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::Command;
 
-// Re-export the DockerClient trait and ContainerStatus from rush-core
-pub use rush_core::docker::{ContainerStatus, DockerClient};
+// Re-export the DockerClient trait and ContainerStatus from rush-docker
+pub use rush_docker::{ContainerStatus, DockerClient};
 
 /// Health status of a container
 #[derive(Debug, Clone, PartialEq)]

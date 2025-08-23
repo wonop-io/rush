@@ -1,9 +1,11 @@
-use crate::docker::{ContainerStatus, DockerClient};
-use crate::error::{Error, Result};
+//! Docker client implementations
+
+use crate::{ContainerStatus, DockerClient};
 use async_trait::async_trait;
-use log::{debug, error, info};
+use rush_core::{Error, Result};
 use std::process::Stdio;
 use tokio::process::Command;
+use log::{debug, error, info};
 
 /// Docker executor that implements DockerClient using command-line interface
 #[derive(Debug, Clone)]
@@ -363,5 +365,4 @@ impl DockerClient for DockerExecutor {
             Ok(id.to_string())
         }
     }
-
 }

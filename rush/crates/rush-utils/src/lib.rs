@@ -1,5 +1,6 @@
 //! Rush Utils - General utilities and helpers
 
+pub mod command;
 pub mod command_runner;
 pub mod directory;
 pub mod docker_cross;
@@ -24,6 +25,9 @@ pub use self::r#mod::{first_which, resolve_toolchain_path, which};
 
 // Re-export command runner functions
 pub use command_runner::run_command_in_window;
+
+// Re-export the new unified command utilities
+pub use command::{CommandConfig, CommandOutput, CommandRunner, get_command_output, run_command_with_label};
 
 /// Run a command with proper error handling
 pub async fn run_command(

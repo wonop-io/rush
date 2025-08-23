@@ -8,7 +8,7 @@ use log::info;
 use rush_build::{BuildType, ComponentBuildSpec, Variables};
 use rush_config::Config;
 use rush_container::DockerCliClient;
-use rush_core::docker::DockerClient;
+use rush_docker::DockerClient;
 use rush_core::error::{Error, Result};
 use rush_local_services::{
     DockerLocalService, LocalServiceConfig, LocalServiceManager,

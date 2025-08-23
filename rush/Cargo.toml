@@ -5,6 +5,7 @@ members = [
     "crates/rush-config",
     "crates/rush-container",
     "crates/rush-core",
+    "crates/rush-docker",
     "crates/rush-helper",
     "crates/rush-k8s",
     "crates/rush-local-services",
@@ -69,6 +70,7 @@ rush-config = { path = "crates/rush-config" }
 rush-container = { path = "crates/rush-container" }
 # Internal crates
 rush-core = { path = "crates/rush-core" }
+rush-docker = { path = "crates/rush-docker" }
 rush-helper = { path = "crates/rush-helper" }
 rush-k8s = { path = "crates/rush-k8s" }
 rush-local-services = { path = "crates/rush-local-services" }

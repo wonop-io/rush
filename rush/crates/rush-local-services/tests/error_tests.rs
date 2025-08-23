@@ -2,8 +2,8 @@ use rush_local_services::Error;
 
 #[test]
 fn test_error_variants() {
-    let config_error = Error::Configuration("Invalid config".to_string());
-    assert!(matches!(config_error, Error::Configuration(_)));
+    let config_error = Error::Config("Invalid config".to_string());
+    assert!(matches!(config_error, Error::Config(_)));
 
     let docker_error = Error::Docker("Docker failed".to_string());
     assert!(matches!(docker_error, Error::Docker(_)));
@@ -23,7 +23,7 @@ fn test_error_variants() {
 
 #[test]
 fn test_error_display() {
-    let config_error = Error::Configuration("Invalid config".to_string());
+    let config_error = Error::Config("Invalid config".to_string());
     let error_str = format!("{config_error}");
     assert!(error_str.contains("Configuration error"));
     assert!(error_str.contains("Invalid config"));
@@ -60,9 +60,9 @@ fn test_error_display() {
 
 #[test]
 fn test_error_equality() {
-    let error1 = Error::Configuration("test".to_string());
-    let error2 = Error::Configuration("test".to_string());
-    let error3 = Error::Configuration("different".to_string());
+    let error1 = Error::Config("test".to_string());
+    let error2 = Error::Config("test".to_string());
+    let error3 = Error::Config("different".to_string());
 
     assert_eq!(error1, error2);
     assert_ne!(error1, error3);
@@ -91,13 +91,13 @@ fn test_result_type() {
     }
 
     fn returns_err() -> rush_local_services::Result<String> {
-        Err(Error::Configuration("failed".to_string()))
+        Err(Error::Config("failed".to_string()))
     }
 
     assert!(returns_ok().is_ok());
     assert!(returns_err().is_err());
 
     if let Err(e) = returns_err() {
-        assert!(matches!(e, Error::Configuration(_)));
+        assert!(matches!(e, Error::Config(_)));
     }
 }

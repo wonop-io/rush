@@ -16,6 +16,7 @@ async-trait = { workspace = true }
 bollard = { workspace = true }
 log = { workspace = true }
 rush-core = { workspace = true }
+rush-docker = { workspace = true }
 rush-output = { workspace = true }
 rush-utils = { workspace = true }
 serde = { workspace = true }
