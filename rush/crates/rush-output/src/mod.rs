@@ -1,6 +1,5 @@
 pub mod buffered;
 pub mod director;
-pub mod example;
 pub mod factory;
 pub mod file;
 pub mod shared;

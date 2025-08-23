@@ -19,7 +19,6 @@ pub mod stream;
 pub mod buffered;
 pub mod config;
 pub mod director;
-pub mod example;
 pub mod factory;
 pub mod file;
 pub mod filter;
