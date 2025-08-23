@@ -8,7 +8,7 @@ mod service;
 mod status;
 mod watcher;
 
-pub use build::{handle_build_error, BuildError, BuildProcessor};
+pub use build::{BuildError, BuildProcessor};
 pub use docker::{
     ContainerStatus, DockerCliClient, DockerClient, DockerService, DockerServiceConfig,
 };

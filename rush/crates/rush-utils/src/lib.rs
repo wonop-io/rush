@@ -41,7 +41,7 @@ pub use command_runner::run_command_in_window;
 /// Deprecated: Use CommandRunner::run() with CommandConfig instead
 #[deprecated(note = "Use CommandRunner::run() with CommandConfig instead")]
 pub async fn run_command(
-    name: &str,
+    _name: &str,
     command: &str,
     args: Vec<&str>,
 ) -> Result<String, anyhow::Error> {
