@@ -1,10 +1,9 @@
-//! Build related functionality for containers
+//! Build coordination for container images
 //!
-//! This module provides facilities for building container images and
-//! handling build errors.
+//! This module handles building Docker images from various build types.
 
 mod error;
 mod processor;
 
-pub use error::{handle_build_error, BuildError};
+pub use error::BuildError;
 pub use processor::BuildProcessor;

@@ -5,6 +5,7 @@ pub mod build_type;
 pub mod context;
 pub mod script;
 pub mod spec;
+pub mod strategy;
 pub mod types;
 pub mod variables;
 
@@ -13,4 +14,5 @@ pub use build_type::BuildType;
 pub use context::BuildContext;
 pub use script::BuildScript;
 pub use spec::{ComponentBuildSpec, ServiceSpec};
+pub use strategy::{BuildStrategy, BuildStrategyRegistry};
 pub use variables::Variables;

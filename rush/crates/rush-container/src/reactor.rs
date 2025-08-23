@@ -5,10 +5,10 @@
 use crate::DockerCliClient;
 use crate::Status;
 use crate::{
+    build::BuildProcessor,
     docker::{ContainerStatus, DockerClient, DockerService, DockerServiceConfig},
-    network::setup_network,
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
-    BuildProcessor, ContainerService, ServiceCollection,
+    ContainerService, ServiceCollection,
 };
 use notify::RecommendedWatcher;
 use rush_build::{BuildType, ComponentBuildSpec, Variables};
@@ -482,7 +482,10 @@ impl ContainerReactor {
         info!("Starting container reactor");
 
         // Set up the network
-        setup_network(&self.config.network_name, &self.docker_client).await?;
+        // Setup network
+        if !self.docker_client.network_exists(&self.config.network_name).await? {
+            self.docker_client.create_network(&self.config.network_name).await?;
+        }
 
         // Start the main launch loop
         self.launch_loop().await

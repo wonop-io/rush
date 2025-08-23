@@ -4,8 +4,6 @@ pub mod build;
 pub mod dev_environment;
 pub mod docker;
 pub mod image_builder;
-pub mod lifecycle;
-pub mod network;
 pub mod reactor;
 pub mod service;
 pub mod simple_output;
@@ -22,9 +20,6 @@ pub use image_builder::{BuildConfig, ImageBuilder};
 pub use reactor::{ContainerReactor, ContainerReactorConfig};
 pub use service::{ContainerService, ServiceCollection, ServiceConfig, ServicesSpec};
 pub use status::Status;
-
-// Re-export build types
-pub use build::BuildProcessor;
 
 // Type aliases
 pub type ContainerHandle = docker::DockerService;
