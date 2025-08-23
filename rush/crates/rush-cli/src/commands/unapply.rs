@@ -39,17 +39,18 @@ pub async fn execute(_args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
     let manifest_path = config.output_path().join("k8s");
     let output_dir = manifest_path.display().to_string();
 
-    match rush_utils::run_command(
-        "kubectl delete",
-        &kubectl_path,
-        vec!["delete", "-R", "-f", &output_dir],
-    )
-    .await
-    {
-        Ok(_) => {
+    let config = rush_utils::CommandConfig::new(&kubectl_path)
+        .args(vec!["delete", "-R", "-f", &output_dir])
+        .capture(true);
+    
+    match rush_utils::CommandRunner::run(config).await {
+        Ok(output) if output.success() => {
             println!("Successfully unapplied Kubernetes resources");
             Ok(())
         }
+        Ok(output) => Err(Error::Kubernetes(format!(
+            "Failed to unapply Kubernetes resources: {}", output.stderr
+        ))),
         Err(e) => Err(Error::Kubernetes(format!(
             "Failed to unapply Kubernetes resources: {e}"
         ))),

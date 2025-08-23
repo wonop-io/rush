@@ -7,7 +7,7 @@ use rush_config::product::ProductLoader;
 use rush_config::Config;
 use rush_core::error::{Error, Result};
 use rush_toolchain::{Platform, ToolchainContext};
-use rush_utils::run_command;
+use rush_utils::{CommandConfig, CommandRunner};
 use std::collections::HashMap;
 use std::path::Path;
 use std::process;
@@ -185,9 +185,15 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
                 "Executing build script for {} in {}",
                 context.component, location
             );
-            run_command("build", "sh", vec!["-c", &build_script])
+            let config = CommandConfig::new("sh")
+                .args(vec!["-c", &build_script])
+                .capture(true);
+            let output = CommandRunner::run(config)
                 .await
                 .map_err(|e| Error::Build(format!("Build script execution failed: {e}")))?;
+            if !output.success() {
+                return Err(Error::Build(format!("Build script execution failed: {}", output.stderr)));
+            }
 
             // Build Docker image if needed
             build_docker_image(context, toolchain).await?;
@@ -198,13 +204,15 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
         } => {
             // Pull the Docker image
             debug!("Pulling Docker image: {}", image_name_with_tag);
-            run_command(
-                "docker pull",
-                toolchain.docker(),
-                vec!["pull", image_name_with_tag],
-            )
-            .await
-            .map_err(|e| Error::Build(format!("Failed to pull Docker image: {e}")))?;
+            let config = CommandConfig::new(toolchain.docker())
+                .args(vec!["pull", image_name_with_tag])
+                .capture(true);
+            let output = CommandRunner::run(config)
+                .await
+                .map_err(|e| Error::Build(format!("Failed to pull Docker image: {e}")))?;
+            if !output.success() {
+                return Err(Error::Build(format!("Failed to pull Docker image: {}", output.stderr)));
+            }
         }
         BuildType::PureKubernetes => {
             // Nothing to build for pure Kubernetes
@@ -386,20 +394,23 @@ async fn build_docker_image(
         image_tag, dockerfile_path
     );
 
-    run_command(
-        "docker build",
-        toolchain.docker(),
-        vec![
+    let config = CommandConfig::new(toolchain.docker())
+        .args(vec![
             "build",
             "-t",
             &image_tag,
             "-f",
             dockerfile_path,
             &context_dir,
-        ],
-    )
-    .await
-    .map_err(|e| Error::Build(format!("Docker build failed: {e}")))?;
+        ])
+        .capture(true);
+    
+    let output = CommandRunner::run(config).await
+        .map_err(|e| Error::Build(format!("Docker build failed: {e}")))?;
+    
+    if !output.success() {
+        return Err(Error::Build(format!("Docker build failed: {}", output.stderr)));
+    }
 
     Ok(())
 }

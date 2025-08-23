@@ -36,18 +36,18 @@ pub async fn execute(
     // Use recursive apply on the directory
     let output_dir = manifest_path.display().to_string();
 
-    let result = rush_utils::run_command(
-        "kubectl apply",
-        &kubectl,
-        vec!["apply", "-R", "-f", &output_dir],
-    )
-    .await;
+    let config = rush_utils::CommandConfig::new(&kubectl)
+        .args(vec!["apply", "-R", "-f", &output_dir])
+        .capture(true);
 
-    match result {
-        Ok(_) => {
+    match rush_utils::CommandRunner::run(config).await {
+        Ok(output) if output.success() => {
             println!("Successfully applied Kubernetes manifests");
             Ok(())
         }
+        Ok(output) => Err(rush_core::error::Error::Kubernetes(format!(
+            "Failed to apply manifests: {}", output.stderr
+        ))),
         Err(e) => Err(rush_core::error::Error::Kubernetes(format!(
             "Failed to apply manifests: {e}"
         ))),

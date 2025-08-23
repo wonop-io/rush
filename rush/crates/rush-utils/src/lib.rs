@@ -12,9 +12,6 @@ pub mod process;
 pub mod template;
 pub mod version;
 
-// Deprecated - use command module instead
-#[deprecated(note = "Use command module instead")]
-pub mod command_runner;
 
 // Core utilities
 pub use directory::Directory;
@@ -33,24 +30,3 @@ pub use command::{
     get_command_output, run_command_with_label
 };
 
-// Deprecated - for backward compatibility only
-#[deprecated(note = "Use CommandRunner::run() instead")]
-pub use command_runner::run_command_in_window;
-
-/// Run a command with proper error handling
-/// Deprecated: Use CommandRunner::run() with CommandConfig instead
-#[deprecated(note = "Use CommandRunner::run() with CommandConfig instead")]
-pub async fn run_command(
-    _name: &str,
-    command: &str,
-    args: Vec<&str>,
-) -> Result<String, anyhow::Error> {
-    let config = CommandConfig::new(command)
-        .args(args)
-        .capture(true);
-    
-    let output = CommandRunner::run(config).await
-        .map_err(|e| anyhow::anyhow!("Command failed: {}", e))?;
-    
-    Ok(output.stdout)
-}

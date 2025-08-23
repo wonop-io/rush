@@ -49,18 +49,18 @@ pub async fn execute(
 
     let output_dir = manifest_path.display().to_string();
 
-    let result = rush_utils::run_command(
-        "kubectl apply",
-        &kubectl,
-        vec!["apply", "-R", "-f", &output_dir],
-    )
-    .await;
+    let config = rush_utils::CommandConfig::new(&kubectl)
+        .args(vec!["apply", "-R", "-f", &output_dir])
+        .capture(true);
 
-    match result {
-        Ok(_) => {
+    match rush_utils::CommandRunner::run(config).await {
+        Ok(output) if output.success() => {
             info!("Successfully deployed application to Kubernetes");
             Ok(())
         }
+        Ok(output) => Err(Error::Deploy(format!(
+            "Failed to apply Kubernetes manifests: {}", output.stderr
+        ))),
         Err(e) => Err(Error::Deploy(format!(
             "Failed to apply Kubernetes manifests: {e}"
         ))),
