@@ -3,6 +3,7 @@
 //! This crate provides the core types, traits, and utilities used across
 //! all other Rush crates.
 
+pub mod cache;
 pub mod config_loader;
 pub mod config_repository;
 pub mod constants;
@@ -10,6 +11,8 @@ pub mod dotenv;
 pub mod error;
 pub mod error_context;
 pub mod events;
+pub mod middleware;
+pub mod performance;
 pub mod plugin;
 pub mod service_constants;
 pub mod shutdown;

@@ -4,7 +4,9 @@
 //! with versioning, validation, and hot-reload capabilities.
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+#[cfg(test)]
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::fmt::Debug;
