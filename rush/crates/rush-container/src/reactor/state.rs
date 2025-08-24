@@ -327,6 +327,12 @@ pub enum StateError {
     InvalidOperation(ReactorPhase),
 }
 
+impl From<StateError> for rush_core::error::Error {
+    fn from(err: StateError) -> Self {
+        rush_core::error::Error::Internal(err.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1652,6 +1652,27 @@ impl ContainerReactor {
                                 self.cleanup_containers().await?;
                                 return Ok(false); // Signal to stop the reactor
                             }
+                            Ok(ContainerStatus::Created) => {
+                                // Container was just created, not started yet
+                                debug!("Container '{}' is created but not started", container_name);
+                            }
+                            Ok(ContainerStatus::Restarting) => {
+                                // Container is restarting
+                                info!("Container '{}' is restarting", container_name);
+                            }
+                            Ok(ContainerStatus::Paused) => {
+                                // Container is paused
+                                warn!("Container '{}' is paused", container_name);
+                            }
+                            Ok(ContainerStatus::Dead) => {
+                                // Container is dead
+                                error!("Container '{}' is dead - initiating shutdown", container_name);
+                                
+                                // Trigger shutdown for dead container
+                                shutdown::global_shutdown().shutdown(shutdown::ShutdownReason::ContainerExit);
+                                self.cleanup_containers().await?;
+                                return Ok(false);
+                            }
                             Ok(ContainerStatus::Unknown) => {
                                 // Container might have been removed or doesn't exist
                                 warn!("Container '{}' status unknown - it may have crashed or been removed", container_name);

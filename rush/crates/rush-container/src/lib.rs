@@ -6,6 +6,7 @@ pub mod docker;
 pub mod events;
 pub mod image_builder;
 pub mod kubernetes;
+pub mod lifecycle;
 pub mod reactor;
 pub mod service;
 pub mod simple_output;
