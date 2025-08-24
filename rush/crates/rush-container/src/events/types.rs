@@ -52,6 +52,12 @@ pub enum ContainerEvent {
         timestamp: Instant,
     },
     
+    /// File changes detected (new watcher system)
+    FileChangesDetected {
+        files: Vec<PathBuf>,
+        components: Vec<String>,
+    },
+    
     /// A rebuild has been triggered
     RebuildTriggered {
         component: String,
