@@ -5,7 +5,7 @@
 use crate::DockerCliClient;
 use crate::Status;
 use crate::{
-    build::BuildProcessor,
+    build::{BuildProcessor, BuildOrchestrator, BuildOrchestratorConfig},
     docker::{ContainerStatus, DockerClient, DockerService, DockerServiceConfig},
     watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
     ContainerService, ServiceCollection,
@@ -48,6 +48,9 @@ pub struct ContainerReactor {
 
     /// Build processor for container builds
     build_processor: BuildProcessor,
+
+    /// Build orchestrator for coordinating builds
+    build_orchestrator: Arc<BuildOrchestrator>,
 
     /// Vault for accessing secrets
     vault: Arc<Mutex<dyn Vault + Send>>,
@@ -133,6 +136,29 @@ impl ContainerReactor {
         // Create the toolchain for build operations
         let toolchain = Some(Arc::new(rush_toolchain::ToolchainContext::default()));
 
+        // Create event bus and state for orchestrator
+        let event_bus = crate::events::EventBus::new();
+        let state = crate::reactor::state::SharedReactorState::new();
+
+        // Create build orchestrator config
+        let orchestrator_config = BuildOrchestratorConfig {
+            product_name: config.product_name.clone(),
+            product_dir: config.product_dir.clone(),
+            build_timeout: Duration::from_secs(300),
+            parallel_builds: true,
+            max_parallel: 4,
+            enable_cache: true,
+            cache_dir: config.product_dir.join(".rush/cache"),
+        };
+
+        // Create build orchestrator
+        let build_orchestrator = Arc::new(BuildOrchestrator::new(
+            orchestrator_config,
+            docker_client.clone(),
+            event_bus.clone(),
+            state.clone(),
+        ));
+
         Ok(Self {
             config,
             services: HashMap::new(),
@@ -140,6 +166,7 @@ impl ContainerReactor {
             _file_watcher: watcher,
             docker_client,
             build_processor: BuildProcessor::new(false),
+            build_orchestrator,
             vault,
             toolchain,
             running_services: Vec::new(),
@@ -771,6 +798,16 @@ impl ContainerReactor {
     ///
     /// Result indicating success or failure
     async fn build_all(&mut self) -> Result<()> {
+        // For now, use the legacy implementation until the orchestrator is fully integrated
+        // The orchestrator needs to be updated to:
+        // 1. Run build scripts (run_build_script_for_component)
+        // 2. Render artifacts (render_artifacts_for_component)
+        // 3. Properly set up the build context with all files
+        self.build_all_legacy().await
+    }
+
+    /// Legacy build_all implementation - preserved for reference
+    async fn build_all_legacy(&mut self) -> Result<()> {
         let shutdown_token = shutdown::global_shutdown().cancellation_token();
 
         // Check for shutdown before starting build
