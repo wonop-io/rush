@@ -14,6 +14,18 @@ use tokio::process::Command;
 // Re-export the DockerClient trait and ContainerStatus from rush-docker
 pub use rush_docker::{ContainerStatus, DockerClient};
 
+// Include the enhanced Docker modules
+pub mod client_wrapper;
+pub mod connection_pool;
+pub mod log_streamer;
+pub mod metrics;
+
+// Re-export commonly used types from submodules
+pub use client_wrapper::{DockerClientWrapper, DockerWrapperConfig, DockerStats};
+pub use connection_pool::{ConnectionPool, PoolConfig, PooledDockerClient};
+pub use log_streamer::{LogStream, LogStreamManager, LogStreamConfig, LogEntry, LogLevel};
+pub use metrics::{MetricsCollector, OperationType, MetricsReport};
+
 /// Health status of a container
 #[derive(Debug, Clone, PartialEq)]
 pub struct HealthStatus {

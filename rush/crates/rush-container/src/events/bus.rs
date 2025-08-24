@@ -107,6 +107,16 @@ impl EventBus {
     }
 }
 
+impl std::fmt::Debug for EventBus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventBus")
+            .field("subscribers", &"<subscribers>")
+            .field("event_tx", &self.event_tx)
+            .field("_event_task", &"<task>")
+            .finish()
+    }
+}
+
 /// Builder for creating filtered event handlers
 pub struct FilteredHandler<F>
 where
