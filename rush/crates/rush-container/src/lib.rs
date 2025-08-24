@@ -3,13 +3,19 @@
 pub mod build;
 pub mod dev_environment;
 pub mod docker;
+pub mod events;
 pub mod image_builder;
+pub mod kubernetes;
 pub mod reactor;
 pub mod service;
 pub mod simple_output;
 pub mod status;
 pub mod stripe_handler;
 pub mod watcher;
+
+// TODO: Re-enable when test utils are updated to match current interfaces
+// #[cfg(test)]
+// pub mod test_utils;
 
 #[cfg(test)]
 pub mod tests;

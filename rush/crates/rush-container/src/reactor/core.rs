@@ -78,47 +78,13 @@ pub struct ContainerReactor {
 
     /// Mapping of component names to their actual built image names (with git tags)
     built_images: HashMap<String, String>,
-    
+
     /// Additional environment variables from external sources
     additional_env: HashMap<String, String>,
 }
 
-/// Configuration for the ContainerReactor
-#[derive(Debug, Clone)]
-pub struct ContainerReactorConfig {
-    /// Product name
-    pub product_name: String,
-
-    /// Root directory for the product
-    pub product_dir: PathBuf,
-
-    /// Docker network name to use
-    pub network_name: String,
-
-    /// Environment (dev, staging, prod)
-    pub environment: String,
-
-    /// Docker registry to use for images
-    pub docker_registry: String,
-
-    /// Components to redirect to external services
-    pub redirected_components: HashMap<String, (String, u16)>,
-
-    /// Components whose output should be silenced
-    pub silenced_components: HashSet<String>,
-
-    /// Whether to run in verbose mode
-    pub verbose: bool,
-
-    /// File watch configuration
-    pub watch_config: WatcherConfig,
-
-    /// Git hash for tagging images
-    pub git_hash: String,
-
-    /// Starting port number for services
-    pub start_port: u16,
-}
+// Use the ContainerReactorConfig from the config module
+use super::config::ContainerReactorConfig;
 
 /// Enum representing the result of waiting for changes or termination
 enum WaitResult {
@@ -135,12 +101,12 @@ impl ContainerReactor {
     pub fn set_output_sink(&mut self, sink: Box<dyn rush_output::simple::Sink>) {
         self.output_sink = Arc::new(tokio::sync::Mutex::new(sink));
     }
-    
+
     /// Add an environment variable to be injected into all containers
     pub fn add_env_var(&mut self, key: String, value: String) {
         self.additional_env.insert(key, value);
     }
-    
+
     /// Creates a new ContainerReactor
     ///
     /// # Arguments
@@ -361,7 +327,6 @@ impl ContainerReactor {
         Ok(reactor)
     }
 
-
     /// Builds a collection of services from component specs
     fn build_services_collection(&self) -> Result<ServiceCollection> {
         let mut services: ServiceCollection = HashMap::new();
@@ -483,8 +448,14 @@ impl ContainerReactor {
 
         // Set up the network
         // Setup network
-        if !self.docker_client.network_exists(&self.config.network_name).await? {
-            self.docker_client.create_network(&self.config.network_name).await?;
+        if !self
+            .docker_client
+            .network_exists(&self.config.network_name)
+            .await?
+        {
+            self.docker_client
+                .create_network(&self.config.network_name)
+                .await?;
         }
 
         // Start the main launch loop
@@ -1262,7 +1233,7 @@ impl ContainerReactor {
                     for (key, value) in encoded_secrets {
                         env_vars.insert(key, value);
                     }
-                    
+
                     // Add additional environment variables from local services
                     for (key, value) in &self.additional_env {
                         env_vars.insert(key.clone(), value.clone());
@@ -1662,7 +1633,7 @@ impl ContainerReactor {
                     // Check container statuses
                     for service in &self.running_services {
                         let container_name = service.name().unwrap_or_else(|| service.id().to_string());
-                        
+
                         match service.status().await {
                             Ok(ContainerStatus::Exited(code)) => {
                                 // Container has exited
@@ -1773,10 +1744,13 @@ impl ContainerReactor {
         for spec in &self.component_specs {
             // Skip LocalService specs - they should persist
             if matches!(spec.build_type, BuildType::LocalService { .. }) {
-                debug!("Skipping local service {} - it should persist", spec.component_name);
+                debug!(
+                    "Skipping local service {} - it should persist",
+                    spec.component_name
+                );
                 continue;
             }
-            
+
             // Use product_name-component_name to match the container naming convention
             let container_name = format!("{}-{}", self.config.product_name, spec.component_name);
 
@@ -1784,7 +1758,7 @@ impl ContainerReactor {
             self.kill_and_remove_container_with_retry(&container_name, 3)
                 .await?;
         }
-        
+
         // DO NOT clean up local service containers during reactor cleanup
         // Local services (rush-local-*) should only be stopped on final program termination
         // They are managed by DevEnvironment, not the reactor
@@ -2047,6 +2021,7 @@ impl ContainerReactor {
 
             // We need to collect service information for the specified components
             // For now, we'll create basic service specs for the components
+            // TODO: This is outright wrong - it needs to be properly computed from the rushd.yaml template (depends on environment)
             let domain = format!("{}.local", spec.product_name);
 
             for component in components {
