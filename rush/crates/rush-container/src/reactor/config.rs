@@ -202,3 +202,21 @@ mod tests {
         assert!(!config.is_silenced("normal-service"));
     }
 }
+
+impl Default for ContainerReactorConfig {
+    fn default() -> Self {
+        Self {
+            product_name: String::new(),
+            product_dir: PathBuf::new(),
+            network_name: "rush".to_string(),
+            environment: "dev".to_string(),
+            docker_registry: "localhost".to_string(),
+            redirected_components: HashMap::new(),
+            silenced_components: HashSet::new(),
+            verbose: false,
+            watch_config: WatcherConfig::default(),
+            git_hash: String::new(),
+            start_port: 8000,
+        }
+    }
+}

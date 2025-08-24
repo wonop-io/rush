@@ -95,8 +95,8 @@ impl WatcherCoordinator {
     }
 
     /// Initialize the coordinator with component specs
-    pub fn init(&mut self, component_specs: Vec<ComponentBuildSpec>) {
-        self.handler.set_component_specs(component_specs);
+    pub async fn init(&mut self, component_specs: Vec<ComponentBuildSpec>) {
+        self.handler.set_component_specs(component_specs).await;
     }
 
     /// Start watching a directory

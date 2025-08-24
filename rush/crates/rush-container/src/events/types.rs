@@ -69,6 +69,9 @@ pub enum ContainerEvent {
         network_name: String,
     },
     
+    /// Reactor has started
+    ReactorStarted,
+    
     /// Shutdown has been initiated
     ShutdownInitiated {
         reason: ShutdownReason,

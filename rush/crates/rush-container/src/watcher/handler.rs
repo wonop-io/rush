@@ -125,8 +125,8 @@ impl FileChangeHandler {
     }
 
     /// Set component specs for matching
-    pub fn set_component_specs(&self, specs: Vec<ComponentBuildSpec>) {
-        let mut component_specs = self.component_specs.blocking_write();
+    pub async fn set_component_specs(&self, specs: Vec<ComponentBuildSpec>) {
+        let mut component_specs = self.component_specs.write().await;
         *component_specs = specs;
     }
 

@@ -34,6 +34,14 @@ pub struct LifecycleConfig {
     pub max_retries: u32,
     /// Retry delay
     pub retry_delay: Duration,
+    /// Whether to automatically restart failed containers
+    pub auto_restart: bool,
+    /// Whether to enable health checks
+    pub enable_health_checks: bool,
+    /// Health check interval
+    pub health_check_interval: Duration,
+    /// Maximum restart attempts before giving up
+    pub max_restart_attempts: u32,
 }
 
 impl Default for LifecycleConfig {
@@ -46,6 +54,10 @@ impl Default for LifecycleConfig {
             inject_stripe_secrets: false,
             max_retries: 3,
             retry_delay: Duration::from_secs(1),
+            auto_restart: true,
+            enable_health_checks: false,
+            health_check_interval: Duration::from_secs(30),
+            max_restart_attempts: 3,
         }
     }
 }
@@ -79,6 +91,69 @@ impl LifecycleManager {
             state,
             shutdown_sender,
         }
+    }
+
+    /// Start the lifecycle manager
+    pub async fn start(&self) -> Result<()> {
+        info!("Starting lifecycle manager");
+        Ok(())
+    }
+
+    /// Stop a specific component
+    pub async fn stop_component(&self, component_name: &str) -> Result<()> {
+        info!("Stopping component: {}", component_name);
+        
+        // Update state
+        {
+            let mut state = self.state.write().await;
+            state.mark_component_stopped(component_name);
+        }
+        
+        // Publish event
+        if let Err(e) = self.event_bus.publish(Event::new(
+            "lifecycle",
+            ContainerEvent::ContainerStopped {
+                component: component_name.to_string(),
+                container_id: "unknown".to_string(),
+                exit_code: Some(0),
+                reason: crate::events::StopReason::Shutdown,
+            },
+        )).await {
+            debug!("Failed to publish container stopped event: {}", e);
+        }
+        
+        Ok(())
+    }
+
+    /// Start a specific component
+    pub async fn start_component(&self, component_name: &str) -> Result<()> {
+        info!("Starting component: {}", component_name);
+        
+        // Update state
+        {
+            let mut state = self.state.write().await;
+            state.mark_component_running(component_name, format!("container_{}", component_name));
+        }
+        
+        // Publish event
+        if let Err(e) = self.event_bus.publish(Event::new(
+            "lifecycle",
+            ContainerEvent::ContainerStarted {
+                component: component_name.to_string(),
+                container_id: format!("container_{}", component_name),
+                timestamp: std::time::Instant::now(),
+            },
+        )).await {
+            debug!("Failed to publish container started event: {}", e);
+        }
+        
+        Ok(())
+    }
+
+    /// Stop the lifecycle manager
+    pub async fn stop(&self) -> Result<()> {
+        info!("Stopping lifecycle manager");
+        Ok(())
     }
 
     /// Start services

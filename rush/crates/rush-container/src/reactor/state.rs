@@ -23,10 +23,33 @@ pub enum ReactorPhase {
     Running,
     /// Rebuilding due to file changes
     Rebuilding,
+    /// Error state
+    Error,
     /// Shutting down containers
     ShuttingDown,
     /// Terminated
+    Shutdown,
+    /// Terminated (old name for backward compatibility)
     Terminated,
+}
+
+/// Status of an individual component
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComponentStatus {
+    /// Component is idle/not started
+    Idle,
+    /// Component is being built
+    Building,
+    /// Component is starting
+    Starting,
+    /// Component is running
+    Running,
+    /// Component has failed
+    Failed,
+    /// Component is stopping
+    Stopping,
+    /// Component is stopped
+    Stopped,
 }
 
 /// State of an individual component
@@ -34,20 +57,20 @@ pub enum ReactorPhase {
 pub struct ComponentState {
     /// Component name
     pub name: String,
-    /// Whether the component has been built
-    pub built: bool,
+    /// Current status
+    pub status: ComponentStatus,
     /// The actual image name (with tag) if built
     pub image_name: Option<String>,
-    /// Whether the component is running
-    pub running: bool,
     /// Container ID if running
     pub container_id: Option<String>,
     /// Last build time
     pub last_build: Option<Instant>,
     /// Last error if any
-    pub last_error: Option<String>,
+    pub error: Option<String>,
     /// Number of restart attempts
     pub restart_count: u32,
+    /// Build specification
+    pub build_spec: Option<ComponentBuildSpec>,
 }
 
 impl ComponentState {
@@ -55,40 +78,46 @@ impl ComponentState {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            built: false,
+            status: ComponentStatus::Idle,
             image_name: None,
-            running: false,
             container_id: None,
             last_build: None,
-            last_error: None,
+            error: None,
             restart_count: 0,
+            build_spec: None,
         }
     }
 
     /// Mark component as built
     pub fn mark_built(&mut self, image_name: String) {
-        self.built = true;
+        self.status = ComponentStatus::Idle; // Built but not running
         self.image_name = Some(image_name);
         self.last_build = Some(Instant::now());
-        self.last_error = None;
+        self.error = None;
     }
 
     /// Mark component as running
     pub fn mark_running(&mut self, container_id: String) {
-        self.running = true;
+        self.status = ComponentStatus::Running;
         self.container_id = Some(container_id);
-        self.last_error = None;
+        self.error = None;
     }
 
     /// Mark component as stopped
     pub fn mark_stopped(&mut self) {
-        self.running = false;
+        self.status = ComponentStatus::Stopped;
         self.container_id = None;
+    }
+
+    /// Mark component as failed
+    pub fn mark_failed(&mut self, error: String) {
+        self.status = ComponentStatus::Failed;
+        self.error = Some(error);
     }
 
     /// Record an error
     pub fn record_error(&mut self, error: String) {
-        self.last_error = Some(error);
+        self.error = Some(error);
     }
 
     /// Increment restart count
@@ -119,6 +148,8 @@ pub struct ReactorState {
     start_time: Instant,
     /// Number of rebuild cycles
     rebuild_count: u32,
+    /// Last error that occurred
+    last_error: Option<String>,
 }
 
 impl ReactorState {
@@ -132,6 +163,7 @@ impl ReactorState {
             rebuild_in_progress: false,
             start_time: Instant::now(),
             rebuild_count: 0,
+            last_error: None,
         }
     }
 
@@ -206,6 +238,26 @@ impl ReactorState {
             component.record_error(error);
         }
     }
+    
+    /// Add a new component to the state
+    pub fn add_component(&mut self, component: ComponentState) {
+        self.components.insert(component.name.clone(), component);
+    }
+    
+    /// Record a general error
+    pub fn record_error(&mut self, error: String) {
+        self.last_error = Some(error);
+    }
+    
+    /// Get last error
+    pub fn last_error(&self) -> Option<&String> {
+        self.last_error.as_ref()
+    }
+    
+    /// Get running components
+    pub fn running_components(&self) -> Vec<&ComponentState> {
+        self.components.values().filter(|c| c.status == ComponentStatus::Running).collect()
+    }
 
     /// Get component state
     pub fn get_component(&self, name: &str) -> Option<&ComponentState> {
@@ -262,14 +314,14 @@ impl ReactorState {
 
     /// Check if all components are healthy
     pub fn all_healthy(&self) -> bool {
-        self.components.values().all(|c| c.running && c.last_error.is_none())
+        self.components.values().all(|c| c.status == ComponentStatus::Running && c.error.is_none())
     }
 
     /// Get unhealthy components
     pub fn unhealthy_components(&self) -> Vec<&ComponentState> {
         self.components
             .values()
-            .filter(|c| !c.running || c.last_error.is_some())
+            .filter(|c| c.status != ComponentStatus::Running || c.error.is_some())
             .collect()
     }
 }
@@ -290,6 +342,11 @@ impl SharedReactorState {
     /// Get a read lock on the state
     pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, ReactorState> {
         self.inner.read().await
+    }
+    
+    /// Try to get a read lock on the state (non-blocking)
+    pub fn try_read(&self) -> Result<tokio::sync::RwLockReadGuard<'_, ReactorState>, tokio::sync::TryLockError> {
+        self.inner.try_read()
     }
 
     /// Get a write lock on the state
@@ -380,23 +437,23 @@ mod tests {
     fn test_component_state_management() {
         let mut component = ComponentState::new("test");
         
-        assert!(!component.built);
-        assert!(!component.running);
+        assert_eq!(component.status, ComponentStatus::Idle);
+        assert!(component.image_name.is_none());
         
         component.mark_built("test:latest".to_string());
-        assert!(component.built);
+        assert_eq!(component.status, ComponentStatus::Idle); // Built but not running
         assert_eq!(component.image_name, Some("test:latest".to_string()));
         assert!(component.last_build.is_some());
         
         component.mark_running("container123".to_string());
-        assert!(component.running);
+        assert_eq!(component.status, ComponentStatus::Running);
         assert_eq!(component.container_id, Some("container123".to_string()));
         
         component.record_error("Failed to start".to_string());
-        assert_eq!(component.last_error, Some("Failed to start".to_string()));
+        assert_eq!(component.error, Some("Failed to start".to_string()));
         
         component.mark_stopped();
-        assert!(!component.running);
+        assert_eq!(component.status, ComponentStatus::Stopped);
         assert!(component.container_id.is_none());
     }
 
@@ -421,7 +478,7 @@ mod tests {
         
         state.mark_component_built("frontend", "frontend:abc123".to_string());
         let frontend = state.get_component("frontend").unwrap();
-        assert!(frontend.built);
+        assert_eq!(frontend.status, ComponentStatus::Idle); // Built but not running
         assert_eq!(frontend.image_name, Some("frontend:abc123".to_string()));
     }
 

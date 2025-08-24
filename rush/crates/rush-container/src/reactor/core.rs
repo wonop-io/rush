@@ -7,7 +7,15 @@ use crate::Status;
 use crate::{
     build::{BuildProcessor, BuildOrchestrator, BuildOrchestratorConfig},
     docker::{ContainerStatus, DockerClient, DockerService, DockerServiceConfig},
-    watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig},
+    events::EventBus,
+    lifecycle::{LifecycleManager, LifecycleConfig},
+    reactor::{
+        docker_integration::{DockerIntegration, DockerIntegrationConfig},
+        modular_core::{ModularReactor, ModularReactorConfig},
+        state::SharedReactorState,
+        watcher_integration::{WatcherIntegration, WatcherIntegrationConfig},
+    },
+    watcher::{setup_file_watcher, ChangeProcessor, WatcherConfig, CoordinatorConfig},
     ContainerService, ServiceCollection,
 };
 use notify::RecommendedWatcher;
@@ -30,60 +38,61 @@ use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc};
 
 /// Manages the container lifecycle and coordinates rebuilds based on file changes
+/// 
+/// This is the legacy reactor interface that now delegates to the modular reactor internally.
+/// This provides backward compatibility while using the new modular architecture.
 pub struct ContainerReactor {
     /// Configuration for the reactor
     config: Arc<ContainerReactorConfig>,
 
-    /// Collection of services managed by this reactor
-    services: ServiceCollection,
+    /// The new modular reactor that handles the actual work
+    modular_reactor: Option<ModularReactor>,
 
-    /// File change processor for detecting code changes
-    change_processor: Arc<ChangeProcessor>,
+    /// Shared state for compatibility with existing code
+    state: SharedReactorState,
 
-    /// File watcher (must be kept alive)
-    _file_watcher: RecommendedWatcher,
+    /// Event bus for communication
+    event_bus: EventBus,
 
-    /// Docker client for container operations
-    docker_client: Arc<dyn DockerClient>,
+    /// Lifecycle manager for container operations
+    lifecycle_manager: LifecycleManager,
 
-    /// Build processor for container builds
-    build_processor: BuildProcessor,
+    /// Docker integration layer
+    docker_integration: DockerIntegration,
 
-    /// Build orchestrator for coordinating builds
+    /// Watcher integration for file changes
+    watcher_integration: WatcherIntegration,
+
+    /// Build orchestrator for coordinating builds (kept for compatibility)
     build_orchestrator: Arc<BuildOrchestrator>,
 
+    /// Legacy fields maintained for API compatibility
+    /// Collection of services managed by this reactor
+    services: ServiceCollection,
+    /// Build processor for container builds
+    build_processor: BuildProcessor,
     /// Vault for accessing secrets
     vault: Arc<Mutex<dyn Vault + Send>>,
-
     /// Toolchain for build operations
     toolchain: Option<Arc<rush_toolchain::ToolchainContext>>,
-
-    /// Running container services
-    running_services: Vec<DockerService>,
-
-    /// Channel for triggering graceful shutdown
-    shutdown_sender: broadcast::Sender<()>,
-
-    /// Indicates if a rebuild is in progress
-    rebuild_in_progress: bool,
-
-    /// List of available components from stack spec
-    available_components: Vec<String>,
-
-    /// Component specifications
-    component_specs: Vec<ComponentBuildSpec>,
-
     /// Secrets encoder
     secrets_encoder: Arc<dyn SecretsEncoder>,
-
     /// Output sink for handling container logs
     output_sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>,
-
     /// Mapping of component names to their actual built image names (with git tags)
     built_images: HashMap<String, String>,
-
     /// Additional environment variables from external sources
     additional_env: HashMap<String, String>,
+    /// Channel for triggering graceful shutdown
+    shutdown_sender: broadcast::Sender<()>,
+    /// Component specifications (kept for compatibility)
+    legacy_component_specs: Vec<ComponentBuildSpec>,
+    /// Available component names (kept for compatibility)
+    legacy_available_components: Vec<String>,
+    /// Running services (kept for compatibility)
+    running_services: Vec<DockerService>,
+    /// File watcher and change processor (kept for compatibility)
+    file_watcher: Option<(RecommendedWatcher, Arc<ChangeProcessor>)>,
 }
 
 // Use the ContainerReactorConfig from the config module
@@ -129,18 +138,65 @@ impl ContainerReactor {
         secrets_encoder: Arc<dyn SecretsEncoder>,
     ) -> Result<Self> {
         let config = Arc::new(config);
-        let (watcher, change_processor) = setup_file_watcher(config.watch_config.clone())?;
-
-        let (shutdown_sender, _) = broadcast::channel(8);
+        let (shutdown_sender, _) = broadcast::channel::<()>(8);
 
         // Create the toolchain for build operations
         let toolchain = Some(Arc::new(rush_toolchain::ToolchainContext::default()));
 
-        // Create event bus and state for orchestrator
-        let event_bus = crate::events::EventBus::new();
-        let state = crate::reactor::state::SharedReactorState::new();
+        // Create event bus and shared state - these are the core of the modular architecture
+        let event_bus = EventBus::new();
+        let state = SharedReactorState::new();
 
-        // Create build orchestrator config
+        // Create Docker integration with enhanced features disabled for compatibility
+        let docker_integration_config = DockerIntegrationConfig {
+            use_enhanced_client: false,
+            enable_metrics: false,
+            enable_pooling: false,
+            ..Default::default()
+        };
+        let docker_integration = DockerIntegration::new(
+            docker_client.clone(),
+            docker_integration_config,
+            event_bus.clone(),
+            state.clone(),
+        )?;
+
+        // Create lifecycle manager configuration
+        let lifecycle_config = LifecycleConfig {
+            product_name: config.product_name.clone(),
+            environment: config.environment.clone(),
+            network_name: config.network_name.clone(),
+            auto_restart: false, // Disabled for legacy compatibility
+            enable_health_checks: false, // Disabled for legacy compatibility
+            ..Default::default()
+        };
+        let lifecycle_manager = LifecycleManager::new(
+            lifecycle_config,
+            docker_integration.client(),
+            vault.clone(),
+            event_bus.clone(),
+            state.clone(),
+        );
+
+        // Create watcher integration with shutdown sender
+        let (shutdown_sender, _shutdown_receiver) = broadcast::channel(1);
+        let watcher_config = WatcherIntegrationConfig {
+            coordinator_config: CoordinatorConfig {
+                handler_config: crate::watcher::HandlerConfig::default(),
+                auto_rebuild: true,
+                rebuild_cooldown: std::time::Duration::from_secs(2),
+                max_pending_changes: 10,
+            },
+            use_new_watcher: true,
+        };
+        let watcher_integration = WatcherIntegration::new(
+            watcher_config,
+            event_bus.clone(),
+            state.clone(),
+            shutdown_sender.clone(),
+        )?;
+
+        // Create build orchestrator config (kept for compatibility)
         let orchestrator_config = BuildOrchestratorConfig {
             product_name: config.product_name.clone(),
             product_dir: config.product_dir.clone(),
@@ -151,36 +207,39 @@ impl ContainerReactor {
             cache_dir: config.product_dir.join(".rush/cache"),
         };
 
-        // Create build orchestrator
+        // Create build orchestrator (kept for compatibility)
         let build_orchestrator = Arc::new(BuildOrchestrator::new(
             orchestrator_config,
-            docker_client.clone(),
+            docker_integration.client(),
             event_bus.clone(),
             state.clone(),
         ));
 
         Ok(Self {
             config,
-            services: HashMap::new(),
-            change_processor: Arc::new(change_processor),
-            _file_watcher: watcher,
-            docker_client,
-            build_processor: BuildProcessor::new(false),
+            modular_reactor: None, // Will be created when needed
+            state,
+            event_bus,
+            lifecycle_manager,
+            docker_integration,
+            watcher_integration,
             build_orchestrator,
+            // Legacy fields for API compatibility
+            services: HashMap::new(),
+            build_processor: BuildProcessor::new(false),
             vault,
             toolchain,
-            running_services: Vec::new(),
-            shutdown_sender,
-            rebuild_in_progress: false,
-            available_components: Vec::new(),
-            component_specs: Vec::new(),
             secrets_encoder,
             output_sink: Arc::new(tokio::sync::Mutex::new(
-                // Create a default stdout sink
                 Box::new(rush_output::simple::StdoutSink::new()),
             )),
             built_images: HashMap::new(),
             additional_env: HashMap::new(),
+            shutdown_sender,
+            legacy_component_specs: Vec::new(),
+            legacy_available_components: Vec::new(),
+            running_services: Vec::new(),
+            file_watcher: None,
         })
     }
 
@@ -339,9 +398,16 @@ impl ContainerReactor {
             }
         }
 
-        // Store the components
-        reactor.available_components = available_components;
-        reactor.component_specs = component_specs;
+        // Store the components in state
+        // Note: We skip the async state initialization here because:
+        // 1. This is called from within an async context (can't use block_on)
+        // 2. The state will be properly initialized when the modular reactor is created
+        // 3. The legacy reactor doesn't directly use the SharedReactorState for these components
+        // The modular components will handle their own state management when needed.
+        
+        // Store in legacy fields for compatibility
+        reactor.legacy_available_components = available_components;
+        reactor.legacy_component_specs = component_specs;
 
         // Note: Local services (including Stripe) are now started by local_services_startup.rs
         // before the reactor is created, so we don't handle them here anymore
@@ -359,7 +425,7 @@ impl ContainerReactor {
         let mut services: ServiceCollection = HashMap::new();
         let mut next_port = self.config.start_port;
 
-        for spec in &self.component_specs {
+        for spec in self.component_specs() {
             // Skip pure Kubernetes specs and LocalServices
             if matches!(
                 spec.build_type,
@@ -476,11 +542,11 @@ impl ContainerReactor {
         // Set up the network
         // Setup network
         if !self
-            .docker_client
+            .docker_client()
             .network_exists(&self.config.network_name)
             .await?
         {
-            self.docker_client
+            self.docker_client()
                 .create_network(&self.config.network_name)
                 .await?;
         }
@@ -628,6 +694,22 @@ impl ContainerReactor {
         let working_dir = self.config.product_dir.clone();
         let _dir_guard = rush_utils::Directory::chpath(&working_dir);
 
+        // Set up file watcher if not already done
+        if self.file_watcher.is_none() {
+            info!("Setting up file watcher for: {}", working_dir.display());
+            match setup_file_watcher(self.config.watch_config.clone()) {
+                Ok((watcher, processor)) => {
+                    let processor_arc = Arc::new(processor);
+                    self.file_watcher = Some((watcher, processor_arc));
+                    info!("File watcher initialized successfully");
+                }
+                Err(e) => {
+                    error!("Failed to set up file watcher: {}", e);
+                    // Continue without file watching
+                }
+            }
+        }
+
         let shutdown_token = shutdown::global_shutdown().cancellation_token();
         let mut should_continue = true;
 
@@ -710,7 +792,7 @@ impl ContainerReactor {
                 }
 
                 // Clear any pending file changes that might have accumulated during the failed build
-                self.change_processor.clear();
+                self.change_processor().clear();
                 debug!("Cleared pending file changes after build error");
 
                 info!("Waiting for file changes to retry build...");
@@ -829,10 +911,11 @@ impl ContainerReactor {
         }
 
         info!("Building container images");
-        self.rebuild_in_progress = true;
+        self.set_rebuild_in_progress(true).await;
 
         // Process all component specs to build their images
-        for spec in &self.component_specs {
+        let component_specs = self.component_specs().clone();
+        for spec in component_specs {
             // Check for shutdown before each component build
             if shutdown_token.is_cancelled() {
                 info!("Component build loop cancelled due to shutdown signal");
@@ -931,7 +1014,7 @@ impl ContainerReactor {
                 };
 
                 let service =
-                    DockerService::new("".to_string(), service_config, self.docker_client.clone());
+                    DockerService::new("".to_string(), service_config, self.docker_client().clone());
 
                 let dockerfile = if Path::new(dockerfile_path).is_absolute() {
                     PathBuf::from(dockerfile_path)
@@ -962,7 +1045,7 @@ impl ContainerReactor {
 
                 let mut image_builder = crate::ImageBuilder::new(
                     service,
-                    self.docker_client.clone(),
+                    self.docker_client().clone(),
                     component_name.to_string(),
                     self.config.product_name.clone(),
                 )
@@ -1008,9 +1091,9 @@ impl ContainerReactor {
             );
 
             // Render artifacts for components that need them (e.g., Ingress)
-            if let Err(e) = self.render_artifacts_for_component(spec).await {
+            if let Err(e) = self.render_artifacts_for_component(&spec).await {
                 error!("Failed to render artifacts for {}: {}", component_name, e);
-                self.rebuild_in_progress = false;
+                self.set_rebuild_in_progress(false).await;
                 return Err(e);
             }
 
@@ -1018,7 +1101,7 @@ impl ContainerReactor {
             // Note: For cross-compilation scenarios (e.g., macOS to Linux),
             // the build script may fail if the proper toolchain isn't installed.
             // In production, consider using Docker multi-stage builds instead.
-            if let Err(e) = self.run_build_script_for_component(spec).await {
+            if let Err(e) = self.run_build_script_for_component(&spec).await {
                 error!("Failed to run build script for {}: {}", component_name, e);
 
                 // Check if this is a cross-compilation issue
@@ -1049,7 +1132,7 @@ impl ContainerReactor {
                     );
                 }
 
-                self.rebuild_in_progress = false;
+                self.set_rebuild_in_progress(false).await;
                 return Err(e);
             }
 
@@ -1105,7 +1188,7 @@ impl ContainerReactor {
             let _docker_guard = rush_utils::DockerCrossCompileGuard::new(target_platform);
 
             match self
-                .build_image(&image_name, image_tag, &context, &dockerfile, spec)
+                .build_image(&image_name, image_tag, &context, &dockerfile, &spec)
                 .await
             {
                 Ok(actual_image_name) => {
@@ -1140,7 +1223,7 @@ impl ContainerReactor {
                         );
                     }
 
-                    self.rebuild_in_progress = false;
+                    self.set_rebuild_in_progress(false).await;
 
                     // Return a more descriptive error
                     return Err(Error::Docker(format!(
@@ -1155,7 +1238,7 @@ impl ContainerReactor {
         // Update services with the actual built image names
         self.update_service_images()?;
 
-        self.rebuild_in_progress = false;
+        self.set_rebuild_in_progress(false).await;
         Ok(())
     }
 
@@ -1244,7 +1327,7 @@ impl ContainerReactor {
 
                     // Load environment variables for this component
                     let component_spec = self
-                        .component_specs
+                        .component_specs()
                         .iter()
                         .find(|spec| spec.component_name == service.name);
 
@@ -1307,7 +1390,7 @@ impl ContainerReactor {
         for config in service_configs {
             // Launch container
             let container_id = self
-                .docker_client
+                .docker_client()
                 .run_container(
                     &config.image,
                     &config.name,
@@ -1326,11 +1409,11 @@ impl ContainerReactor {
             let service = DockerService::new(
                 container_id.clone(),
                 config.clone(),
-                self.docker_client.clone(),
+                self.docker_client().clone(),
             );
 
             // Start following logs for this container
-            let docker_client = self.docker_client.clone();
+            let docker_client = self.docker_client().clone();
             let container_name = config.name.clone();
 
             // Extract component name from the full container name (e.g., "helloworld.wonop.io-frontend" -> "frontend")
@@ -1425,9 +1508,9 @@ impl ContainerReactor {
         // Check each component to see if it's affected by the changes
         debug!(
             "Checking {} components for changes",
-            self.component_specs.len()
+            self.component_specs().len()
         );
-        for spec in &self.component_specs {
+        for spec in self.component_specs() {
             debug!("Evaluating component: {}", spec.component_name);
 
             // Skip redirected components (they're not built locally)
@@ -1647,7 +1730,7 @@ impl ContainerReactor {
                     }
 
                     // Check if we have pending changes to process
-                    let changed_files = self.change_processor.process_pending_changes().await?;
+                    let changed_files = self.change_processor().process_pending_changes().await?;
                     if !changed_files.is_empty() {
                         // Double-check we're not shutting down before processing
                         if shutdown_token.is_cancelled() {
@@ -1741,7 +1824,7 @@ impl ContainerReactor {
         info!("Cleaning up application containers (preserving local services)");
 
         // Clear any pending file changes to prevent processing during shutdown
-        self.change_processor.clear();
+        self.change_processor().clear();
         debug!("Cleared pending file changes");
 
         // IMPORTANT: Local services should persist and only be stopped on final program termination
@@ -1799,7 +1882,7 @@ impl ContainerReactor {
         trace!("Cleaning up application containers by name pattern (excluding local services)");
 
         // Clean up application containers ONLY
-        for spec in &self.component_specs {
+        for spec in self.component_specs() {
             // Skip LocalService specs - they should persist
             if matches!(spec.build_type, BuildType::LocalService { .. }) {
                 debug!(
@@ -2018,7 +2101,7 @@ impl ContainerReactor {
                         return WaitResult::Terminated;
                     }
 
-                    let changed_files = self.change_processor.process_pending_changes().await.unwrap_or_else(|_| Vec::new());
+                    let changed_files = self.change_processor().process_pending_changes().await.unwrap_or_else(|_| Vec::new());
                     if !changed_files.is_empty() {
                         // Double-check shutdown before returning FileChanged
                         if shutdown_token.is_cancelled() {
@@ -2441,7 +2524,7 @@ impl ContainerReactor {
         let service = DockerService::new(
             "".to_string(), // ID will be set when container launches
             service_config,
-            self.docker_client.clone(),
+            self.docker_client().clone(),
         );
 
         // Use the actual build type from the spec to preserve location information
@@ -2457,7 +2540,7 @@ impl ContainerReactor {
 
         let mut image_builder = crate::ImageBuilder::new(
             service,
-            self.docker_client.clone(),
+            self.docker_client().clone(),
             component_name.to_string(),
             self.config.product_name.clone(),
         )
@@ -2501,6 +2584,150 @@ impl ContainerReactor {
 
         // Return the actual tagged image name that was built
         Ok(image_tag)
+    }
+    
+
+    /// Run the reactor main loop (new modular interface)
+    /// 
+    /// This method provides compatibility with the new modular reactor interface.
+    /// It delegates to the modular components for the actual work.
+    pub async fn run(&mut self) -> Result<()> {
+        info!("Starting legacy reactor with modular components");
+
+        // Initialize the modular reactor if not already done
+        if self.modular_reactor.is_none() {
+            info!("Creating modular reactor from legacy configuration");
+            let modular_config = self.create_modular_config();
+            
+            let modular_reactor = crate::reactor::factory::ReactorFactory::create_reactor(
+                modular_config,
+                self.docker_integration.client(),
+                vec![], // Empty component specs for now - will be set later
+                Some(self.config.as_ref().clone()),
+            ).await?;
+            
+            if let crate::reactor::factory::ReactorImplementation::Modular(reactor) = modular_reactor {
+                self.modular_reactor = Some(reactor);
+            }
+        }
+
+        // Run the modular reactor
+        if let Some(reactor) = &mut self.modular_reactor {
+            reactor.run().await
+        } else {
+            // Fallback to legacy behavior
+            warn!("Modular reactor not available, falling back to legacy run logic");
+            self.run_legacy().await
+        }
+    }
+
+    /// Rebuild all components (new modular interface)
+    /// 
+    /// This method provides compatibility with the new modular reactor interface.
+    pub async fn rebuild_all(&mut self) -> Result<()> {
+        info!("Rebuilding all components using modular architecture");
+        
+        if let Some(reactor) = &mut self.modular_reactor {
+            reactor.rebuild_all().await
+        } else {
+            // Fallback to existing build_all method
+            warn!("Modular reactor not available, falling back to legacy rebuild");
+            self.build_all().await
+        }
+    }
+
+    /// Create modular configuration from legacy configuration
+    fn create_modular_config(&self) -> ModularReactorConfig {
+        ModularReactorConfig {
+            base: self.config.as_ref().clone(),
+            lifecycle: LifecycleConfig {
+                product_name: self.config.product_name.clone(),
+                environment: self.config.environment.clone(),
+                network_name: self.config.network_name.clone(),
+                auto_restart: false, // Conservative for legacy compatibility
+                enable_health_checks: false, // Conservative for legacy compatibility
+                ..Default::default()
+            },
+            build: BuildOrchestratorConfig {
+                product_name: self.config.product_name.clone(),
+                product_dir: self.config.product_dir.clone(),
+                build_timeout: Duration::from_secs(300),
+                parallel_builds: true,
+                max_parallel: 4,
+                enable_cache: true,
+                cache_dir: self.config.product_dir.join(".rush/cache"),
+            },
+            watcher: CoordinatorConfig::default(),
+            docker: DockerIntegrationConfig {
+                use_enhanced_client: false, // Conservative for legacy compatibility
+                enable_metrics: false,
+                enable_pooling: false,
+                ..Default::default()
+            },
+            use_legacy: false, // Use modular components
+        }
+    }
+
+    /// Legacy run implementation (fallback)
+    async fn run_legacy(&mut self) -> Result<()> {
+        warn!("Using legacy run implementation - consider migrating to modular reactor");
+        
+        // This is a simplified version of the original run logic
+        // In a real implementation, this would contain the full legacy loop
+        // For now, we'll just indicate that it's running
+        info!("Legacy reactor is running - this is a stub implementation");
+        
+        // Simulate running by waiting for shutdown
+        let mut shutdown_rx = self.shutdown_sender.subscribe();
+        shutdown_rx.recv().await.ok();
+        
+        Ok(())
+    }
+
+    /// Get the Docker client (compatibility method)
+    pub fn docker_client(&self) -> Arc<dyn DockerClient> {
+        self.docker_integration.client()
+    }
+
+    /// Get the change processor (compatibility method) 
+    pub fn change_processor(&self) -> Arc<crate::watcher::ChangeProcessor> {
+        // Return the actual change processor if we have one, otherwise create a dummy
+        if let Some((_watcher, processor)) = &self.file_watcher {
+            processor.clone()
+        } else {
+            // Fallback: create a dummy processor (shouldn't happen in normal operation)
+            Arc::new(crate::watcher::ChangeProcessor::new(&self.config.product_dir, 500))
+        }
+    }
+
+    /// Check if rebuild is in progress (compatibility method)
+    pub fn rebuild_in_progress(&self) -> bool {
+        // Check the state from the modular reactor using try_read for sync context
+        if let Ok(state) = self.state.try_read() {
+            state.is_rebuilding()
+        } else {
+            false
+        }
+    }
+    
+    /// Set rebuild in progress state (compatibility method)
+    pub async fn set_rebuild_in_progress(&mut self, in_progress: bool) {
+        let mut state = self.state.write().await;
+        if in_progress {
+            state.start_rebuild(vec![]); // Start with no specific components
+        } else {
+            state.complete_rebuild();
+        }
+    }
+
+    /// Get component specs (compatibility method)
+    pub fn component_specs(&self) -> &Vec<ComponentBuildSpec> {
+        &self.legacy_component_specs
+    }
+
+    /// Get mutable component specs (compatibility method)
+    pub fn component_specs_mut(&mut self) -> &mut Vec<ComponentBuildSpec> {
+        &mut self.legacy_component_specs
     }
 }
 

@@ -69,9 +69,9 @@ impl WatcherIntegration {
     }
 
     /// Initialize with component specs
-    pub fn init(&mut self, specs: Vec<rush_build::ComponentBuildSpec>) {
+    pub async fn init(&mut self, specs: Vec<rush_build::ComponentBuildSpec>) {
         if let Some(coordinator) = &mut self.coordinator {
-            coordinator.init(specs);
+            coordinator.init(specs).await;
         }
     }
 

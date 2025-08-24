@@ -37,6 +37,18 @@ pub struct BuildOrchestratorConfig {
     pub cache_dir: PathBuf,
 }
 
+impl BuildOrchestratorConfig {
+    /// Alias for parallel_builds (for compatibility)
+    pub fn enable_parallel_builds(&self) -> bool {
+        self.parallel_builds
+    }
+    
+    /// Alias for enable_cache (for compatibility)  
+    pub fn enable_caching(&self) -> bool {
+        self.enable_cache
+    }
+}
+
 impl Default for BuildOrchestratorConfig {
     fn default() -> Self {
         Self {
