@@ -57,7 +57,7 @@ impl Default for LifecycleConfig {
             max_retries: 3,
             retry_delay: Duration::from_secs(1),
             auto_restart: true,
-            enable_health_checks: false,
+            enable_health_checks: true,
             health_check_interval: Duration::from_secs(30),
             max_restart_attempts: 3,
         }

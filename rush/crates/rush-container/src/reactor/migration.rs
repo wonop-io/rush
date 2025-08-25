@@ -65,14 +65,9 @@ pub struct MigrationConfig {
 impl Default for MigrationConfig {
     fn default() -> Self {
         Self {
-            strategy: MigrationStrategy::Gradual {
-                enabled_features: vec![
-                    ModularFeature::EnhancedDocker,
-                    ModularFeature::LifecycleManagement,
-                ],
-            },
-            compatibility_mode: true,
-            fallback_on_error: true,
+            strategy: MigrationStrategy::Immediate,
+            compatibility_mode: false,
+            fallback_on_error: false,
             verbose_logging: false,
         }
     }
@@ -209,6 +204,15 @@ impl ReactorMigrator {
             config.docker.wrapper_config.verbose = false;
             config.lifecycle.auto_restart = true;
             config.build.parallel_builds = false;
+        } else {
+            // Modern settings enabled by default
+            config.docker.use_enhanced_client = true;
+            config.docker.enable_metrics = true;
+            config.docker.enable_pooling = true;
+            config.lifecycle.auto_restart = true;
+            config.lifecycle.enable_health_checks = true;
+            config.build.parallel_builds = true;
+            config.build.enable_cache = true;
         }
         
         // Apply enabled features

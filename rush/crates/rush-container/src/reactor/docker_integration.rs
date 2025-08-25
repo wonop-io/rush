@@ -120,10 +120,10 @@ impl DockerIntegration {
         // Add connection pooling if enabled
         if config.enable_pooling && config.pool_config.enabled {
             debug!("Enabling connection pooling");
-            let pool = Arc::new(ConnectionPool::new(
+            let pool = ConnectionPool::new(
                 config.pool_config.clone(),
                 move || client.clone(),
-            ));
+            );
             
             // Initialize the pool
             let pool_clone = pool.clone();

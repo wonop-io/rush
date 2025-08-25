@@ -174,8 +174,8 @@ impl ContainerReactor {
             product_name: config.product_name.clone(),
             environment: config.environment.clone(),
             network_name: config.network_name.clone(),
-            auto_restart: false, // Disabled for legacy compatibility
-            enable_health_checks: false, // Disabled for legacy compatibility
+            auto_restart: true, // Enable modern features by default
+            enable_health_checks: true, // Enable modern features by default
             ..Default::default()
         };
         let lifecycle_manager = LifecycleManager::new(
@@ -2188,8 +2188,8 @@ impl ContainerReactor {
                 product_name: self.config.product_name.clone(),
                 environment: self.config.environment.clone(),
                 network_name: self.config.network_name.clone(),
-                auto_restart: false, // Conservative for legacy compatibility
-                enable_health_checks: false, // Conservative for legacy compatibility
+                auto_restart: true, // Enable modern features by default
+                enable_health_checks: true, // Enable modern features by default
                 ..Default::default()
             },
             build: BuildOrchestratorConfig {
@@ -2203,9 +2203,9 @@ impl ContainerReactor {
             },
             watcher: CoordinatorConfig::default(),
             docker: DockerIntegrationConfig {
-                use_enhanced_client: false, // Conservative for legacy compatibility
-                enable_metrics: false,
-                enable_pooling: false,
+                use_enhanced_client: true, // Enable modern features by default
+                enable_metrics: true, // Enable modern features by default
+                enable_pooling: true, // Enable modern features by default
                 ..Default::default()
             },
             use_legacy: false, // Use modular components

@@ -98,22 +98,22 @@ pub struct ConnectionPool {
 
 impl ConnectionPool {
     /// Create a new connection pool
-    pub fn new<F>(config: PoolConfig, factory: F) -> Self
+    pub fn new<F>(config: PoolConfig, factory: F) -> Arc<Self>
     where
         F: Fn() -> Arc<dyn DockerClient> + Send + Sync + 'static,
     {
-        let pool = Self {
+        let pool = Arc::new(Self {
             config: config.clone(),
             factory: Arc::new(factory),
             connections: Arc::new(Mutex::new(VecDeque::new())),
             semaphore: Arc::new(Semaphore::new(config.max_connections)),
             next_id: Arc::new(Mutex::new(0)),
             shutdown: Arc::new(Mutex::new(false)),
-        };
+        });
 
         // Start cleanup task if pooling is enabled
         if config.enabled {
-            pool.start_cleanup_task();
+            pool.clone().start_cleanup_task();
         }
 
         pool
@@ -165,7 +165,7 @@ impl ConnectionPool {
     }
 
     /// Acquire a connection from the pool
-    pub async fn acquire(&self) -> Result<PoolGuard> {
+    pub async fn acquire(self: Arc<Self>) -> Result<PoolGuard> {
         if !self.config.enabled {
             // Direct connection without pooling
             let client = (self.factory)();
@@ -191,7 +191,7 @@ impl ConnectionPool {
                         debug!("Acquired existing connection {}", conn.id);
                         return Ok(PoolGuard::Pooled {
                             client: conn.client.clone(),
-                            pool: self.clone_ref(),
+                            pool: self.clone(),
                             id: conn.id,
                         });
                     }
@@ -274,8 +274,8 @@ impl ConnectionPool {
     }
 
     /// Start the cleanup task
-    fn start_cleanup_task(&self) {
-        let pool = self.clone_ref();
+    fn start_cleanup_task(self: Arc<Self>) {
+        let pool = self.clone();
         let interval = self.config.cleanup_interval;
         
         tokio::spawn(async move {
@@ -320,11 +320,6 @@ impl ConnectionPool {
         }
     }
 
-    /// Clone a reference to this pool
-    fn clone_ref(&self) -> Arc<ConnectionPool> {
-        // This is a placeholder - in real implementation, ConnectionPool would be wrapped in Arc
-        unimplemented!("ConnectionPool should be wrapped in Arc for sharing")
-    }
 }
 
 impl std::fmt::Debug for ConnectionPool {
@@ -409,17 +404,17 @@ impl DockerClient for PooledDockerClient {
         dockerfile: &str,
         context: &str,
     ) -> Result<()> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().build_image(tag, dockerfile, context).await
     }
 
     async fn create_network(&self, name: &str) -> Result<()> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().create_network(name).await
     }
 
     async fn network_exists(&self, name: &str) -> Result<bool> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().network_exists(name).await
     }
 
@@ -432,7 +427,7 @@ impl DockerClient for PooledDockerClient {
         ports: &[String],
         volumes: &[String],
     ) -> Result<String> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().run_container(
             image,
             name,
@@ -444,42 +439,42 @@ impl DockerClient for PooledDockerClient {
     }
 
     async fn stop_container(&self, id: &str) -> Result<()> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().stop_container(id).await
     }
 
     async fn remove_container(&self, id: &str) -> Result<()> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().remove_container(id).await
     }
 
     async fn container_status(&self, id: &str) -> Result<ContainerStatus> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().container_status(id).await
     }
 
     async fn container_logs(&self, id: &str, lines: usize) -> Result<String> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().container_logs(id, lines).await
     }
 
     async fn container_exists(&self, name: &str) -> Result<bool> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().container_exists(name).await
     }
 
     async fn get_container_by_name(&self, name: &str) -> Result<String> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().get_container_by_name(name).await
     }
 
     async fn delete_network(&self, name: &str) -> Result<()> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().delete_network(name).await
     }
 
     async fn pull_image(&self, name: &str) -> Result<()> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().pull_image(name).await
     }
 
@@ -493,7 +488,7 @@ impl DockerClient for PooledDockerClient {
         volumes: &[String],
         command: Option<&[String]>,
     ) -> Result<String> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().run_container_with_command(
             image,
             name,
@@ -511,17 +506,17 @@ impl DockerClient for PooledDockerClient {
         label: String,
         color: &str,
     ) -> Result<()> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().follow_container_logs(container_id, label, color).await
     }
 
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().send_signal_to_container(container_id, signal).await
     }
 
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
-        let guard = self.pool.acquire().await?;
+        let guard = self.pool.clone().acquire().await?;
         guard.client().exec_in_container(container_id, command).await
     }
 }
