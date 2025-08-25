@@ -5,7 +5,7 @@ env:
   STAGING_CTX: not_set
   PROD_CTX: not_set
 
-  LOCAL_DOMAIN: "{%-if subdomain-%}{{ subdomain }}.{%-endif-%}localhost"
+  LOCAL_DOMAIN: "{%-if subdomain-%}{{ subdomain }}.{%-endif-%}w.localhost"
   DEV_DOMAIN: "{%-if subdomain-%}{{ subdomain }}-{%-endif-%}{{ product_uri }}-dev.wonop.dev"
   STAGING_DOMAIN: "{%-if subdomain-%}{{ subdomain }}-{%-endif-%}{{ product_uri }}-staging.wonop.dev"
   PROD_DOMAIN: "{%-if subdomain-%}{{ subdomain }}.{%-endif-%}{{ product_name }}"

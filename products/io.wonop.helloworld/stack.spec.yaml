@@ -54,3 +54,11 @@ ingress:
   components:
     - "backend"
     - "frontend"
+  artefacts:
+    "./ingress/nginx.conf": nginx.conf
+  watch:
+    - "**/*_app"
+    - "**/*_api"
+  depends_on:
+    - frontend
+    - backend

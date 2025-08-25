@@ -64,4 +64,4 @@ dev_manifests/
 temp_manifests/
 postgres.db/
 **/postgres.db
-postgres.db/**
+postgres.db/**.rush
