@@ -79,6 +79,7 @@ pub fn parse_args() -> clap::ArgMatches {
         .subcommand(Command::new("dev")
             .arg(arg!(--redirect <COMPONENTS> ... "Disables component and redirects the ingress. Format: component@host:port").num_args(1..))
             .arg(arg!(--silence <COMPONENTS> ... "Silence output for specific components").num_args(1..))
+            .arg(arg!(--"force-rebuild" "Force rebuild of all components, ignoring cache"))
             .arg(arg!(--output <TYPE> "Output type: stdout, files, or both").default_value("stdout"))
             .arg(arg!(--"output-dir" <DIR> "Directory for log files when using files or both output types").default_value("logs"))
             .arg(arg!(--"output-format" <FORMAT> "Output format: auto, simple, split, dashboard, web").default_value("auto"))

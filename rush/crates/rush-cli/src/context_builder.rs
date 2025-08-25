@@ -27,6 +27,7 @@ pub async fn create_context(
     let start_port = *matches.get_one::<u16>("start_port").unwrap();
     let redirected_components = parse_redirected_components(matches);
     let silence_components = parse_silence_components(matches);
+    let force_rebuild = parse_force_rebuild(matches);
 
     let target_arch = get_target_arch(matches);
     let target_os = get_target_os(matches);
@@ -90,6 +91,7 @@ pub async fn create_context(
         redirected_components,
         silence_components,
         local_service_env_vars,
+        force_rebuild,
     )?;
     
     // Set the output sink on the reactor
@@ -150,6 +152,13 @@ fn parse_silence_components(matches: &ArgMatches) -> Vec<String> {
         .and_then(|dev_matches| dev_matches.get_many::<String>("silence"))
         .map(|values| values.cloned().map(|s| s.to_string()).collect())
         .unwrap_or_default()
+}
+
+fn parse_force_rebuild(matches: &ArgMatches) -> bool {
+    matches
+        .subcommand_matches("dev")
+        .map(|dev_matches| dev_matches.get_flag("force-rebuild"))
+        .unwrap_or(false)
 }
 
 pub fn setup_logging(matches: &ArgMatches) {
@@ -357,6 +366,7 @@ fn create_reactor(
     redirected_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
     local_service_env_vars: HashMap<String, String>,
+    force_rebuild: bool,
 ) -> Result<ContainerReactor> {
     // TODO: Resolve conflicting name for NoopEncoder
     let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
@@ -382,6 +392,10 @@ fn create_reactor(
         silence_components,
     ) {
         Ok(mut reactor) => {
+            // Set force rebuild if requested
+            if force_rebuild {
+                reactor.set_force_rebuild(true);
+            }
             // Add local service environment variables to the reactor
             for (key, value) in local_service_env_vars {
                 reactor.add_env_var(key, value);

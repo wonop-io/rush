@@ -93,6 +93,8 @@ pub struct ContainerReactor {
     running_services: Vec<DockerService>,
     /// File watcher and change processor (kept for compatibility)
     file_watcher: Option<(RecommendedWatcher, Arc<ChangeProcessor>)>,
+    /// Force rebuild flag - ignores cache when true
+    force_rebuild: bool,
 }
 
 // Use the ContainerReactorConfig from the config module
@@ -117,6 +119,14 @@ impl ContainerReactor {
     /// Add an environment variable to be injected into all containers
     pub fn add_env_var(&mut self, key: String, value: String) {
         self.additional_env.insert(key, value);
+    }
+    
+    /// Set the force rebuild flag
+    pub fn set_force_rebuild(&mut self, force: bool) {
+        self.force_rebuild = force;
+        if force {
+            info!("Force rebuild enabled - will ignore Docker cache");
+        }
     }
 
     /// Creates a new ContainerReactor
@@ -240,6 +250,7 @@ impl ContainerReactor {
             legacy_available_components: Vec::new(),
             running_services: Vec::new(),
             file_watcher: None,
+            force_rebuild: false,
         })
     }
 
@@ -1059,11 +1070,16 @@ impl ContainerReactor {
                     image_builder = image_builder.with_toolchain(toolchain.clone());
                 }
 
-                let rebuild_needed = match image_builder.evaluate_rebuild_needed().await {
-                    Ok(needed) => needed,
-                    Err(e) => {
-                        warn!("Failed to evaluate cache status: {}, will rebuild", e);
-                        true
+                let rebuild_needed = if self.force_rebuild {
+                    info!("Force rebuild enabled for {}", component_name);
+                    true
+                } else {
+                    match image_builder.evaluate_rebuild_needed().await {
+                        Ok(needed) => needed,
+                        Err(e) => {
+                            warn!("Failed to evaluate cache status: {}, will rebuild", e);
+                            true
+                        }
                     }
                 };
 
@@ -1073,7 +1089,7 @@ impl ContainerReactor {
                 (rebuild_needed, actual_image)
             };
 
-            if !needs_rebuild {
+            if !needs_rebuild && !self.force_rebuild {
                 info!(
                     "Image {} already exists with clean git tag, skipping build and build script",
                     actual_tagged_image
@@ -1082,6 +1098,11 @@ impl ContainerReactor {
                 self.built_images
                     .insert(component_name.clone(), actual_tagged_image.clone());
                 continue; // Skip to next component
+            } else if !needs_rebuild && self.force_rebuild {
+                info!(
+                    "Image {} exists but force rebuild is enabled, will rebuild",
+                    actual_tagged_image
+                );
             }
 
             // Only run expensive operations if we actually need to build
@@ -2161,26 +2182,45 @@ impl ContainerReactor {
             let mut filtered_services = HashMap::new();
 
             // We need to collect service information for the specified components
-            // For now, we'll create basic service specs for the components
-            // TODO: This is outright wrong - it needs to be properly computed from the rushd.yaml template (depends on environment)
-            let domain = format!("{}.local", spec.product_name);
+            // Use the properly computed domain from the ComponentBuildSpec
+            // This domain is already computed from the rushd.yaml template based on environment
+            let domain = spec.domain.clone();
 
-            for component in components {
-                let docker_host = format!("{}-{}", spec.product_name, component);
-                let service_spec = ServiceSpec {
-                    name: component.clone(),
-                    host: docker_host.clone(),
-                    docker_host,
-                    domain: domain.clone(),
-                    port: 8000, // Default port, should be configurable
-                    target_port: 8000,
-                    mount_point: if component == "frontend" {
+            for component_name in components {
+                // Try to find the actual component spec to get its configuration
+                let component_spec = self.component_specs()
+                    .iter()
+                    .find(|s| &s.component_name == component_name);
+                
+                let docker_host = format!("{}-{}", spec.product_name, component_name);
+                
+                // Use actual port and mount_point from component spec if available
+                let (port, target_port, mount_point) = if let Some(comp_spec) = component_spec {
+                    (
+                        comp_spec.port.unwrap_or(8000),
+                        comp_spec.target_port.unwrap_or(comp_spec.port.unwrap_or(8000)),
+                        comp_spec.mount_point.clone(),
+                    )
+                } else {
+                    // Fallback to defaults if component spec not found
+                    let default_mount = if component_name == "frontend" {
                         Some("/".to_string())
-                    } else if component == "backend" {
+                    } else if component_name == "backend" {
                         Some("/api".to_string())
                     } else {
                         None
-                    },
+                    };
+                    (8000, 8000, default_mount)
+                };
+                
+                let service_spec = ServiceSpec {
+                    name: component_name.clone(),
+                    host: docker_host.clone(),
+                    docker_host,
+                    domain: domain.clone(),
+                    port,
+                    target_port,
+                    mount_point,
                 };
 
                 // Add to the domain

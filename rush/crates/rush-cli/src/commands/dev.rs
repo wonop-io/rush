@@ -25,6 +25,7 @@ pub struct DevCommand {
     toolchain: Arc<ToolchainContext>,
     redirect_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
+    force_rebuild: bool,
     _output_config: OutputDirectorConfig,
     output_sink: Option<Arc<TokioMutex<Box<dyn OutputSink>>>>,
 }
@@ -37,6 +38,7 @@ impl DevCommand {
         _vault: Arc<dyn SecretsProvider>,
         redirect_components: HashMap<String, (String, u16)>,
         silence_components: Vec<String>,
+        force_rebuild: bool,
         _output_config: OutputDirectorConfig,
     ) -> Self {
         DevCommand {
@@ -45,6 +47,7 @@ impl DevCommand {
             toolchain,
             redirect_components,
             silence_components,
+            force_rebuild,
             _output_config,
             output_sink: None,
         }
@@ -85,7 +88,7 @@ impl DevCommand {
         let docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));
 
         // Create the container reactor from product directory
-        let reactor = ContainerReactor::from_product_dir(
+        let mut reactor = ContainerReactor::from_product_dir(
             self.config.clone(),
             vault_adapter,
             secrets_encoder,
@@ -93,6 +96,11 @@ impl DevCommand {
             self.silence_components.clone(),
         )
         .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {e}")))?;
+        
+        // Set force rebuild if requested
+        if self.force_rebuild {
+            reactor.set_force_rebuild(true);
+        }
         
         // Create development environment with both local services and reactor
         let data_dir = self.config.product_path().join("target").join("local-services");
@@ -190,6 +198,7 @@ pub async fn execute(
     vault: Arc<dyn SecretsProvider>,
     redirect_components: HashMap<String, (String, u16)>,
     silence_components: Vec<String>,
+    force_rebuild: bool,
     _output_config: OutputDirectorConfig,
 ) -> Result<()> {
     let cmd = DevCommand::new(
@@ -199,6 +208,7 @@ pub async fn execute(
         vault,
         redirect_components,
         silence_components,
+        force_rebuild,
         _output_config,
     );
     cmd.execute().await
