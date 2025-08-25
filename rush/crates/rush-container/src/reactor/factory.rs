@@ -1,7 +1,7 @@
-//! Reactor factory for creating appropriate reactor implementations
+//! Reactor factory for creating reactor implementations
 //!
-//! This module provides a factory for creating either the legacy reactor
-//! or the new primary reactor based on configuration.
+//! This module provides a factory for creating the primary reactor
+//! based on configuration.
 
 use crate::{
     docker::DockerClient,
@@ -117,7 +117,7 @@ impl ReactorImplementation {
             ReactorImplementation::Legacy(_reactor) => {
                 ReactorStatusInfo {
                     implementation: "legacy".to_string(),
-                    components: 0, // Legacy doesn't easily provide this
+                    components: 0,
                     running_containers: 0,
                     phase: "unknown".to_string(),
                 }
@@ -138,7 +138,7 @@ impl ReactorImplementation {
     pub async fn shutdown(&mut self) -> Result<()> {
         match self {
             ReactorImplementation::Legacy(_reactor) => {
-                // Legacy reactor shutdown is handled via signals
+                // Shutdown is handled via signals
                 Ok(())
             }
             ReactorImplementation::Primary(reactor) => {
@@ -148,7 +148,7 @@ impl ReactorImplementation {
     }
 }
 
-/// Status information that works for both implementations
+/// Status information for reactor implementations
 #[derive(Debug, Clone)]
 pub struct ReactorStatusInfo {
     pub implementation: String,
@@ -168,6 +168,7 @@ impl ReactorFactory {
         component_specs: Vec<ComponentBuildSpec>,
         legacy_config: Option<ContainerReactorConfig>,
     ) -> Result<ReactorImplementation> {
+        #[allow(deprecated)]
         if config.use_legacy {
             info!("Creating legacy reactor implementation");
             Self::create_legacy_reactor(
@@ -296,9 +297,9 @@ impl ModularReactorConfigBuilder {
         }
     }
     
-    /// Use legacy reactor implementation
-    pub fn use_legacy(mut self, use_legacy: bool) -> Self {
-        self.config.use_legacy = use_legacy;
+    /// Set whether to use legacy reactor implementation (deprecated - always uses primary)
+    #[deprecated(note = "Legacy reactor no longer supported, this method has no effect")]
+    pub fn use_legacy(self, _use_legacy: bool) -> Self {
         self
     }
     
@@ -368,6 +369,7 @@ mod tests {
 
     #[test]
     fn test_reactor_config_builder() {
+        #[allow(deprecated)]
         let config = ModularReactorConfigBuilder::new()
             .use_legacy(false)
             .with_enhanced_docker(true)
@@ -378,6 +380,7 @@ mod tests {
             .with_verbose_logging(true)
             .build();
         
+        #[allow(deprecated)]
         assert!(!config.use_legacy);
         assert!(config.docker.use_enhanced_client);
         assert!(config.watcher.auto_rebuild);

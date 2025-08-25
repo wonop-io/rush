@@ -1,7 +1,7 @@
-//! Migration utilities for transitioning from legacy to modular reactor
+//! Migration utilities for reactor configuration
 //!
-//! This module provides utilities to help migrate from the legacy reactor
-//! implementation to the new modular reactor.
+//! This module provides utilities to help configure and setup
+//! reactor implementations with different strategies.
 
 use crate::{
     docker::DockerClient,

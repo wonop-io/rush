@@ -1,4 +1,8 @@
 //! Rush Container - Docker and container orchestration
+//! 
+//! This crate provides container lifecycle management through the Reactor pattern.
+//! The primary implementation uses a modular architecture with separate components
+//! for build orchestration, lifecycle management, file watching, and Docker integration.
 
 pub mod build;
 pub mod dev_environment;

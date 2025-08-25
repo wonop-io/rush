@@ -29,7 +29,7 @@ pub enum ReactorPhase {
     ShuttingDown,
     /// Terminated
     Shutdown,
-    /// Terminated (old name for backward compatibility)
+    /// Reactor has terminated
     Terminated,
 }
 

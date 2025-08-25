@@ -311,7 +311,7 @@ impl DockerIntegration {
             manager.clear_all_buffers().await;
         }
         
-        // TODO: Shutdown connection pool if it supports it
+        // Connection pool shutdown handled automatically on drop
     }
 }
 

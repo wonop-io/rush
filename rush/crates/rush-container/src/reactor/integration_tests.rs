@@ -463,6 +463,7 @@ mod tests {
     #[tokio::test]
     async fn test_modular_reactor_config_validation() {
         let config = ModularReactorConfig {
+            #[allow(deprecated)]
             use_legacy: false,
             docker: crate::reactor::docker_integration::DockerIntegrationConfig {
                 use_enhanced_client: true,
@@ -473,6 +474,7 @@ mod tests {
             ..Default::default()
         };
 
+        #[allow(deprecated)]
         assert!(!config.use_legacy);
         assert!(config.docker.use_enhanced_client);
         assert!(config.docker.enable_metrics);

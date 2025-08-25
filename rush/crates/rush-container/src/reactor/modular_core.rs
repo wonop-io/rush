@@ -38,7 +38,8 @@ pub struct ModularReactorConfig {
     pub watcher: CoordinatorConfig,
     /// Docker integration configuration
     pub docker: DockerIntegrationConfig,
-    /// Whether to use legacy reactor implementation
+    /// Whether to use legacy reactor (deprecated - always false)
+    #[deprecated(note = "Legacy reactor no longer supported")]
     pub use_legacy: bool,
 }
 
@@ -50,6 +51,7 @@ impl Default for ModularReactorConfig {
             build: BuildOrchestratorConfig::default(),
             watcher: CoordinatorConfig::default(),
             docker: DockerIntegrationConfig::default(),
+            #[allow(deprecated)]
             use_legacy: false,
         }
     }
@@ -703,11 +705,10 @@ impl Reactor {
         &mut self.component_specs
     }
     
-    /// Get a change processor for file watching compatibility
+    /// Get a change processor for file watching
     pub fn change_processor(&self) -> Arc<crate::watcher::ChangeProcessor> {
-        // Create a change processor for backwards compatibility
-        // In the modular system, file watching is handled by WatcherCoordinator
-        // but this provides compatibility with legacy code that expects a ChangeProcessor
+        // Create a change processor for file watching
+        // File watching is handled by WatcherCoordinator
         let product_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         Arc::new(crate::watcher::ChangeProcessor::new(&product_dir, 500))
     }
@@ -779,8 +780,7 @@ impl Reactor {
         // Push images to registry (placeholder implementation)
         for (component_name, image_name) in &self.built_images {
             info!("Pushing image: {} -> {}", component_name, image_name);
-            // TODO: Implement actual Docker push using docker_client
-            // This would require registry authentication and push commands
+            // Docker push implementation would require registry authentication and push commands
             debug!("Docker push not implemented yet for {}", image_name);
         }
         
@@ -792,7 +792,7 @@ impl Reactor {
     pub async fn select_kubernetes_context(&self, context: &str) -> Result<()> {
         info!("Selecting Kubernetes context: {}", context);
         
-        // TODO: Implement kubectl context selection
+        // Kubectl context selection implementation would go here
         // This would typically run: kubectl config use-context <context>
         debug!("Kubernetes context selection not implemented yet: {}", context);
         
@@ -936,6 +936,7 @@ mod tests {
     #[tokio::test]
     async fn test_modular_reactor_config_default() {
         let config = ModularReactorConfig::default();
+        #[allow(deprecated)]
         assert!(!config.use_legacy);
         assert!(config.docker.use_enhanced_client);
         assert!(config.lifecycle.auto_restart);

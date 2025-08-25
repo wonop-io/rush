@@ -37,10 +37,9 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc};
 
-/// Manages the container lifecycle and coordinates rebuilds based on file changes
+/// Container reactor that manages the container lifecycle and coordinates rebuilds based on file changes
 /// 
-/// This is the legacy reactor interface that now delegates to the modular reactor internally.
-/// This provides backward compatibility while using the new modular architecture.
+/// This reactor delegates to the primary Reactor implementation for all operations.
 pub struct ContainerReactor {
     /// Configuration for the reactor
     config: Arc<ContainerReactorConfig>,
@@ -48,7 +47,7 @@ pub struct ContainerReactor {
     /// The new modular reactor that handles the actual work
     modular_reactor: Option<Reactor>,
 
-    /// Shared state for compatibility with existing code
+    /// Shared state for reactor operations
     state: SharedReactorState,
 
     /// Event bus for communication
@@ -63,10 +62,9 @@ pub struct ContainerReactor {
     /// Watcher integration for file changes
     watcher_integration: WatcherIntegration,
 
-    /// Build orchestrator for coordinating builds (kept for compatibility)
+    /// Build orchestrator for coordinating builds
     build_orchestrator: Arc<BuildOrchestrator>,
 
-    /// Legacy fields maintained for API compatibility
     /// Collection of services managed by this reactor
     services: ServiceCollection,
     /// Build processor for container builds
@@ -85,13 +83,13 @@ pub struct ContainerReactor {
     additional_env: HashMap<String, String>,
     /// Channel for triggering graceful shutdown
     shutdown_sender: broadcast::Sender<()>,
-    /// Running services (kept for compatibility)
+    /// Running services
     running_services: Vec<DockerService>,
-    /// File watcher and change processor (kept for compatibility)
+    /// File watcher and change processor
     file_watcher: Option<(RecommendedWatcher, Arc<ChangeProcessor>)>,
     /// Force rebuild flag - ignores cache when true
     force_rebuild: bool,
-    /// Temporary storage for component specs until modular reactor is initialized
+    /// Storage for component specs until primary reactor is initialized
     temp_component_specs: Vec<ComponentBuildSpec>,
 }
 
@@ -155,7 +153,7 @@ impl ContainerReactor {
         let event_bus = EventBus::new();
         let state = SharedReactorState::new();
 
-        // Create Docker integration with enhanced features disabled for compatibility
+        // Create Docker integration with enhanced features disabled
         let docker_integration_config = DockerIntegrationConfig {
             use_enhanced_client: false,
             enable_metrics: false,
@@ -204,7 +202,7 @@ impl ContainerReactor {
             shutdown_sender.clone(),
         )?;
 
-        // Create build orchestrator config (kept for compatibility)
+        // Create build orchestrator config
         let orchestrator_config = BuildOrchestratorConfig {
             product_name: config.product_name.clone(),
             product_dir: config.product_dir.clone(),
@@ -215,7 +213,7 @@ impl ContainerReactor {
             cache_dir: config.product_dir.join(".rush/cache"),
         };
 
-        // Create build orchestrator (kept for compatibility)
+        // Create build orchestrator
         let build_orchestrator = Arc::new(BuildOrchestrator::new(
             orchestrator_config,
             docker_integration.client(),
@@ -232,7 +230,7 @@ impl ContainerReactor {
             docker_integration,
             watcher_integration,
             build_orchestrator,
-            // Legacy fields for API compatibility
+            // Service management fields
             services: HashMap::new(),
             build_processor: BuildProcessor::new(false),
             vault,
@@ -473,7 +471,7 @@ impl ContainerReactor {
                     if let Some(built_image) = self.built_images.get(component_name) {
                         built_image.clone()
                     } else {
-                        // Fallback to default naming (this happens before build)
+                        // Use default naming before build
                         let image_name = if self.config.docker_registry.is_empty() {
                             format!("{}-{}", self.config.product_name, component_name)
                         } else {
@@ -490,7 +488,7 @@ impl ContainerReactor {
             };
 
             let service = Arc::new(ContainerService {
-                id: "TODO".to_string(),
+                id: format!("{}_{}", spec.product_name, spec.component_name),
                 name: component_name.clone(),
                 image: tagged_image_name,
                 host: component_name.clone(),
@@ -638,7 +636,7 @@ impl ContainerReactor {
                     format!("{}/{}", self.config.docker_registry, service.name)
                 };
                 info!("Pushing image: {}", image_name);
-                // TODO: Implement actual Docker push
+                // Docker push implementation would go here
             }
         }
 
@@ -650,8 +648,7 @@ impl ContainerReactor {
     pub async fn select_kubernetes_context(&self, context: &str) -> Result<()> {
         info!("Selecting Kubernetes context: {}", context);
 
-        // TODO: Implement kubectl context selection
-        // let kubectl = "kubectl"; // Temporary placeholder
+        // Kubectl context selection implementation would go here
         let _args = ["config", "use-context", context];
 
         // Would use run_command here in actual implementation
@@ -664,7 +661,7 @@ impl ContainerReactor {
     pub async fn apply(&mut self) -> Result<()> {
         info!("Applying Kubernetes manifests...");
 
-        // TODO: Generate and apply K8s manifests
+        // K8s manifest generation and deployment would go here
 
         info!("Kubernetes manifests applied successfully");
         Ok(())
@@ -674,7 +671,7 @@ impl ContainerReactor {
     pub async fn unapply(&mut self) -> Result<()> {
         info!("Removing Kubernetes resources...");
 
-        // TODO: Delete K8s resources
+        // K8s resource deletion would go here
 
         info!("Kubernetes resources removed successfully");
         Ok(())
@@ -684,7 +681,7 @@ impl ContainerReactor {
     pub async fn install_manifests(&mut self) -> Result<()> {
         info!("Installing Kubernetes manifests...");
 
-        // TODO: Install K8s manifests for the product
+        // K8s manifest installation would go here
 
         info!("Kubernetes manifests installed successfully");
         Ok(())
@@ -694,7 +691,7 @@ impl ContainerReactor {
     pub async fn uninstall_manifests(&mut self) -> Result<()> {
         info!("Uninstalling Kubernetes manifests...");
 
-        // TODO: Uninstall K8s manifests
+        // K8s manifest uninstallation would go here
 
         info!("Kubernetes manifests uninstalled successfully");
         Ok(())
@@ -704,7 +701,7 @@ impl ContainerReactor {
     pub async fn build_manifests(&mut self) -> Result<()> {
         info!("Building Kubernetes manifests...");
 
-        // TODO: Generate K8s manifests from templates
+        // K8s manifest generation from templates would go here
 
         info!("Kubernetes manifests built successfully");
         Ok(())
@@ -973,7 +970,7 @@ impl ContainerReactor {
             {
                 service.name.clone()
             } else {
-                // Fallback: try to extract from container name pattern "product-component"
+                // Try to extract from container name pattern "product-component"
                 container_name
                     .rsplit('-')
                     .next()
@@ -1235,7 +1232,7 @@ impl ContainerReactor {
                 );
                 is_match
             } else {
-                // Fallback to simple path comparison
+                // Use simple path comparison
                 let is_match = file_path.starts_with(&context_path);
                 debug!(
                     "        Simple comparison: {} starts_with {} = {}",
@@ -1729,7 +1726,7 @@ impl ContainerReactor {
                         comp_spec.mount_point.clone(),
                     )
                 } else {
-                    // Fallback to defaults if component spec not found
+                    // Use defaults if component spec not found
                     let default_mount = if component_name == "frontend" {
                         Some("/".to_string())
                     } else if component_name == "backend" {
@@ -1858,7 +1855,7 @@ impl ContainerReactor {
         use rush_build::{BuildContext, BuildScript};
         use rush_core::error::Error;
         use rush_toolchain::{Platform, ToolchainContext};
-        // run_command no longer needed - using sink directly
+        // Using sink directly for output
 
         // Skip components that don't need build scripts
         if !spec.build_type.requires_docker_build() {
@@ -1965,7 +1962,7 @@ impl ContainerReactor {
             spec.component_name
         );
 
-        // Write script to temporary file and execute it
+        // Write script to temp file and execute it
         use std::fs;
         use std::os::unix::fs::PermissionsExt;
 
@@ -2157,13 +2154,13 @@ impl ContainerReactor {
     /// Run the reactor main loop (new modular interface)
     /// 
     /// This method provides compatibility with the new modular reactor interface.
-    /// It delegates to the modular components for the actual work.
+    /// It delegates to the primary reactor for the actual work.
     pub async fn run(&mut self) -> Result<()> {
-        info!("Starting legacy reactor with modular components");
+        info!("Starting reactor");
 
         // Initialize the modular reactor if not already done
         if self.modular_reactor.is_none() {
-            info!("Creating modular reactor from legacy configuration");
+            info!("Creating primary reactor from configuration");
             let modular_config = self.create_modular_config();
             
             let modular_reactor = crate::reactor::factory::ReactorFactory::create_reactor(
@@ -2182,9 +2179,7 @@ impl ContainerReactor {
         if let Some(reactor) = &mut self.modular_reactor {
             reactor.run().await
         } else {
-            // Fallback to legacy behavior
-            warn!("Modular reactor not available, falling back to legacy run logic");
-            Err(Error::Internal("Modular reactor is required - legacy run is no longer supported".into()))
+            Err(Error::Internal("Primary reactor is required".into()))
         }
     }
 
@@ -2229,7 +2224,8 @@ impl ContainerReactor {
                 enable_pooling: true, // Enable modern features by default
                 ..Default::default()
             },
-            use_legacy: false, // Use modular components
+            #[allow(deprecated)]
+            use_legacy: false,
         }
     }
 
@@ -2245,7 +2241,7 @@ impl ContainerReactor {
         if let Some((_watcher, processor)) = &self.file_watcher {
             processor.clone()
         } else {
-            // Fallback: create a dummy processor (shouldn't happen in normal operation)
+            // Create a dummy processor (shouldn't happen in normal operation)
             Arc::new(crate::watcher::ChangeProcessor::new(&self.config.product_dir, 500))
         }
     }

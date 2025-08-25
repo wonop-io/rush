@@ -81,7 +81,7 @@ impl WatcherIntegration {
             info!("Starting new watcher system for: {}", path.display());
             coordinator.watch_directory(path)?;
         } else {
-            info!("New watcher system disabled, using legacy watcher");
+            info!("Watcher system disabled");
         }
         Ok(())
     }
@@ -117,7 +117,7 @@ impl WatcherIntegration {
                 }
             }
         } else {
-            // Legacy mode - return empty to indicate all components should rebuild
+            // Return empty to indicate all components should rebuild
             None
         }
     }
@@ -144,7 +144,7 @@ pub fn determine_rebuild_targets(
         // Only rebuild affected components
         batch.affected_components.into_iter().collect()
     } else {
-        // Rebuild all components (legacy behavior)
+        // Rebuild all components
         all_components.to_vec()
     }
 }
@@ -192,7 +192,7 @@ mod tests {
         assert!(targets.contains(&"comp1".to_string()));
         assert!(targets.contains(&"comp3".to_string()));
         
-        // Test with no batch (legacy mode)
+        // Test with no batch
         let targets = determine_rebuild_targets(None, &all_components);
         assert_eq!(targets, all_components);
     }
