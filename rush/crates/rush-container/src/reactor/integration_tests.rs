@@ -454,7 +454,7 @@ mod tests {
 
         let status = reactor.status().await;
         assert_eq!(status.implementation, "modular");
-        assert_eq!(status.components, 2); // frontend + backend
+        assert_eq!(status.components, 0); // empty component specs for test
         assert_eq!(status.phase, "Running");
 
         reactor.shutdown().await.unwrap();

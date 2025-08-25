@@ -63,6 +63,54 @@ impl ReactorImplementation {
         }
     }
     
+    /// Build all components
+    pub async fn build(&mut self) -> Result<()> {
+        match self {
+            ReactorImplementation::Legacy(reactor) => {
+                reactor.build().await
+            }
+            ReactorImplementation::Modular(reactor) => {
+                reactor.build().await
+            }
+        }
+    }
+    
+    /// Roll out containers
+    pub async fn rollout(&mut self) -> Result<()> {
+        match self {
+            ReactorImplementation::Legacy(reactor) => {
+                reactor.rollout().await
+            }
+            ReactorImplementation::Modular(reactor) => {
+                reactor.rollout().await
+            }
+        }
+    }
+    
+    /// Build and push images
+    pub async fn build_and_push(&mut self) -> Result<()> {
+        match self {
+            ReactorImplementation::Legacy(reactor) => {
+                reactor.build_and_push().await
+            }
+            ReactorImplementation::Modular(reactor) => {
+                reactor.build_and_push().await
+            }
+        }
+    }
+    
+    /// Deploy to Kubernetes
+    pub async fn deploy(&mut self) -> Result<()> {
+        match self {
+            ReactorImplementation::Legacy(reactor) => {
+                reactor.deploy().await
+            }
+            ReactorImplementation::Modular(reactor) => {
+                reactor.deploy().await
+            }
+        }
+    }
+    
     /// Get status information
     pub async fn status(&self) -> ReactorStatusInfo {
         match self {

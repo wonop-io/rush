@@ -441,8 +441,9 @@ mod tests {
     #[test]
     fn test_migration_config_default() {
         let config = MigrationConfig::default();
-        assert!(config.compatibility_mode);
-        assert!(config.fallback_on_error);
+        // Phase 3 changes: Updated defaults for modern features
+        assert!(!config.compatibility_mode);
+        assert!(!config.fallback_on_error);
         assert!(!config.verbose_logging);
     }
 

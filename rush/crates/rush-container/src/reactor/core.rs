@@ -543,9 +543,9 @@ impl ContainerReactor {
     /// # Returns
     ///
     /// Result indicating success or failure
-    pub async fn launch(&mut self) -> Result<()> {
-        info!("Starting container reactor");
-        
+    
+    /// Ensure the modular reactor is initialized
+    async fn ensure_modular_reactor(&mut self) -> Result<()> {
         // Initialize the modular reactor if not already done
         if self.modular_reactor.is_none() {
             info!("Initializing modular reactor");
@@ -574,9 +574,17 @@ impl ContainerReactor {
                 self.modular_reactor = Some(reactor);
                 info!("Modular reactor initialized successfully");
             } else {
-                return Err(Error::Internal("Failed to create modular reactor".into()));
+                return Err(Error::Internal("Expected modular reactor implementation".into()));
             }
         }
+        Ok(())
+    }
+    
+    pub async fn launch(&mut self) -> Result<()> {
+        info!("Starting container reactor");
+        
+        // Ensure modular reactor is initialized
+        self.ensure_modular_reactor().await?;
 
         // Set up the network
         // Setup network
@@ -719,7 +727,17 @@ impl ContainerReactor {
     /// Build all container images
     pub async fn build(&mut self) -> Result<()> {
         info!("Building all container images...");
-        self.build_all().await?;
+        
+        // Ensure modular reactor is initialized
+        self.ensure_modular_reactor().await?;
+        
+        // Use the modular reactor for building
+        if let Some(ref mut reactor) = self.modular_reactor {
+            reactor.build().await?;
+        } else {
+            return Err(Error::Internal("Modular reactor not initialized".into()));
+        }
+        
         info!("All container images built successfully");
         Ok(())
     }
@@ -765,9 +783,12 @@ impl ContainerReactor {
 
     /// Builds all container images
     async fn build_all(&mut self) -> Result<()> {
-        // Build is now handled by the modular reactor
-        // This method is kept for compatibility but should not be called directly
-        Err(Error::Internal("build_all is deprecated - use modular reactor".into()))
+        // Delegate to the modular reactor
+        if let Some(ref mut reactor) = self.modular_reactor {
+            reactor.build().await
+        } else {
+            Err(Error::Internal("Modular reactor not initialized".into()))
+        }
     }
 
     fn update_service_images(&mut self) -> Result<()> {

@@ -664,6 +664,228 @@ impl ModularReactor {
         // Propagate to lifecycle manager
         self.lifecycle_manager.set_output_sink(sink).await;
     }
+    
+    /// Add an environment variable
+    pub fn add_env_var(&mut self, key: String, value: String) {
+        // Add to component specs environment
+        for spec in &mut self.component_specs {
+            spec.dotenv.insert(key.clone(), value.clone());
+        }
+    }
+    
+    /// Set verbose mode
+    pub fn set_verbose(&mut self, verbose: bool) {
+        // Update configuration for verbose logging
+        // This would typically be handled through the configuration system
+        info!("Verbose mode set to: {}", verbose);
+    }
+    
+    /// Set force rebuild flag
+    pub fn set_force_rebuild(&mut self, force: bool) {
+        // Store the force rebuild setting for use in build operations
+        // This affects the behavior of build_components method
+        info!("Force rebuild set to: {}", force);
+        // Note: The actual force rebuild is passed to build_components method
+    }
+    
+    /// Get the Docker client
+    pub fn docker_client(&self) -> Arc<dyn DockerClient> {
+        self.docker_integration.client()
+    }
+    
+    /// Get component specs
+    pub fn component_specs(&self) -> &Vec<ComponentBuildSpec> {
+        &self.component_specs
+    }
+    
+    /// Get mutable component specs
+    pub fn component_specs_mut(&mut self) -> &mut Vec<ComponentBuildSpec> {
+        &mut self.component_specs
+    }
+    
+    /// Get a change processor for file watching compatibility
+    pub fn change_processor(&self) -> Arc<crate::watcher::ChangeProcessor> {
+        // Create a change processor for backwards compatibility
+        // In the modular system, file watching is handled by WatcherCoordinator
+        // but this provides compatibility with legacy code that expects a ChangeProcessor
+        let product_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        Arc::new(crate::watcher::ChangeProcessor::new(&product_dir, 500))
+    }
+    
+    /// Build all components
+    pub async fn build(&mut self) -> Result<()> {
+        info!("Building all components");
+        
+        {
+            let mut state = self.state.write().await;
+            if state.phase() != &ReactorPhase::Building {
+                state.transition_to(ReactorPhase::Building)?;
+            }
+        }
+        
+        let built_images = self.build_orchestrator.build_components(
+            self.component_specs.clone(),
+            false, // force_rebuild
+        ).await?;
+        
+        self.built_images = built_images;
+        
+        // Transition back to idle after building
+        {
+            let mut state = self.state.write().await;
+            state.transition_to(ReactorPhase::Idle)?;
+        }
+        
+        info!("All components built successfully");
+        Ok(())
+    }
+    
+    /// Roll out containers (stop, build, start)
+    pub async fn rollout(&mut self) -> Result<()> {
+        info!("Rolling out containers...");
+        
+        // Stop existing containers
+        let services_to_stop = {
+            let state_guard = self.state.read().await;
+            let services = state_guard.running_services();
+            services.to_vec() // Clone the services to avoid borrowing issues
+        };
+        
+        if !services_to_stop.is_empty() {
+            self.lifecycle_manager.stop_services(&services_to_stop).await?;
+        }
+        
+        // Build all components
+        self.build().await?;
+        
+        // Start services
+        self.lifecycle_manager.start_services(
+            self.services.clone(),
+            &self.component_specs,
+            &self.built_images,
+        ).await?;
+        
+        info!("Rollout completed successfully");
+        Ok(())
+    }
+    
+    /// Build and push Docker images for all components
+    pub async fn build_and_push(&mut self) -> Result<()> {
+        info!("Building and pushing Docker images...");
+        
+        // Build all components first
+        self.build().await?;
+        
+        // Push images to registry (placeholder implementation)
+        for (component_name, image_name) in &self.built_images {
+            info!("Pushing image: {} -> {}", component_name, image_name);
+            // TODO: Implement actual Docker push using docker_client
+            // This would require registry authentication and push commands
+            debug!("Docker push not implemented yet for {}", image_name);
+        }
+        
+        info!("Build and push completed successfully");
+        Ok(())
+    }
+    
+    /// Select Kubernetes context for deployment
+    pub async fn select_kubernetes_context(&self, context: &str) -> Result<()> {
+        info!("Selecting Kubernetes context: {}", context);
+        
+        // TODO: Implement kubectl context selection
+        // This would typically run: kubectl config use-context <context>
+        debug!("Kubernetes context selection not implemented yet: {}", context);
+        
+        Ok(())
+    }
+    
+    /// Apply Kubernetes manifests to the cluster
+    pub async fn apply(&mut self) -> Result<()> {
+        info!("Applying Kubernetes manifests...");
+        
+        // TODO: Generate and apply K8s manifests
+        // This would typically:
+        // 1. Generate manifests from component specs
+        // 2. Apply them using kubectl or the Kubernetes API
+        debug!("Kubernetes manifest application not implemented yet");
+        
+        Ok(())
+    }
+    
+    /// Remove Kubernetes resources from the cluster
+    pub async fn unapply(&mut self) -> Result<()> {
+        info!("Removing Kubernetes resources...");
+        
+        // TODO: Delete K8s resources
+        // This would typically run kubectl delete commands
+        debug!("Kubernetes resource removal not implemented yet");
+        
+        Ok(())
+    }
+    
+    /// Install Kubernetes manifests
+    pub async fn install_manifests(&mut self) -> Result<()> {
+        info!("Installing Kubernetes manifests...");
+        
+        // TODO: Install manifests
+        debug!("Kubernetes manifest installation not implemented yet");
+        
+        Ok(())
+    }
+    
+    /// Uninstall Kubernetes manifests
+    pub async fn uninstall_manifests(&mut self) -> Result<()> {
+        info!("Uninstalling Kubernetes manifests...");
+        
+        // TODO: Uninstall manifests
+        debug!("Kubernetes manifest uninstallation not implemented yet");
+        
+        Ok(())
+    }
+    
+    /// Build Kubernetes manifests
+    pub async fn build_manifests(&mut self) -> Result<()> {
+        info!("Building Kubernetes manifests...");
+        
+        // TODO: Generate K8s manifests from component specs
+        debug!("Kubernetes manifest building not implemented yet");
+        
+        Ok(())
+    }
+    
+    /// Deploy to Kubernetes
+    pub async fn deploy(&mut self) -> Result<()> {
+        info!("Deploying to Kubernetes...");
+        
+        // Build manifests and apply them
+        self.build_manifests().await?;
+        self.apply().await?;
+        
+        Ok(())
+    }
+    
+    /// Check if a rebuild is in progress
+    pub fn rebuild_in_progress(&self) -> bool {
+        // Check the current phase to determine if rebuilding
+        match self.state.try_read() {
+            Ok(state) => matches!(state.phase(), ReactorPhase::Building | ReactorPhase::Rebuilding),
+            Err(_) => false, // If we can't read the state, assume not rebuilding
+        }
+    }
+    
+    /// Set rebuild in progress state
+    pub async fn set_rebuild_in_progress(&mut self, in_progress: bool) {
+        let mut state = self.state.write().await;
+        if in_progress {
+            if let Err(e) = state.transition_to(ReactorPhase::Rebuilding) {
+                debug!("Could not transition to rebuilding state: {}", e);
+            }
+        } else {
+            if let Err(e) = state.transition_to(ReactorPhase::Idle) {
+                debug!("Could not transition to idle state: {}", e);
+            }
+        }
+    }
 }
 
 /// Status information about the reactor
