@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use tokio::sync::Mutex;
 
 /// Configuration for the build orchestrator
@@ -244,11 +244,46 @@ impl BuildOrchestrator {
                 if let Some(dockerfile) = spec.build_type.dockerfile_path() {
                     let dockerfile_path = self.config.product_dir.join(dockerfile);
                     
+                    // Run build script first if needed (e.g., compile Rust binary)
+                    if let Err(e) = self.run_build_script_for_component(&spec).await {
+                        error!("Failed to run build script for {}: {}", spec.component_name, e);
+                        return Err(e);
+                    }
+                    
+                    // Render artifacts (e.g., nginx.conf from templates)
+                    if let Err(e) = self.render_artifacts_for_component(&spec).await {
+                        error!("Failed to render artifacts for {}: {}", spec.component_name, e);
+                        return Err(e);
+                    }
+                    
+                    // Determine the Docker build context directory
+                    // The context directory is either explicitly specified or derived from the Dockerfile location
+                    let docker_context = match &spec.build_type {
+                        BuildType::TrunkWasm { context_dir, .. }
+                        | BuildType::DixiousWasm { context_dir, .. }
+                        | BuildType::RustBinary { context_dir, .. }
+                        | BuildType::Book { context_dir, .. }
+                        | BuildType::Zola { context_dir, .. }
+                        | BuildType::Script { context_dir, .. }
+                        | BuildType::Ingress { context_dir, .. } => {
+                            if let Some(ctx) = context_dir {
+                                // Explicit context directory specified
+                                self.config.product_dir.join(ctx)
+                            } else {
+                                // Use the directory containing the Dockerfile as context
+                                dockerfile_path.parent()
+                                    .map(|p| p.to_path_buf())
+                                    .unwrap_or_else(|| self.config.product_dir.clone())
+                            }
+                        }
+                        _ => self.config.product_dir.clone(),
+                    };
+                    
                     // Build the image
                     self.docker_client.build_image(
                         &full_image_name,
                         &dockerfile_path.to_string_lossy(),
-                        &artifacts_dir.to_string_lossy(),
+                        &docker_context.to_string_lossy(),
                     ).await?;
                     
                     info!("Built {} in {:?}", spec.component_name, start_time.elapsed());
@@ -448,6 +483,179 @@ impl BuildOrchestrator {
     pub async fn clear_cache(&self) -> Result<()> {
         let mut cache_guard = self.cache.lock().await;
         cache_guard.clear().await;
+        Ok(())
+    }
+    
+    /// Runs the build script for a component before Docker build
+    async fn run_build_script_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
+        use rush_build::{BuildContext, BuildScript};
+        use rush_toolchain::{Platform, ToolchainContext};
+        
+        // Skip components that don't need build scripts
+        if !spec.build_type.requires_docker_build() {
+            return Ok(());
+        }
+        
+        info!("Running build script for {}", spec.component_name);
+        
+        // Create toolchain context
+        let host_platform = Platform::default();
+        let target_platform = Platform::new("linux", "x86_64");
+        let toolchain = ToolchainContext::default();
+        toolchain.setup_env();
+        
+        // Get location from build type
+        let location = spec.build_type.location().unwrap_or(".");
+        
+        // Create build context
+        let context = BuildContext {
+            build_type: spec.build_type.clone(),
+            location: Some(location.to_string()),
+            target: target_platform,
+            host: host_platform,
+            rust_target: "x86_64-unknown-linux-gnu".to_string(),
+            toolchain,
+            services: Default::default(),
+            environment: "local".to_string(),
+            domain: spec.domain.clone(),
+            product_name: spec.product_name.clone(),
+            product_uri: format!("{}.local", spec.product_name),
+            component: spec.component_name.clone(),
+            docker_registry: String::new(),
+            image_name: format!("{}-{}", spec.product_name, spec.component_name),
+            domains: Default::default(),
+            env: spec.dotenv.clone(),
+            secrets: Default::default(),
+            cross_compile: spec.cross_compile.clone(),
+        };
+        
+        // Generate and run build script
+        let build_script = BuildScript::new(spec.build_type.clone());
+        let script_content = build_script.render(&context);
+        
+        if script_content.is_empty() {
+            debug!("No build script for {}", spec.component_name);
+            return Ok(());
+        }
+        
+        // Execute the build script
+        let script_path = self.config.product_dir.join(".rush").join("build.sh");
+        std::fs::create_dir_all(script_path.parent().unwrap())?;
+        std::fs::write(&script_path, script_content)?;
+        
+        let output = std::process::Command::new("bash")
+            .arg(&script_path)
+            .current_dir(&self.config.product_dir)
+            .output()
+            .map_err(|e| rush_core::error::Error::Build(format!("Failed to run build script: {}", e)))?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(rush_core::error::Error::Build(
+                format!("Build script failed for {}: {}", spec.component_name, stderr)
+            ));
+        }
+        
+        info!("Build script completed for {}", spec.component_name);
+        Ok(())
+    }
+    
+    /// Renders artifacts for a component before Docker build
+    async fn render_artifacts_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
+        use rush_build::{Artefact, BuildContext};
+        use rush_toolchain::{Platform, ToolchainContext};
+        use std::collections::HashMap;
+        
+        // Check if this component has artifacts to render
+        if spec.artefacts.is_none() {
+            return Ok(());
+        }
+        
+        let artifact_count = spec.artefacts.as_ref().map(|a| a.len()).unwrap_or(0);
+        info!("Rendering {} artifacts for {}", artifact_count, spec.component_name);
+        
+        // Create build context for rendering
+        let host_platform = Platform::default();
+        let target_platform = Platform::new("linux", "x86_64");
+        let toolchain = ToolchainContext::default();
+        
+        let location = spec.build_type.location().unwrap_or(".");
+        
+        // For Ingress, we need special handling for services
+        let services = if let rush_build::BuildType::Ingress { components, .. } = &spec.build_type {
+            // Build a simple services map for the ingress
+            let mut services_map = HashMap::new();
+            for component_name in components {
+                let service_spec = rush_build::ServiceSpec {
+                    name: component_name.clone(),
+                    host: component_name.clone(),
+                    port: 8080, // Default port
+                    target_port: 8080,
+                    mount_point: Some(format!("/{}", component_name)),
+                    domain: spec.domain.clone(),
+                    docker_host: format!("{}-{}", spec.product_name, component_name),
+                };
+                services_map.entry(spec.domain.clone())
+                    .or_insert_with(Vec::new)
+                    .push(service_spec);
+            }
+            services_map
+        } else {
+            HashMap::new()
+        };
+        
+        let context = BuildContext {
+            build_type: spec.build_type.clone(),
+            location: Some(location.to_string()),
+            target: target_platform,
+            host: host_platform,
+            rust_target: "x86_64-unknown-linux-gnu".to_string(),
+            toolchain,
+            services,
+            environment: "local".to_string(),
+            domain: spec.domain.clone(),
+            product_name: spec.product_name.clone(),
+            product_uri: format!("{}.local", spec.product_name),
+            component: spec.component_name.clone(),
+            docker_registry: String::new(),
+            image_name: format!("{}-{}", spec.product_name, spec.component_name),
+            domains: Default::default(),
+            env: spec.dotenv.clone(),
+            secrets: Default::default(),
+            cross_compile: spec.cross_compile.clone(),
+        };
+        
+        // Render each artifact from the spec
+        if let Some(artefacts_map) = &spec.artefacts {
+            for (input_path, output_path) in artefacts_map {
+                // Create the artifact
+                let full_input_path = self.config.product_dir.join(input_path);
+                let artefact = Artefact::new(
+                    full_input_path.to_string_lossy().to_string(),
+                    output_path.clone()
+                )?;
+                
+                // Render the artifact
+                match artefact.render(&context) {
+                    Ok(content) => {
+                        let full_output_path = self.config.product_dir
+                            .join(".rush")
+                            .join("artifacts")
+                            .join(&spec.component_name)
+                            .join(output_path);
+                            
+                        std::fs::create_dir_all(full_output_path.parent().unwrap())?;
+                        std::fs::write(&full_output_path, content)?;
+                        debug!("Rendered artifact: {}", full_output_path.display());
+                    }
+                    Err(e) => {
+                        warn!("Failed to render artifact {}: {}", input_path, e);
+                    }
+                }
+            }
+        }
+        
+        info!("Artifacts rendered for {}", spec.component_name);
         Ok(())
     }
 }

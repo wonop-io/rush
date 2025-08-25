@@ -85,16 +85,14 @@ pub struct ContainerReactor {
     additional_env: HashMap<String, String>,
     /// Channel for triggering graceful shutdown
     shutdown_sender: broadcast::Sender<()>,
-    /// Component specifications (kept for compatibility)
-    legacy_component_specs: Vec<ComponentBuildSpec>,
-    /// Available component names (kept for compatibility)
-    legacy_available_components: Vec<String>,
     /// Running services (kept for compatibility)
     running_services: Vec<DockerService>,
     /// File watcher and change processor (kept for compatibility)
     file_watcher: Option<(RecommendedWatcher, Arc<ChangeProcessor>)>,
     /// Force rebuild flag - ignores cache when true
     force_rebuild: bool,
+    /// Temporary storage for component specs until modular reactor is initialized
+    temp_component_specs: Vec<ComponentBuildSpec>,
 }
 
 // Use the ContainerReactorConfig from the config module
@@ -246,11 +244,10 @@ impl ContainerReactor {
             built_images: HashMap::new(),
             additional_env: HashMap::new(),
             shutdown_sender,
-            legacy_component_specs: Vec::new(),
-            legacy_available_components: Vec::new(),
             running_services: Vec::new(),
             file_watcher: None,
             force_rebuild: false,
+            temp_component_specs: Vec::new(),
         })
     }
 
@@ -416,9 +413,8 @@ impl ContainerReactor {
         // 3. The legacy reactor doesn't directly use the SharedReactorState for these components
         // The modular components will handle their own state management when needed.
         
-        // Store in legacy fields for compatibility
-        reactor.legacy_available_components = available_components;
-        reactor.legacy_component_specs = component_specs;
+        // Store component specs in temp field for later use by modular reactor
+        reactor.temp_component_specs = component_specs;
 
         // Note: Local services (including Stripe) are now started by local_services_startup.rs
         // before the reactor is created, so we don't handle them here anymore
@@ -2760,14 +2756,16 @@ impl ContainerReactor {
         }
     }
 
-    /// Get component specs (compatibility method)
+    /// Get component specs from modular reactor or temp storage
     pub fn component_specs(&self) -> &Vec<ComponentBuildSpec> {
-        &self.legacy_component_specs
+        // Return the temp specs that will be used to initialize the modular reactor
+        &self.temp_component_specs
     }
 
-    /// Get mutable component specs (compatibility method)
+    /// Get mutable component specs (no longer supported - use modular reactor)
     pub fn component_specs_mut(&mut self) -> &mut Vec<ComponentBuildSpec> {
-        &mut self.legacy_component_specs
+        // Return a mutable reference to temp specs for compatibility
+        &mut self.temp_component_specs
     }
 }
 
