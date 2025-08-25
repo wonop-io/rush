@@ -18,9 +18,9 @@ pub mod watcher_integration;
 pub use config::ContainerReactorConfig;
 pub use docker_integration::{DockerIntegration, DockerIntegrationConfig, DockerIntegrationBuilder};
 pub use errors::{ReactorError, ReactorResult};
-pub use factory::{ReactorFactory, ReactorImplementation, ReactorConfigBuilder, ReactorStatusInfo};
+pub use factory::{ReactorFactory, ReactorImplementation, ReactorStatusInfo, ModularReactorConfigBuilder};
 pub use migration::{ReactorMigrator, MigrationConfig, MigrationStrategy, MigrationStepTracker};
-pub use modular_core::{ModularReactor, ModularReactorConfig, ReactorStatus};
+pub use modular_core::{Reactor, ModularReactorConfig, ReactorStatus};
 pub use state::{ReactorPhase, ReactorState, SharedReactorState, ComponentState, ComponentStatus, StateError};
 pub use watcher_integration::{WatcherIntegration, WatcherIntegrationConfig};
 

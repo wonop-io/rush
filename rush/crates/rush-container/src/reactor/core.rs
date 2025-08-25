@@ -11,7 +11,7 @@ use crate::{
     lifecycle::{LifecycleManager, LifecycleConfig},
     reactor::{
         docker_integration::{DockerIntegration, DockerIntegrationConfig},
-        modular_core::{ModularReactor, ModularReactorConfig},
+        modular_core::{Reactor, ModularReactorConfig},
         state::SharedReactorState,
         watcher_integration::{WatcherIntegration, WatcherIntegrationConfig},
     },
@@ -46,7 +46,7 @@ pub struct ContainerReactor {
     config: Arc<ContainerReactorConfig>,
 
     /// The new modular reactor that handles the actual work
-    modular_reactor: Option<ModularReactor>,
+    modular_reactor: Option<Reactor>,
 
     /// Shared state for compatibility with existing code
     state: SharedReactorState,
@@ -561,7 +561,7 @@ impl ContainerReactor {
                 Some(self.config.as_ref().clone()),
             ).await?;
             
-            if let crate::reactor::factory::ReactorImplementation::Modular(mut reactor) = modular_reactor {
+            if let crate::reactor::factory::ReactorImplementation::Primary(mut reactor) = modular_reactor {
                 // Pass services to the modular reactor
                 let all_services: Vec<ContainerService> = self.services.values()
                     .flat_map(|service_list| service_list.iter().map(|s| (**s).clone()))
@@ -2173,7 +2173,7 @@ impl ContainerReactor {
                 Some(self.config.as_ref().clone()),
             ).await?;
             
-            if let crate::reactor::factory::ReactorImplementation::Modular(reactor) = modular_reactor {
+            if let crate::reactor::factory::ReactorImplementation::Primary(reactor) = modular_reactor {
                 self.modular_reactor = Some(reactor);
             }
         }

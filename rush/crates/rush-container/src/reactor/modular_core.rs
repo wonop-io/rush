@@ -55,8 +55,8 @@ impl Default for ModularReactorConfig {
     }
 }
 
-/// Modular container reactor that uses all extracted components
-pub struct ModularReactor {
+/// Primary container reactor that manages container lifecycle and coordinates rebuilds
+pub struct Reactor {
     /// Reactor configuration
     config: ModularReactorConfig,
     /// Event bus for component communication
@@ -84,7 +84,7 @@ pub struct ModularReactor {
     output_sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>,
 }
 
-impl ModularReactor {
+impl Reactor {
     /// Create a new modular reactor
     pub async fn new(
         config: ModularReactorConfig,
@@ -885,6 +885,35 @@ impl ModularReactor {
                 debug!("Could not transition to idle state: {}", e);
             }
         }
+    }
+    
+    /// Setup Docker network for the reactor
+    pub async fn setup_network(&self) -> Result<()> {
+        let network_name = &self.config.base.network_name;
+        
+        // Check if network already exists
+        if !self.docker_integration.client().network_exists(network_name).await? {
+            info!("Creating Docker network: {}", network_name);
+            self.docker_integration.client().create_network(network_name).await?;
+        } else {
+            debug!("Network {} already exists", network_name);
+        }
+        
+        Ok(())
+    }
+    
+    /// Combined launch method that sets up network and runs the reactor
+    pub async fn launch(&mut self) -> Result<()> {
+        info!("Starting primary reactor");
+        
+        // Setup Docker network first
+        self.setup_network().await?;
+        
+        // Start the reactor lifecycle management
+        self.start().await?;
+        
+        // Run the main reactor loop
+        self.run().await
     }
 }
 

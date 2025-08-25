@@ -9,7 +9,7 @@ mod tests {
         docker::{DockerClient, ContainerStatus},
         events::{EventBus, Event, ContainerEvent},
         reactor::{
-            factory::{ReactorFactory, ReactorConfigBuilder},
+            factory::{ReactorFactory, ModularReactorConfigBuilder},
             modular_core::{ModularReactorConfig, ReactorStatus},
             state::{ReactorPhase, ComponentStatus},
             migration::{ReactorMigrator, MigrationConfig, MigrationStrategy},
@@ -205,7 +205,7 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let result = ReactorConfigBuilder::new()
+        let result = ModularReactorConfigBuilder::new()
             .with_enhanced_docker(true)
             .with_file_watching(false) // Disable to avoid file system dependencies
             .with_auto_restart(true)
@@ -260,7 +260,7 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let mut reactor = ReactorFactory::create_default_modular_reactor(
+        let mut reactor = ReactorFactory::create_default_primary_reactor(
             docker_client.clone(),
             component_specs,
         ).await.unwrap();
@@ -271,7 +271,7 @@ mod tests {
 
         // Test status
         let status = reactor.status().await;
-        assert_eq!(status.implementation, "modular");
+        assert_eq!(status.implementation, "primary");
 
         // Test shutdown
         let shutdown_result = reactor.shutdown().await;
@@ -307,7 +307,7 @@ mod tests {
         // Configure mock to fail
         docker_client.set_should_fail(true);
 
-        let result = ReactorFactory::create_default_modular_reactor(
+        let result = ReactorFactory::create_default_primary_reactor(
             docker_client,
             component_specs,
         ).await;
@@ -321,14 +321,14 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let mut reactor = ReactorFactory::create_default_modular_reactor(
+        let mut reactor = ReactorFactory::create_default_primary_reactor(
             docker_client,
             component_specs,
         ).await.unwrap();
 
         // Subscribe to events
         let event_bus = match &reactor {
-            crate::reactor::factory::ReactorImplementation::Modular(r) => r.event_bus().clone(),
+            crate::reactor::factory::ReactorImplementation::Primary(r) => r.event_bus().clone(),
             _ => panic!("Expected modular reactor"),
         };
 
@@ -445,7 +445,7 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let mut reactor = ReactorFactory::create_default_modular_reactor(
+        let mut reactor = ReactorFactory::create_default_primary_reactor(
             docker_client,
             component_specs,
         ).await.unwrap();
@@ -453,7 +453,7 @@ mod tests {
         reactor.start().await.unwrap();
 
         let status = reactor.status().await;
-        assert_eq!(status.implementation, "modular");
+        assert_eq!(status.implementation, "primary");
         assert_eq!(status.components, 0); // empty component specs for test
         assert_eq!(status.phase, "Running");
 

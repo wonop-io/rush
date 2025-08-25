@@ -1,13 +1,13 @@
 //! Reactor factory for creating appropriate reactor implementations
 //!
 //! This module provides a factory for creating either the legacy reactor
-//! or the new modular reactor based on configuration.
+//! or the new primary reactor based on configuration.
 
 use crate::{
     docker::DockerClient,
     reactor::{
         core::ContainerReactor,
-        modular_core::{ModularReactor, ModularReactorConfig},
+        modular_core::{Reactor, ModularReactorConfig},
         config::ContainerReactorConfig,
     },
 };
@@ -20,8 +20,8 @@ use log::{info, warn};
 pub enum ReactorImplementation {
     /// Legacy monolithic reactor
     Legacy(ContainerReactor),
-    /// New modular reactor
-    Modular(ModularReactor),
+    /// Primary reactor implementation
+    Primary(Reactor),
 }
 
 impl ReactorImplementation {
@@ -33,7 +33,7 @@ impl ReactorImplementation {
                 // It starts immediately in run()
                 Ok(())
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 reactor.start().await
             }
         }
@@ -45,7 +45,7 @@ impl ReactorImplementation {
             ReactorImplementation::Legacy(reactor) => {
                 reactor.run().await
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 reactor.run().await
             }
         }
@@ -57,7 +57,7 @@ impl ReactorImplementation {
             ReactorImplementation::Legacy(reactor) => {
                 reactor.rebuild_all().await
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 reactor.rebuild_all().await
             }
         }
@@ -69,7 +69,7 @@ impl ReactorImplementation {
             ReactorImplementation::Legacy(reactor) => {
                 reactor.build().await
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 reactor.build().await
             }
         }
@@ -81,7 +81,7 @@ impl ReactorImplementation {
             ReactorImplementation::Legacy(reactor) => {
                 reactor.rollout().await
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 reactor.rollout().await
             }
         }
@@ -93,7 +93,7 @@ impl ReactorImplementation {
             ReactorImplementation::Legacy(reactor) => {
                 reactor.build_and_push().await
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 reactor.build_and_push().await
             }
         }
@@ -105,7 +105,7 @@ impl ReactorImplementation {
             ReactorImplementation::Legacy(reactor) => {
                 reactor.deploy().await
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 reactor.deploy().await
             }
         }
@@ -122,10 +122,10 @@ impl ReactorImplementation {
                     phase: "unknown".to_string(),
                 }
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 let status = reactor.status().await;
                 ReactorStatusInfo {
-                    implementation: "modular".to_string(),
+                    implementation: "primary".to_string(),
                     components: status.components,
                     running_containers: status.running_containers,
                     phase: format!("{:?}", status.phase),
@@ -141,7 +141,7 @@ impl ReactorImplementation {
                 // Legacy reactor shutdown is handled via signals
                 Ok(())
             }
-            ReactorImplementation::Modular(reactor) => {
+            ReactorImplementation::Primary(reactor) => {
                 reactor.shutdown().await
             }
         }
@@ -176,8 +176,8 @@ impl ReactorFactory {
                 component_specs,
             ).await
         } else {
-            info!("Creating modular reactor implementation");
-            Self::create_modular_reactor(config, docker_client, component_specs).await
+            info!("Creating primary reactor implementation");
+            Self::create_primary_reactor(config, docker_client, component_specs).await
         }
     }
     
@@ -192,27 +192,27 @@ impl ReactorFactory {
         // We can't easily create the legacy reactor here since it has many dependencies
         // and a complex constructor. For now, return an error suggesting modular usage.
         Err(Error::Internal(
-            "Legacy reactor creation not supported in factory. Use modular reactor or create legacy reactor directly.".into()
+            "Legacy reactor creation not supported in factory. Use primary reactor or create legacy reactor directly.".into()
         ))
     }
     
-    /// Create the modular reactor
-    async fn create_modular_reactor(
+    /// Create the primary reactor
+    async fn create_primary_reactor(
         config: ModularReactorConfig,
         docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
-        let reactor = ModularReactor::new(config, docker_client, component_specs).await?;
-        Ok(ReactorImplementation::Modular(reactor))
+        let reactor = Reactor::new(config, docker_client, component_specs).await?;
+        Ok(ReactorImplementation::Primary(reactor))
     }
     
-    /// Create a modular reactor with default configuration
-    pub async fn create_default_modular_reactor(
+    /// Create a primary reactor with default configuration
+    pub async fn create_default_primary_reactor(
         docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
         let config = ModularReactorConfig::default();
-        Self::create_modular_reactor(config, docker_client, component_specs).await
+        Self::create_primary_reactor(config, docker_client, component_specs).await
     }
     
     /// Create a reactor with enhanced Docker features enabled
@@ -231,7 +231,7 @@ impl ReactorFactory {
         config.build.parallel_builds = true;
         config.build.enable_cache = true;
         
-        Self::create_modular_reactor(config, docker_client, component_specs).await
+        Self::create_primary_reactor(config, docker_client, component_specs).await
     }
     
     /// Create a reactor for development (with file watching enabled)
@@ -252,7 +252,7 @@ impl ReactorFactory {
         config.docker.wrapper_config.verbose = true;
         config.watcher.handler_config.verbose = true;
         
-        Self::create_modular_reactor(config, docker_client, component_specs).await
+        Self::create_primary_reactor(config, docker_client, component_specs).await
     }
     
     /// Create a reactor for production (optimized for stability)
@@ -279,16 +279,16 @@ impl ReactorFactory {
         config.lifecycle.health_check_interval = std::time::Duration::from_secs(10);
         config.lifecycle.max_restart_attempts = 3;
         
-        Self::create_modular_reactor(config, docker_client, component_specs).await
+        Self::create_primary_reactor(config, docker_client, component_specs).await
     }
 }
 
 /// Builder for reactor configuration
-pub struct ReactorConfigBuilder {
+pub struct ModularReactorConfigBuilder {
     config: ModularReactorConfig,
 }
 
-impl ReactorConfigBuilder {
+impl ModularReactorConfigBuilder {
     /// Create a new builder with default configuration
     pub fn new() -> Self {
         Self {
@@ -352,11 +352,11 @@ impl ReactorConfigBuilder {
         docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
-        ReactorFactory::create_modular_reactor(self.config, docker_client, component_specs).await
+        ReactorFactory::create_primary_reactor(self.config, docker_client, component_specs).await
     }
 }
 
-impl Default for ReactorConfigBuilder {
+impl Default for ModularReactorConfigBuilder {
     fn default() -> Self {
         Self::new()
     }
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_reactor_config_builder() {
-        let config = ReactorConfigBuilder::new()
+        let config = ModularReactorConfigBuilder::new()
             .use_legacy(false)
             .with_enhanced_docker(true)
             .with_file_watching(true)
