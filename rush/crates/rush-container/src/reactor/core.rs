@@ -545,6 +545,38 @@ impl ContainerReactor {
     /// Result indicating success or failure
     pub async fn launch(&mut self) -> Result<()> {
         info!("Starting container reactor");
+        
+        // Initialize the modular reactor if not already done
+        if self.modular_reactor.is_none() {
+            info!("Initializing modular reactor");
+            let modular_config = self.create_modular_config();
+            
+            // Use the component specs that were stored during from_product_dir
+            let component_specs = self.temp_component_specs.clone();
+            
+            let modular_reactor = crate::reactor::factory::ReactorFactory::create_reactor(
+                modular_config,
+                self.docker_integration.client(),
+                component_specs,
+                Some(self.config.as_ref().clone()),
+            ).await?;
+            
+            if let crate::reactor::factory::ReactorImplementation::Modular(mut reactor) = modular_reactor {
+                // Pass services to the modular reactor
+                let all_services: Vec<ContainerService> = self.services.values()
+                    .flat_map(|service_list| service_list.iter().map(|s| (**s).clone()))
+                    .collect();
+                reactor.set_services(all_services);
+                
+                // Pass the output sink for log capture
+                reactor.set_output_sink(self.output_sink.clone()).await;
+                
+                self.modular_reactor = Some(reactor);
+                info!("Modular reactor initialized successfully");
+            } else {
+                return Err(Error::Internal("Failed to create modular reactor".into()));
+            }
+        }
 
         // Set up the network
         // Setup network
@@ -701,565 +733,43 @@ impl ContainerReactor {
         let working_dir = self.config.product_dir.clone();
         let _dir_guard = rush_utils::Directory::chpath(&working_dir);
 
-        // Set up file watcher if not already done
-        if self.file_watcher.is_none() {
-            info!("Setting up file watcher for: {}", working_dir.display());
-            match setup_file_watcher(self.config.watch_config.clone()) {
-                Ok((watcher, processor)) => {
-                    let processor_arc = Arc::new(processor);
-                    self.file_watcher = Some((watcher, processor_arc));
-                    info!("File watcher initialized successfully");
-                }
-                Err(e) => {
-                    error!("Failed to set up file watcher: {}", e);
-                    // Continue without file watching
-                }
-            }
-        }
-
-        let shutdown_token = shutdown::global_shutdown().cancellation_token();
-        let mut should_continue = true;
-
-        while should_continue {
-            // Check for shutdown before each iteration
-            if shutdown_token.is_cancelled() {
-                info!("Launch loop cancelled due to shutdown signal");
-                break;
-            }
-
-            // Clean up any existing containers
-            tokio::select! {
-                result = self.cleanup_containers() => {
-                    result?;
-                }
-                _ = shutdown_token.cancelled() => {
-                    info!("Container cleanup cancelled due to shutdown signal");
-                    break;
-                }
-            }
-
-            // Build all containers with shutdown handling
-            let build_result = tokio::select! {
-                result = self.build_all() => result,
-                _ = shutdown_token.cancelled() => {
-                    info!("Container build cancelled due to shutdown signal");
-                    break;
-                }
-            };
-
-            if let Err(e) = build_result {
-                error!("Build failed: {}", e);
-
-                // If shutdown was signalled during build error, exit immediately
-                if shutdown_token.is_cancelled() {
-                    info!("Exiting due to shutdown signal during build error");
-                    break;
-                }
-
-                // Check if this is a Docker build error that likely won't be fixed by retrying
-                let is_fatal_error = match &e {
-                    Error::Docker(msg) => {
-                        // These errors typically require manual intervention
-                        msg.contains("Dockerfile or build context not found")
-                            || msg.contains("Permission denied")
-                            || msg.contains("No space left on device")
-                            || msg.contains("Docker build failed")
-                            || msg.contains("No such file or directory")
-                            || msg.contains("Failed to execute docker build")
-                    }
-                    _ => false,
-                };
-
-                if is_fatal_error {
-                    error!("\n╔══════════════════════════════════════════════════════════════╗");
-                    error!("║                    FATAL BUILD ERROR                          ║");
-                    error!("╚══════════════════════════════════════════════════════════════╝");
-                    error!("\nThe build failed with an error that requires manual intervention.");
-                    error!("\n📋 Next Steps:");
-                    error!("   1. Review the detailed error output above");
-                    error!("   2. Fix the identified issues");
-                    error!("   3. Restart Rush with: rush dev");
-                    error!("\n💡 Common Fixes:");
-                    error!("   • Missing Dockerfile: Create or correct the Dockerfile path");
-                    error!("   • Docker not running: Start Docker Desktop/daemon");
-                    error!("   • Out of space: Run 'docker system prune -a'");
-                    error!(
-                        "   • Build errors: Check Dockerfile syntax and base image availability"
-                    );
-                    error!("\nExiting Rush...\n");
-                    return Err(e);
-                }
-
-                // For non-fatal errors, wait for file changes or manual termination
-
-                // Check if we're shutting down
-                if shutdown_token.is_cancelled() {
-                    info!("Shutdown detected after build error, exiting...");
-                    break;
-                }
-
-                // Clear any pending file changes that might have accumulated during the failed build
-                self.change_processor().clear();
-                debug!("Cleared pending file changes after build error");
-
+        // Clean up containers first before accessing the modular reactor
+        info!("Cleaning up application containers (preserving local services)");
+        self.cleanup_containers().await?;
+        
+        // The modular reactor handles everything: building, running, watching files
+        if let Some(reactor) = &mut self.modular_reactor {
+            
+            info!("Starting modular reactor for building and running containers");
+            
+            // First trigger a rebuild to ensure all images are built
+            if let Err(e) = reactor.rebuild_all().await {
+                error!("Initial build failed: {}", e);
+                
+                // Wait for file changes to retry
                 info!("Waiting for file changes to retry build...");
                 info!("💡 Tip: Fix the build error and save a file to trigger rebuild");
-
-                // Wait indefinitely for file changes - don't retry on timeout
-                loop {
-                    match self.wait_for_changes_or_termination().await {
-                        WaitResult::FileChanged => {
-                            info!("File changes detected, retrying build...");
-                            break; // Exit the inner loop to retry build
-                        }
-                        WaitResult::Terminated => {
-                            info!("Shutdown requested, exiting...");
-                            return Ok(()); // Exit completely
-                        }
-                        WaitResult::Timeout => {
-                            // Don't retry on timeout, just keep waiting
-                            debug!("Still waiting for file changes to fix build error...");
-                            continue; // Keep waiting in the inner loop
-                        }
-                    }
-                }
-
-                // Continue with the outer loop to retry the build
-                continue;
+                
+                // Start the reactor anyway - it will handle file watching and rebuilds
             }
-
-            // Check for shutdown before launching containers
-            if shutdown_token.is_cancelled() {
-                info!("Skipping container launch due to shutdown signal");
-                break;
-            }
-
-            // Launch all containers with shutdown handling
-            tokio::select! {
-                result = self.launch_containers() => {
-                    if let Err(e) = result {
-                        error!("Failed to launch containers: {}", e);
-                        return Err(e);
-                    }
-                }
-                _ = shutdown_token.cancelled() => {
-                    info!("Container launch cancelled due to shutdown signal");
-                    break;
-                }
-            }
-
-            // Monitor containers and wait for changes
-            should_continue = tokio::select! {
-                result = self.monitor_and_handle_events() => result?,
-                _ = shutdown_token.cancelled() => {
-                    info!("Container monitoring cancelled due to shutdown signal");
-                    false
-                }
-            };
+            
+            // Start the reactor (handles lifecycle management)
+            reactor.start().await?;
+            
+            // Run the main reactor loop (handles file watching, rebuilds, etc.)
+            reactor.run().await
+        } else {
+            Err(Error::Internal("Modular reactor not initialized".into()))
         }
-
-        info!("Container reactor shutting down");
-
-        // Cleanup application containers on shutdown (with timeout to prevent hanging)
-        let cleanup_result = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            self.cleanup_containers(),
-        )
-        .await;
-
-        match cleanup_result {
-            Ok(Ok(())) => info!("Application container cleanup completed successfully"),
-            Ok(Err(e)) => warn!("Application container cleanup failed: {}", e),
-            Err(_) => warn!("Application container cleanup timed out"),
-        }
-
-        // IMPORTANT: Local services are NOT cleaned up here
-        // They persist across reactor restarts and are only stopped on final program termination
-        // Local services are managed by DevEnvironment and will be stopped when the process exits
-        info!("Local services will continue running (they persist across rebuilds)");
-
-        Ok(())
     }
 
     /// Builds all container images
-    ///
-    /// # Returns
-    ///
-    /// Result indicating success or failure
     async fn build_all(&mut self) -> Result<()> {
-        // For now, use the legacy implementation until the orchestrator is fully integrated
-        // The orchestrator needs to be updated to:
-        // 1. Run build scripts (run_build_script_for_component)
-        // 2. Render artifacts (render_artifacts_for_component)
-        // 3. Properly set up the build context with all files
-        self.build_all_legacy().await
+        // Build is now handled by the modular reactor
+        // This method is kept for compatibility but should not be called directly
+        Err(Error::Internal("build_all is deprecated - use modular reactor".into()))
     }
 
-    /// Legacy build_all implementation - preserved for reference
-    async fn build_all_legacy(&mut self) -> Result<()> {
-        let shutdown_token = shutdown::global_shutdown().cancellation_token();
-
-        // Check for shutdown before starting build
-        if shutdown_token.is_cancelled() {
-            info!("Build cancelled due to shutdown signal");
-            return Err(Error::Terminated("Build cancelled due to shutdown".into()));
-        }
-
-        // Verify Docker is working before attempting builds
-        if let Err(e) = self.verify_docker_available().await {
-            error!("\n=== Docker Check Failed ===");
-            error!("Unable to connect to Docker daemon.");
-            error!("\nPlease ensure:");
-            error!("1. Docker Desktop is running (if on macOS/Windows)");
-            error!("2. Docker daemon is started (if on Linux)");
-            error!("3. You have permission to access Docker socket");
-            error!("\nTest with: docker ps");
-            return Err(e);
-        }
-
-        info!("Building container images");
-        self.set_rebuild_in_progress(true).await;
-
-        // Process all component specs to build their images
-        let component_specs = self.component_specs().clone();
-        for spec in component_specs {
-            // Check for shutdown before each component build
-            if shutdown_token.is_cancelled() {
-                info!("Component build loop cancelled due to shutdown signal");
-                return Err(Error::Terminated("Build cancelled due to shutdown".into()));
-            }
-            // Skip components that don't need Docker builds
-            if !spec.build_type.requires_docker_build() {
-                continue;
-            }
-
-            let component_name = &spec.component_name;
-            info!("Building component: {}", component_name);
-
-            // Skip redirected components
-            if self
-                .config
-                .redirected_components
-                .contains_key(component_name)
-            {
-                info!("Skipping redirected component: {}", component_name);
-                continue;
-            }
-
-            // Get Dockerfile path from build type
-            let dockerfile_path = match spec.build_type.dockerfile_path() {
-                Some(path) => path,
-                None => {
-                    warn!("No Dockerfile specified for {}, skipping", component_name);
-                    continue;
-                }
-            };
-
-            // Get context directory
-            // For components with a location, the context should be the component's location directory
-            let context_dir = match &spec.build_type {
-                BuildType::TrunkWasm { context_dir, .. } => {
-                    // If context_dir is set, return it, otherwise use "."
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
-                }
-                BuildType::RustBinary { context_dir, .. } => {
-                    // If context_dir is set, return it, otherwise use "."
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
-                }
-                BuildType::DixiousWasm { context_dir, .. } => {
-                    // If context_dir is set, return it, otherwise use "."
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
-                }
-                BuildType::Script { context_dir, .. } => {
-                    // If context_dir is set, return it, otherwise use "."
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
-                }
-                BuildType::Zola { context_dir, .. } => {
-                    // If context_dir is set, return it, otherwise use "."
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
-                }
-                BuildType::Book { context_dir, .. } => {
-                    // If context_dir is set, return it, otherwise use "."
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
-                }
-                BuildType::Ingress { context_dir, .. } => {
-                    // If context_dir is set, return it, otherwise use "."
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
-                }
-                _ => continue,
-            };
-
-            info!(
-                "Component: {}, Dockerfile: {}, Context dir: {}",
-                component_name, dockerfile_path, context_dir
-            );
-
-            // Create image name and tag
-            let image_name = if self.config.docker_registry.is_empty() {
-                format!("{}-{}", self.config.product_name, component_name)
-            } else {
-                format!(
-                    "{}/{}-{}",
-                    self.config.docker_registry, self.config.product_name, component_name
-                )
-            };
-            let image_tag = &self.config.git_hash;
-
-            // Set tagged image name in component spec
-            let _tagged_image_name = format!("{image_name}:{image_tag}");
-
-            // Check if image already exists before running expensive build operations
-            let (needs_rebuild, actual_tagged_image) = {
-                // Create a temporary ImageBuilder just to check cache status
-                let service_config = DockerServiceConfig {
-                    name: image_name.clone(),
-                    image: format!("{image_name}:{image_tag}"),
-                    network: self.config.network_name.clone(),
-                    env_vars: HashMap::new(),
-                    ports: Vec::new(),
-                    volumes: Vec::new(),
-                };
-
-                let service =
-                    DockerService::new("".to_string(), service_config, self.docker_client().clone());
-
-                let dockerfile = if Path::new(dockerfile_path).is_absolute() {
-                    PathBuf::from(dockerfile_path)
-                } else {
-                    self.config.product_dir.join(dockerfile_path)
-                };
-
-                let component_dir = dockerfile
-                    .parent()
-                    .ok_or_else(|| Error::Docker("Invalid Dockerfile path".to_string()))?
-                    .to_path_buf();
-
-                let context = if Path::new(&context_dir).is_absolute() {
-                    PathBuf::from(&context_dir)
-                } else {
-                    component_dir.join(&context_dir)
-                };
-
-                let build_config = crate::BuildConfig {
-                    build_type: spec.build_type.clone(),
-                    dockerfile_path: Some(dockerfile.to_string_lossy().to_string()),
-                    context_dir: Some(context.to_string_lossy().to_string()),
-                    docker_registry: self.config.docker_registry.clone(),
-                    environment: self.config.environment.clone(),
-                    domain: spec.domain.clone(),
-                    mount_point: spec.mount_point.clone(),
-                };
-
-                let mut image_builder = crate::ImageBuilder::new(
-                    service,
-                    self.docker_client().clone(),
-                    component_name.to_string(),
-                    self.config.product_name.clone(),
-                )
-                .with_build_config(build_config);
-
-                // Set the git tag that we already computed to avoid recomputing it
-                image_builder.set_git_tag(image_tag.clone());
-
-                // Also set toolchain if available (as a fallback)
-                if let Some(toolchain) = &self.toolchain {
-                    image_builder = image_builder.with_toolchain(toolchain.clone());
-                }
-
-                let rebuild_needed = if self.force_rebuild {
-                    info!("Force rebuild enabled for {}", component_name);
-                    true
-                } else {
-                    match image_builder.evaluate_rebuild_needed().await {
-                        Ok(needed) => needed,
-                        Err(e) => {
-                            warn!("Failed to evaluate cache status: {}, will rebuild", e);
-                            true
-                        }
-                    }
-                };
-
-                // Get the actual tagged image name with the computed git tag
-                let actual_image = image_builder.tagged_image_name();
-
-                (rebuild_needed, actual_image)
-            };
-
-            if !needs_rebuild && !self.force_rebuild {
-                info!(
-                    "Image {} already exists with clean git tag, skipping build and build script",
-                    actual_tagged_image
-                );
-                // Store the actual image name with the correct computed tag for later use
-                self.built_images
-                    .insert(component_name.clone(), actual_tagged_image.clone());
-                continue; // Skip to next component
-            } else if !needs_rebuild && self.force_rebuild {
-                info!(
-                    "Image {} exists but force rebuild is enabled, will rebuild",
-                    actual_tagged_image
-                );
-            }
-
-            // Only run expensive operations if we actually need to build
-            info!(
-                "Image {} needs to be built, running build preparations",
-                image_name
-            );
-
-            // Render artifacts for components that need them (e.g., Ingress)
-            if let Err(e) = self.render_artifacts_for_component(&spec).await {
-                error!("Failed to render artifacts for {}: {}", component_name, e);
-                self.set_rebuild_in_progress(false).await;
-                return Err(e);
-            }
-
-            // Build any necessary scripts or templates first
-            // Note: For cross-compilation scenarios (e.g., macOS to Linux),
-            // the build script may fail if the proper toolchain isn't installed.
-            // In production, consider using Docker multi-stage builds instead.
-            if let Err(e) = self.run_build_script_for_component(&spec).await {
-                error!("Failed to run build script for {}: {}", component_name, e);
-
-                // Check if this is a cross-compilation issue
-                // For RustBinary builds targeting Linux from non-Linux hosts, this is expected
-                let is_cross_compile_issue =
-                    matches!(&spec.build_type, BuildType::RustBinary { .. })
-                        && cfg!(not(target_os = "linux"));
-
-                if is_cross_compile_issue {
-                    error!(
-                        "Cross-compilation from {} to Linux failed for {}.",
-                        std::env::consts::OS,
-                        component_name
-                    );
-                    error!(
-                        "Solutions:\n\
-                        1) Use Docker multi-stage builds (recommended):\n\
-                           - An example Dockerfile.multistage has been created in the backend directory\n\
-                           - Update your rush.yaml to use 'dockerfile: Dockerfile.multistage'\n\
-                        2) Install and configure 'cross' for Rust cross-compilation:\n\
-                           cargo install cross\n\
-                           Note: On Apple Silicon, you may need: export DOCKER_DEFAULT_PLATFORM=linux/amd64\n\
-                        3) Install a cross-compilation toolchain:\n\
-                           brew install FiloSottile/musl-cross/musl-cross\n\
-                           brew install x86_64-unknown-linux-gnu (for x86_64)\n\
-                        4) Build on a Linux machine or CI/CD environment\n\
-                        5) Use a pre-built binary if available"
-                    );
-                }
-
-                self.set_rebuild_in_progress(false).await;
-                return Err(e);
-            }
-
-            // Build the Docker image - make paths absolute relative to product directory
-            let dockerfile = if Path::new(dockerfile_path).is_absolute() {
-                PathBuf::from(dockerfile_path)
-            } else {
-                self.config.product_dir.join(dockerfile_path)
-            };
-
-            // TODO: We need to store this in self
-            let component_dir = dockerfile
-                .parent()
-                .ok_or_else(|| Error::Docker("Invalid Dockerfile path".to_string()))?
-                .to_path_buf();
-
-            // Resolve the Docker build context directory.
-            //
-            // Context directory resolution strategy:
-            // 1. If context_dir is absolute, use it as-is
-            // 2. For components with a location (most build types):
-            //    - The context_dir is typically the component's location directory
-            //    - Resolve it relative to the product directory
-            // 3. For Ingress components with relative context_dir (e.g., "../"):
-            //    - Extract component location from Dockerfile path (e.g., "ingress/Dockerfile" → "ingress")
-            //    - Resolve context_dir relative to component location
-            //    - Example: component at "ingress", context_dir "../" → "product_dir/ingress/../" → "product_dir"
-            //
-            // This ensures each component uses its own directory as the build context,
-            // while allowing Ingress components to access the entire product directory if needed.
-            let context = if Path::new(&context_dir).is_absolute() {
-                PathBuf::from(&context_dir)
-            } else {
-                // For all relative paths, resolve relative to product directory
-                // The context_dir now correctly points to the component's location
-                info!(
-                    "Mapping context: {} using {}",
-                    context_dir,
-                    component_dir.display()
-                );
-                component_dir.join(&context_dir)
-            };
-
-            info!(
-                "Build paths for {}: Dockerfile={}, Context={}",
-                component_name,
-                dockerfile.display(),
-                context.display()
-            );
-
-            // Set up Docker cross-compilation environment
-            let target_platform = "linux/amd64"; // TODO: Should be configurable based on target
-            let _docker_guard = rush_utils::DockerCrossCompileGuard::new(target_platform);
-
-            match self
-                .build_image(&image_name, image_tag, &context, &dockerfile, &spec)
-                .await
-            {
-                Ok(actual_image_name) => {
-                    // Store the actual built image name for use during launch
-                    self.built_images
-                        .insert(component_name.clone(), actual_image_name.clone());
-                    info!(
-                        "Successfully built/cached image for {}: {}",
-                        component_name, actual_image_name
-                    );
-                }
-                Err(e) => {
-                    error!("\n=== Build Failed for Component: {} ===", component_name);
-                    error!("Error: {}", e);
-                    error!("\nBuild Configuration:");
-                    error!("  Dockerfile: {}", dockerfile.display());
-                    error!("  Context: {}", context.display());
-                    error!("  Image: {}", image_name);
-                    error!("  Tag: {}", image_tag);
-
-                    // Check if paths exist
-                    if !dockerfile.exists() {
-                        error!(
-                            "\n⚠️  Dockerfile does not exist at: {}",
-                            dockerfile.display()
-                        );
-                    }
-                    if !context.exists() {
-                        error!(
-                            "\n⚠️  Build context directory does not exist at: {}",
-                            context.display()
-                        );
-                    }
-
-                    self.set_rebuild_in_progress(false).await;
-
-                    // Return a more descriptive error
-                    return Err(Error::Docker(format!(
-                        "Failed to build image for component '{component_name}'. Check the output above for details."
-                    )));
-                }
-            }
-        }
-
-        info!("All container images built successfully");
-
-        // Update services with the actual built image names
-        self.update_service_images()?;
-
-        self.set_rebuild_in_progress(false).await;
-        Ok(())
-    }
-
-    /// Updates the services collection with the actual built image names
     fn update_service_images(&mut self) -> Result<()> {
         // Create a new services collection with updated image names
         let mut updated_services: ServiceCollection = HashMap::new();
@@ -2653,7 +2163,7 @@ impl ContainerReactor {
         } else {
             // Fallback to legacy behavior
             warn!("Modular reactor not available, falling back to legacy run logic");
-            self.run_legacy().await
+            Err(Error::Internal("Modular reactor is required - legacy run is no longer supported".into()))
         }
     }
 
@@ -2666,9 +2176,7 @@ impl ContainerReactor {
         if let Some(reactor) = &mut self.modular_reactor {
             reactor.rebuild_all().await
         } else {
-            // Fallback to existing build_all method
-            warn!("Modular reactor not available, falling back to legacy rebuild");
-            self.build_all().await
+            Err(Error::Internal("Modular reactor not available - cannot rebuild".into()))
         }
     }
 
@@ -2704,21 +2212,6 @@ impl ContainerReactor {
         }
     }
 
-    /// Legacy run implementation (fallback)
-    async fn run_legacy(&mut self) -> Result<()> {
-        warn!("Using legacy run implementation - consider migrating to modular reactor");
-        
-        // This is a simplified version of the original run logic
-        // In a real implementation, this would contain the full legacy loop
-        // For now, we'll just indicate that it's running
-        info!("Legacy reactor is running - this is a stub implementation");
-        
-        // Simulate running by waiting for shutdown
-        let mut shutdown_rx = self.shutdown_sender.subscribe();
-        shutdown_rx.recv().await.ok();
-        
-        Ok(())
-    }
 
     /// Get the Docker client (compatibility method)
     pub fn docker_client(&self) -> Arc<dyn DockerClient> {

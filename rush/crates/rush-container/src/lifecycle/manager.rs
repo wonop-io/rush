@@ -8,8 +8,10 @@ use crate::{
     events::{Event, EventBus, ContainerEvent},
     reactor::state::{SharedReactorState, ReactorPhase},
     service::ContainerService,
+    simple_output,
 };
 use rush_core::error::Result;
+use rush_output::simple::Sink;
 use rush_security::Vault;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -70,6 +72,8 @@ pub struct LifecycleManager {
     event_bus: EventBus,
     state: SharedReactorState,
     shutdown_sender: broadcast::Sender<()>,
+    /// Output sink for container logs
+    output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
 }
 
 impl LifecycleManager {
@@ -90,7 +94,14 @@ impl LifecycleManager {
             event_bus,
             state,
             shutdown_sender,
+            output_sink: Arc::new(tokio::sync::RwLock::new(None)),
         }
+    }
+    
+    /// Set the output sink for container logs
+    pub async fn set_output_sink(&self, sink: Arc<tokio::sync::Mutex<Box<dyn Sink>>>) {
+        let mut output_sink = self.output_sink.write().await;
+        *output_sink = Some(sink);
     }
 
     /// Start the lifecycle manager
@@ -165,11 +176,7 @@ impl LifecycleManager {
     ) -> Result<Vec<DockerService>> {
         info!("Starting {} services", services.len());
         
-        // Update state
-        {
-            let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::Starting)?;
-        }
+        // State transition is managed by the reactor, not here
         
         // Publish event
         if let Err(e) = self.event_bus.publish(Event::new(
@@ -220,6 +227,29 @@ impl LifecycleManager {
                         );
                     }
                     
+                    // Start log following if output sink is available
+                    let sink_option = {
+                        let output_sink_guard = self.output_sink.read().await;
+                        output_sink_guard.clone()
+                    };
+                    
+                    if let Some(sink) = sink_option {
+                        let docker_client = self.docker_client.clone();
+                        let container_id = docker_service.id().to_string();
+                        let component_name = service.name.clone();
+                        
+                        tokio::spawn(async move {
+                            if let Err(e) = simple_output::follow_container_logs_from_start(
+                                docker_client,
+                                &container_id,
+                                component_name.clone(),
+                                sink,
+                            ).await {
+                                debug!("Container log following ended for {}: {}", component_name, e);
+                            }
+                        });
+                    }
+                    
                     // Publish event
                     if let Err(e) = self.event_bus.publish(Event::new(
                         "lifecycle",
@@ -257,10 +287,9 @@ impl LifecycleManager {
             }
         }
         
-        // Update state to running
+        // Update running services in state (but don't change phase - that's managed by reactor)
         {
             let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::Running)?;
             state.set_running_services(running_services.clone());
         }
         

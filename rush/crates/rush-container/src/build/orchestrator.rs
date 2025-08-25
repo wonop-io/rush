@@ -8,9 +8,11 @@ use crate::{
     docker::DockerClient,
     events::{Event, EventBus, ContainerEvent},
     reactor::state::SharedReactorState,
+    simple_output,
 };
 use rush_build::{BuildType, ComponentBuildSpec};
 use rush_core::error::Result;
+use rush_output::simple::Sink;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -71,6 +73,8 @@ pub struct BuildOrchestrator {
     state: SharedReactorState,
     cache: Arc<Mutex<BuildCache>>,
     build_processor: Arc<BuildProcessor>,
+    /// Output sink for build logs
+    output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
 }
 
 impl BuildOrchestrator {
@@ -91,7 +95,14 @@ impl BuildOrchestrator {
             state,
             cache,
             build_processor,
+            output_sink: Arc::new(tokio::sync::RwLock::new(None)),
         }
+    }
+    
+    /// Set the output sink for build logs
+    pub async fn set_output_sink(&self, sink: Arc<tokio::sync::Mutex<Box<dyn Sink>>>) {
+        let mut output_sink = self.output_sink.write().await;
+        *output_sink = Some(sink);
     }
 
     /// Build all components
@@ -103,11 +114,7 @@ impl BuildOrchestrator {
         info!("Building {} components", component_specs.len());
         let start_time = Instant::now();
         
-        // Update state
-        {
-            let mut state = self.state.write().await;
-            state.transition_to(crate::reactor::state::ReactorPhase::Building)?;
-        }
+        // Don't change state here - let the caller manage state transitions
         
         // Publish build started event
         if let Err(e) = self.event_bus.publish(Event::new(
@@ -498,10 +505,10 @@ impl BuildOrchestrator {
         
         info!("Running build script for {}", spec.component_name);
         
-        // Create toolchain context
+        // Create toolchain context for cross-compilation
         let host_platform = Platform::default();
         let target_platform = Platform::new("linux", "x86_64");
-        let toolchain = ToolchainContext::default();
+        let toolchain = ToolchainContext::create_with_platforms(host_platform.clone(), target_platform.clone());
         toolchain.setup_env();
         
         // Get location from build type
@@ -543,17 +550,33 @@ impl BuildOrchestrator {
         std::fs::create_dir_all(script_path.parent().unwrap())?;
         std::fs::write(&script_path, script_content)?;
         
-        let output = std::process::Command::new("bash")
-            .arg(&script_path)
-            .current_dir(&self.config.product_dir)
-            .output()
-            .map_err(|e| rush_core::error::Error::Build(format!("Failed to run build script: {}", e)))?;
+        // Use output capture if sink is available
+        let sink_option = {
+            let output_sink_guard = self.output_sink.read().await;
+            output_sink_guard.clone()
+        };
         
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(rush_core::error::Error::Build(
-                format!("Build script failed for {}: {}", spec.component_name, stderr)
-            ));
+        if let Some(sink) = sink_option {
+            simple_output::follow_build_output_simple(
+                spec.component_name.clone(),
+                vec!["bash".to_string(), script_path.to_string_lossy().to_string()],
+                sink,
+            ).await?;
+        } else {
+            // Fallback to direct execution without output capture
+            let output = tokio::process::Command::new("bash")
+                .arg(&script_path)
+                .current_dir(&self.config.product_dir)
+                .output()
+                .await
+                .map_err(|e| rush_core::error::Error::Build(format!("Failed to run build script: {}", e)))?;
+            
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(rush_core::error::Error::Build(
+                    format!("Build script failed for {}: {}", spec.component_name, stderr)
+                ));
+            }
         }
         
         info!("Build script completed for {}", spec.component_name);

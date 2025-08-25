@@ -186,16 +186,40 @@ impl ReactorState {
     pub fn transition_to(&mut self, new_phase: ReactorPhase) -> Result<(), StateError> {
         // Validate transition
         let valid = match (&self.phase, &new_phase) {
+            // Initial transitions
             (ReactorPhase::Idle, ReactorPhase::Building) => true,
+            (ReactorPhase::Idle, ReactorPhase::Starting) => true,
+            
+            // Building transitions
             (ReactorPhase::Building, ReactorPhase::Starting) => true,
+            (ReactorPhase::Building, ReactorPhase::Error) => true,
             (ReactorPhase::Building, ReactorPhase::ShuttingDown) => true,
+            
+            // Starting transitions
             (ReactorPhase::Starting, ReactorPhase::Running) => true,
+            (ReactorPhase::Starting, ReactorPhase::Error) => true,
             (ReactorPhase::Starting, ReactorPhase::ShuttingDown) => true,
+            
+            // Running transitions
             (ReactorPhase::Running, ReactorPhase::Rebuilding) => true,
+            (ReactorPhase::Running, ReactorPhase::Error) => true,
             (ReactorPhase::Running, ReactorPhase::ShuttingDown) => true,
+            
+            // Rebuilding transitions
             (ReactorPhase::Rebuilding, ReactorPhase::Running) => true,
+            (ReactorPhase::Rebuilding, ReactorPhase::Error) => true,
             (ReactorPhase::Rebuilding, ReactorPhase::ShuttingDown) => true,
+            
+            // Error transitions
+            (ReactorPhase::Error, ReactorPhase::Building) => true,
+            (ReactorPhase::Error, ReactorPhase::Starting) => true,
+            (ReactorPhase::Error, ReactorPhase::ShuttingDown) => true,
+            
+            // Shutdown transitions
             (ReactorPhase::ShuttingDown, ReactorPhase::Terminated) => true,
+            (ReactorPhase::ShuttingDown, ReactorPhase::Shutdown) => true, // Alias
+            (ReactorPhase::Shutdown, ReactorPhase::Terminated) => true, // Alias
+            
             _ => false,
         };
 

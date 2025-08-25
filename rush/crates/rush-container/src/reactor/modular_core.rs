@@ -18,6 +18,7 @@ use crate::{
 };
 use rush_build::ComponentBuildSpec;
 use rush_core::error::{Error, Result};
+use rush_core::shutdown;
 use rush_config::Config;
 use std::sync::Arc;
 use std::time::Duration;
@@ -73,6 +74,14 @@ pub struct ModularReactor {
     /// Shutdown coordination
     shutdown_sender: broadcast::Sender<()>,
     shutdown_receiver: broadcast::Receiver<()>,
+    /// Services to run (set after build)
+    services: Vec<crate::ContainerService>,
+    /// Component specs for building
+    component_specs: Vec<ComponentBuildSpec>,
+    /// Built images mapping
+    built_images: std::collections::HashMap<String, String>,
+    /// Output sink for container and build logs
+    output_sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>,
 }
 
 impl ModularReactor {
@@ -152,6 +161,12 @@ impl ModularReactor {
             docker_integration,
             shutdown_sender,
             shutdown_receiver,
+            services: Vec::new(),
+            component_specs: component_specs.clone(),
+            built_images: std::collections::HashMap::new(),
+            output_sink: Arc::new(tokio::sync::Mutex::new(
+                Box::new(rush_output::simple::StdoutSink::new()),
+            )),
         };
         
         // Initialize state with component specs
@@ -181,10 +196,12 @@ impl ModularReactor {
     pub async fn start(&mut self) -> Result<()> {
         info!("Starting modular container reactor");
         
-        // Transition to starting phase
+        // Transition to starting phase if not already there
         {
             let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::Starting)?;
+            if state.phase() != &ReactorPhase::Starting {
+                state.transition_to(ReactorPhase::Starting)?;
+            }
         }
         
         // Start Docker health monitoring
@@ -220,11 +237,20 @@ impl ModularReactor {
     pub async fn run(&mut self) -> Result<()> {
         info!("Modular reactor entering main processing loop");
         
+        // Get the global shutdown token for Ctrl-C handling
+        let shutdown_token = shutdown::global_shutdown().cancellation_token();
+        
         loop {
             tokio::select! {
-                // Handle shutdown signal
+                // Handle Ctrl-C and other termination signals
+                _ = shutdown_token.cancelled() => {
+                    info!("Termination signal received (Ctrl-C)");
+                    break;
+                }
+                
+                // Handle shutdown signal from internal broadcasts
                 _ = self.shutdown_receiver.recv() => {
-                    info!("Shutdown signal received");
+                    info!("Internal shutdown signal received");
                     break;
                 }
                 
@@ -265,7 +291,11 @@ impl ModularReactor {
             }
         }
         
-        info!("Modular reactor exiting main loop");
+        info!("Modular reactor exiting main loop, initiating shutdown");
+        
+        // Perform cleanup
+        self.shutdown().await?;
+        
         Ok(())
     }
     
@@ -273,10 +303,17 @@ impl ModularReactor {
     async fn handle_rebuild(&mut self, components: std::collections::HashSet<String>) -> Result<()> {
         debug!("Handling rebuild for components: {:?}", components);
         
-        // Transition to building phase
+        // Transition to rebuilding phase
         {
             let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::Building)?;
+            // We should be in Running state to start a rebuild
+            if state.phase() == &ReactorPhase::Running {
+                state.transition_to(ReactorPhase::Rebuilding)?;
+            } else if state.phase() != &ReactorPhase::Rebuilding {
+                // If not running and not already rebuilding, something is wrong
+                warn!("Unexpected state for rebuild: {:?}", state.phase());
+                return Ok(()); // Skip rebuild
+            }
         }
         
         // Mark rebuild started in watcher
@@ -313,10 +350,12 @@ impl ModularReactor {
                     }
                 }
                 
-                // Transition back to running
+                // Transition back to running from rebuilding
                 {
                     let mut state = self.state.write().await;
-                    state.transition_to(ReactorPhase::Running)?;
+                    if state.phase() == &ReactorPhase::Rebuilding {
+                        state.transition_to(ReactorPhase::Running)?;
+                    }
                 }
                 
                 // Publish build success event
@@ -335,11 +374,14 @@ impl ModularReactor {
             Err(e) => {
                 error!("Build failed: {}", e);
                 
-                // Transition to error state
+                // Record error but stay in current state
                 {
                     let mut state = self.state.write().await;
                     state.record_error(format!("Build failed: {}", e));
-                    state.transition_to(ReactorPhase::Error)?;
+                    // Try to transition back to running if we were rebuilding
+                    if state.phase() == &ReactorPhase::Rebuilding {
+                        state.transition_to(ReactorPhase::Running)?;
+                    }
                 }
                 
                 // Publish build failure event
@@ -362,12 +404,125 @@ impl ModularReactor {
     pub async fn rebuild_all(&mut self) -> Result<()> {
         info!("Manual rebuild of all components requested");
         
-        let component_names = {
+        let component_names: std::collections::HashSet<String> = {
             let state = self.state.read().await;
-            state.components().keys().cloned().collect()
+            let names = state.components().keys().cloned().collect();
+            info!("Found {} components in state", state.components().len());
+            names
         };
         
-        self.handle_rebuild(component_names).await
+        if component_names.is_empty() {
+            warn!("No components found in state - nothing to build");
+            return Ok(());
+        }
+        
+        // Check if this is an initial build (Idle state) or a rebuild (Running state)
+        let current_phase = {
+            let state = self.state.read().await;
+            let phase = state.phase().clone();
+            info!("Current reactor phase: {:?}", phase);
+            phase
+        };
+        
+        match current_phase {
+            ReactorPhase::Idle => {
+                // Initial build
+                self.initial_build(component_names).await
+            }
+            ReactorPhase::Running => {
+                // Normal rebuild
+                self.handle_rebuild(component_names).await
+            }
+            _ => {
+                warn!("Cannot rebuild in current phase: {:?}", current_phase);
+                Ok(())
+            }
+        }
+    }
+    
+    /// Handle initial build of all components (from Idle state)
+    async fn initial_build(&mut self, components: std::collections::HashSet<String>) -> Result<()> {
+        info!("Performing initial build for {} components", components.len());
+        
+        // Transition from Idle to Building
+        {
+            let mut state = self.state.write().await;
+            state.transition_to(ReactorPhase::Building)?;
+        }
+        
+        // Get component specs
+        let component_specs = {
+            let state = self.state.read().await;
+            components.iter()
+                .filter_map(|name| state.get_component(name))
+                .filter_map(|comp| comp.build_spec.as_ref().cloned())
+                .collect::<Vec<_>>()
+        };
+        
+        let build_result = self.build_orchestrator.build_components(component_specs, false).await;
+        
+        match build_result {
+            Ok(successful_builds) => {
+                info!("Initial build completed successfully for {} components", successful_builds.len());
+                
+                // Store built images
+                self.built_images = successful_builds.clone();
+                
+                // Create services from built images
+                self.create_services_from_specs()?;
+                
+                // Start the services using lifecycle manager
+                let running_services = self.lifecycle_manager.start_services(
+                    self.services.clone(),
+                    &self.component_specs,
+                    &self.built_images,
+                ).await?;
+                
+                info!("Started {} services", running_services.len());
+                
+                // Transition to Starting (not directly to Running)
+                {
+                    let mut state = self.state.write().await;
+                    state.transition_to(ReactorPhase::Starting)?;
+                }
+                
+                // Publish build success event
+                let _ = self.event_bus.publish(Event::new(
+                    "reactor",
+                    ContainerEvent::BuildCompleted {
+                        component: format!("{} components", successful_builds.len()),
+                        success: true,
+                        duration: Duration::from_secs(0),
+                        error: None,
+                    },
+                )).await;
+                
+                Ok(())
+            }
+            Err(e) => {
+                error!("Initial build failed: {}", e);
+                
+                // Record error and transition to Error state
+                {
+                    let mut state = self.state.write().await;
+                    state.record_error(format!("Initial build failed: {}", e));
+                    state.transition_to(ReactorPhase::Error)?;
+                }
+                
+                // Publish build failure event
+                let _ = self.event_bus.publish(Event::new(
+                    "reactor",
+                    ContainerEvent::BuildCompleted {
+                        component: "multiple".to_string(),
+                        success: false,
+                        duration: Duration::from_secs(0),
+                        error: Some(e.to_string()),
+                    },
+                )).await;
+                
+                Err(e)
+            }
+        }
     }
     
     /// Get current reactor status
@@ -426,7 +581,7 @@ impl ModularReactor {
         // Transition to shutdown phase
         {
             let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::Shutdown)?;
+            state.transition_to(ReactorPhase::Terminated)?;
         }
         
         info!("Reactor shutdown complete");
@@ -441,6 +596,73 @@ impl ModularReactor {
     /// Get shared state for external access
     pub fn state(&self) -> &SharedReactorState {
         &self.state
+    }
+    
+    /// Create services from component specs and built images
+    fn create_services_from_specs(&mut self) -> Result<()> {
+        self.services.clear();
+        
+        for spec in &self.component_specs {
+            // Skip non-container components
+            if !spec.build_type.requires_docker_build() {
+                continue;
+            }
+            
+            // Skip ingress and other special components that don't have images
+            if matches!(spec.component_name.as_str(), "ingress" | "database" | "stripe") {
+                continue;
+            }
+            
+            // Get the built image name or skip if not built
+            let image = match self.built_images.get(&spec.component_name) {
+                Some(img) => img.clone(),
+                None => {
+                    debug!("Skipping {} - no built image available", spec.component_name);
+                    continue;
+                }
+            };
+            
+            // Create a container service with proper ports
+            // Use different default ports for different components
+            let (default_port, default_target) = match spec.component_name.as_str() {
+                "frontend" => (9000, 80),
+                "backend" => (8000, 8000),
+                "ingress" => (8080, 80),
+                _ => (3000, 3000),
+            };
+            
+            let service = crate::ContainerService {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: spec.component_name.clone(),
+                image,
+                host: spec.component_name.clone(),
+                port: spec.port.unwrap_or(default_port),
+                target_port: spec.target_port.unwrap_or(default_target),
+                mount_point: spec.mount_point.clone(),
+                domain: spec.domain.clone(),
+                docker_host: format!("{}.docker", spec.component_name),
+            };
+            
+            self.services.push(service);
+        }
+        
+        Ok(())
+    }
+    
+    /// Set services (for external configuration)
+    pub fn set_services(&mut self, services: Vec<crate::ContainerService>) {
+        self.services = services;
+    }
+    
+    /// Set output sink for capturing container and build logs
+    pub async fn set_output_sink(&mut self, sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>) {
+        self.output_sink = sink.clone();
+        
+        // Propagate to build orchestrator
+        self.build_orchestrator.set_output_sink(sink.clone()).await;
+        
+        // Propagate to lifecycle manager
+        self.lifecycle_manager.set_output_sink(sink).await;
     }
 }
 

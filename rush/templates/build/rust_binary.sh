@@ -27,8 +27,9 @@ CARGO_TARGET_DIR=./target cross build --release --target {{ rust_target }}{% if 
 # Use native cross-compilation
 echo "Using native toolchain for cross-compilation to {{ rust_target }}"
 {% if rust_target == "x86_64-unknown-linux-gnu" %}
-# Native compilation with proper linker configuration
-CARGO_TARGET_DIR=./target cargo build --release --target {{ rust_target }} --config "target.{{ rust_target }}.linker = '{{toolchain.cc}}'"{% if features %} --features {{ features | join(sep=" ") }}{% endif %}
+# Cross-compilation with proper linker configuration
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="{{ toolchain.cc }}"
+CARGO_TARGET_DIR=./target cargo build --release --target {{ rust_target }}{% if features %} --features {{ features | join(sep=" ") }}{% endif %}
 {% else %}
 # Other targets
 CARGO_TARGET_DIR=./target cargo build --release --target {{ rust_target }}{% if features %} --features {{ features | join(sep=" ") }}{% endif %}

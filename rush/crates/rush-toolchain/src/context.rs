@@ -179,6 +179,49 @@ impl ToolchainContext {
             // MacOS host to Linux targets
             ("macos", "linux", _, "x86_64") => {
                 debug!("Looking for x86_64-linux toolchain on macOS");
+                // First try to find the prefixed tools directly
+                if let Some(gcc) = first_which(vec!["x86_64-unknown-linux-gnu-gcc"]) {
+                    debug!("Found x86_64-unknown-linux-gnu-gcc at: {}", gcc);
+                    return Some(ToolchainContext {
+                        host: host.clone(),
+                        target: target.clone(),
+                        
+                        git: first_which(vec!["git"]).expect("git not found."),
+                        docker: first_which(vec!["docker"]).expect("docker not found."),
+                        trunk: first_which(vec![
+                            "$HOME/.cargo/bin/wasm-trunk",
+                            "$HOME/.cargo/bin/trunk",
+                            "wasm-trunk",
+                            "trunk",
+                        ])
+                        .expect("trunk not found."),
+                        kubectl: first_which(vec!["kubectl"]),
+                        kubectx: first_which(vec!["kubectx"]),
+                        minikube: first_which(vec!["minikube"]),
+                        kubeconform: first_which(vec!["kubeconform"]),
+                        kubeval: first_which(vec!["kubeval"]),
+                        
+                        cc: gcc,
+                        cxx: first_which(vec!["x86_64-unknown-linux-gnu-g++"])
+                            .unwrap_or_else(|| "x86_64-unknown-linux-gnu-g++".to_string()),
+                        ar: first_which(vec!["x86_64-unknown-linux-gnu-ar"])
+                            .unwrap_or_else(|| "x86_64-unknown-linux-gnu-ar".to_string()),
+                        ranlib: first_which(vec!["x86_64-unknown-linux-gnu-ranlib"])
+                            .unwrap_or_else(|| "x86_64-unknown-linux-gnu-ranlib".to_string()),
+                        nm: first_which(vec!["x86_64-unknown-linux-gnu-nm"])
+                            .unwrap_or_else(|| "x86_64-unknown-linux-gnu-nm".to_string()),
+                        strip: first_which(vec!["x86_64-unknown-linux-gnu-strip"])
+                            .unwrap_or_else(|| "x86_64-unknown-linux-gnu-strip".to_string()),
+                        objdump: first_which(vec!["x86_64-unknown-linux-gnu-objdump"])
+                            .unwrap_or_else(|| "x86_64-unknown-linux-gnu-objdump".to_string()),
+                        objcopy: first_which(vec!["x86_64-unknown-linux-gnu-objcopy"])
+                            .unwrap_or_else(|| "x86_64-unknown-linux-gnu-objcopy".to_string()),
+                        ld: first_which(vec!["x86_64-unknown-linux-gnu-ld"])
+                            .unwrap_or_else(|| "x86_64-unknown-linux-gnu-ld".to_string()),
+                    });
+                }
+                
+                // Fall back to looking in known directories
                 Self::from_first_path(vec![
                     "/opt/homebrew/Cellar/x86_64-unknown-linux-gnu/7.2.0/bin/",
                     "/usr/local/opt/x86_64-unknown-linux-gnu/bin/",
