@@ -6,7 +6,6 @@
 use crate::{
     docker::DockerClient,
     reactor::{
-        core::ContainerReactor,
         modular_core::{Reactor, ModularReactorConfig},
         config::ContainerReactorConfig,
     },
@@ -18,8 +17,6 @@ use log::{info, warn};
 
 /// Reactor implementation variants
 pub enum ReactorImplementation {
-    /// Legacy monolithic reactor
-    Legacy(ContainerReactor),
     /// Primary reactor implementation
     Primary(Reactor),
 }
@@ -28,11 +25,6 @@ impl ReactorImplementation {
     /// Start the reactor
     pub async fn start(&mut self) -> Result<()> {
         match self {
-            ReactorImplementation::Legacy(reactor) => {
-                // Legacy reactor doesn't have a separate start method
-                // It starts immediately in run()
-                Ok(())
-            }
             ReactorImplementation::Primary(reactor) => {
                 reactor.start().await
             }
@@ -42,9 +34,6 @@ impl ReactorImplementation {
     /// Run the reactor main loop
     pub async fn run(&mut self) -> Result<()> {
         match self {
-            ReactorImplementation::Legacy(reactor) => {
-                reactor.run().await
-            }
             ReactorImplementation::Primary(reactor) => {
                 reactor.run().await
             }
@@ -54,9 +43,6 @@ impl ReactorImplementation {
     /// Trigger a rebuild of all components
     pub async fn rebuild_all(&mut self) -> Result<()> {
         match self {
-            ReactorImplementation::Legacy(reactor) => {
-                reactor.rebuild_all().await
-            }
             ReactorImplementation::Primary(reactor) => {
                 reactor.rebuild_all().await
             }
@@ -66,9 +52,6 @@ impl ReactorImplementation {
     /// Build all components
     pub async fn build(&mut self) -> Result<()> {
         match self {
-            ReactorImplementation::Legacy(reactor) => {
-                reactor.build().await
-            }
             ReactorImplementation::Primary(reactor) => {
                 reactor.build().await
             }
@@ -78,9 +61,6 @@ impl ReactorImplementation {
     /// Roll out containers
     pub async fn rollout(&mut self) -> Result<()> {
         match self {
-            ReactorImplementation::Legacy(reactor) => {
-                reactor.rollout().await
-            }
             ReactorImplementation::Primary(reactor) => {
                 reactor.rollout().await
             }
@@ -90,9 +70,6 @@ impl ReactorImplementation {
     /// Build and push images
     pub async fn build_and_push(&mut self) -> Result<()> {
         match self {
-            ReactorImplementation::Legacy(reactor) => {
-                reactor.build_and_push().await
-            }
             ReactorImplementation::Primary(reactor) => {
                 reactor.build_and_push().await
             }
@@ -102,9 +79,6 @@ impl ReactorImplementation {
     /// Deploy to Kubernetes
     pub async fn deploy(&mut self) -> Result<()> {
         match self {
-            ReactorImplementation::Legacy(reactor) => {
-                reactor.deploy().await
-            }
             ReactorImplementation::Primary(reactor) => {
                 reactor.deploy().await
             }
@@ -114,14 +88,6 @@ impl ReactorImplementation {
     /// Get status information
     pub async fn status(&self) -> ReactorStatusInfo {
         match self {
-            ReactorImplementation::Legacy(_reactor) => {
-                ReactorStatusInfo {
-                    implementation: "legacy".to_string(),
-                    components: 0,
-                    running_containers: 0,
-                    phase: "unknown".to_string(),
-                }
-            }
             ReactorImplementation::Primary(reactor) => {
                 let status = reactor.status().await;
                 ReactorStatusInfo {
@@ -137,10 +103,6 @@ impl ReactorImplementation {
     /// Shutdown the reactor gracefully
     pub async fn shutdown(&mut self) -> Result<()> {
         match self {
-            ReactorImplementation::Legacy(_reactor) => {
-                // Shutdown is handled via signals
-                Ok(())
-            }
             ReactorImplementation::Primary(reactor) => {
                 reactor.shutdown().await
             }
