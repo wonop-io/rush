@@ -4,7 +4,7 @@ use gloo::net::http::Request;
 use serde_json::from_str;
 use yew::prelude::*;
 use yew_router::prelude::*;
-// //
+// // //
 #[function_component(HomePage)]
 pub fn home_page() -> Html {
     let state = use_state(|| ExampleApiType::default());
