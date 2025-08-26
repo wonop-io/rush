@@ -1,6 +1,5 @@
 use crate::args::CommonCliArgs;
 use rush_config::Config;
-use rush_container::ContainerReactor;
 use rush_core::error::{Error, Result};
 use rush_k8s::ContextManager;
 use std::sync::Arc;
@@ -10,9 +9,8 @@ use std::sync::Mutex;
 ///
 /// The unapply command removes the Kubernetes resources from the cluster
 pub async fn execute(_args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
-    // Create a container reactor to handle the unapply operation
-    let _reactor = ContainerReactor::new_with_config(config.clone())
-        .map_err(|e| Error::Setup(format!("Failed to create container reactor: {e}")))?;
+    // Reactor is not needed for unapply operation
+    // The operation is handled directly via kubectl
 
     // Create and set up the Kubernetes context manager
     let context_manager = Arc::new(Mutex::new(ContextManager::new("kubectl".to_string(), None)));

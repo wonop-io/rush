@@ -63,6 +63,8 @@ pub struct WatcherCoordinator {
     last_rebuild_time: Arc<RwLock<std::time::Instant>>,
     pending_changes: Arc<RwLock<Vec<ChangeBatch>>>,
     watcher: Option<RecommendedWatcher>,
+    event_sender: Option<tokio::sync::mpsc::UnboundedSender<notify::Event>>,
+    event_receiver: Option<tokio::sync::mpsc::UnboundedReceiver<notify::Event>>,
 }
 
 impl WatcherCoordinator {
@@ -78,6 +80,7 @@ impl WatcherCoordinator {
                 .with_event_bus(event_bus.clone())
         );
         let shutdown_receiver = shutdown_sender.subscribe();
+        let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel();
         
         Self {
             config,
@@ -91,6 +94,8 @@ impl WatcherCoordinator {
             )),
             pending_changes: Arc::new(RwLock::new(Vec::new())),
             watcher: None,
+            event_sender: Some(event_sender),
+            event_receiver: Some(event_receiver),
         }
     }
 
@@ -103,17 +108,18 @@ impl WatcherCoordinator {
     pub fn watch_directory(&mut self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         info!("Starting file watcher for: {}", path.display());
         
-        let handler = self.handler.clone();
+        let sender = self.event_sender.as_ref()
+            .ok_or("Event sender not available")?
+            .clone();
         
-        // Create the watcher
+        // Create the watcher - send events through channel instead of spawning directly
         let mut watcher = notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
             match event {
                 Ok(event) => {
-                    // Handle the event asynchronously
-                    let handler = handler.clone();
-                    tokio::spawn(async move {
-                        handler.handle_event(event).await;
-                    });
+                    // Send event through channel to be processed in Tokio context
+                    if let Err(e) = sender.send(event) {
+                        error!("Failed to send file event: {}", e);
+                    }
                 }
                 Err(e) => {
                     error!("File watcher error: {}", e);
@@ -143,6 +149,17 @@ impl WatcherCoordinator {
                 _ = self.shutdown_receiver.recv() => {
                     info!("Shutdown requested during file watch");
                     return WatchResult::Shutdown;
+                }
+                
+                // Process events from the watcher channel
+                Some(event) = async {
+                    match &mut self.event_receiver {
+                        Some(receiver) => receiver.recv().await,
+                        None => None,
+                    }
+                } => {
+                    // Handle the event in the Tokio context
+                    self.handler.handle_event(event).await;
                 }
                 
                 // Wait for file changes

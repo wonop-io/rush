@@ -11,6 +11,7 @@ pub mod events;
 pub mod image_builder;
 pub mod kubernetes;
 pub mod lifecycle;
+pub mod network;
 pub mod reactor;
 pub mod service;
 pub mod simple_output;
@@ -28,8 +29,12 @@ pub mod tests;
 pub use dev_environment::DevEnvironment;
 pub use docker::{DockerCliClient, DockerClient, DockerImage, DockerService};
 pub use image_builder::{BuildConfig, ImageBuilder};
-pub use reactor::{ContainerReactor, ContainerReactorConfig};
+// Primary reactor export
 pub use reactor::modular_core::Reactor;
+pub use reactor::ContainerReactorConfig;
+
+// Type alias for backward compatibility
+pub type ContainerReactor = Reactor;
 pub use service::{ContainerService, ServiceCollection, ServiceConfig, ServicesSpec};
 pub use status::Status;
 

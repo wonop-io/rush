@@ -547,8 +547,10 @@ impl BuildOrchestrator {
         
         // Execute the build script
         let script_path = self.config.product_dir.join(".rush").join("build.sh");
+        debug!("Creating script at: {}", script_path.display());
         std::fs::create_dir_all(script_path.parent().unwrap())?;
         std::fs::write(&script_path, script_content)?;
+        debug!("Script written successfully to: {}", script_path.display());
         
         // Use output capture if sink is available
         let sink_option = {
@@ -559,12 +561,13 @@ impl BuildOrchestrator {
         if let Some(sink) = sink_option {
             simple_output::follow_build_output_simple(
                 spec.component_name.clone(),
-                vec!["bash".to_string(), script_path.to_string_lossy().to_string()],
+                vec!["/bin/sh".to_string(), script_path.to_string_lossy().to_string()],
                 sink,
+                Some(self.config.product_dir.clone()),
             ).await?;
         } else {
             // Fallback to direct execution without output capture
-            let output = tokio::process::Command::new("bash")
+            let output = tokio::process::Command::new("/bin/sh")
                 .arg(&script_path)
                 .current_dir(&self.config.product_dir)
                 .output()

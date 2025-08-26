@@ -3,7 +3,7 @@ use clap::ArgMatches;
 use log::{debug, error, info, trace, warn};
 use rush_config::environment::EnvironmentGenerator;
 use rush_config::{Config, ConfigLoader};
-use rush_container::ContainerReactor;
+use rush_container::Reactor;
 use rush_core::constants::*;
 use rush_core::error::Result;
 use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
@@ -50,6 +50,25 @@ pub async fn create_context(
         start_port,
     )?;
 
+    // Create docker client FIRST (needed by local services and network manager)
+    let docker_client = Arc::new(rush_docker::DockerExecutor::new());
+    
+    // Ensure we're running the dev command (network manager is required)
+    if matches.subcommand_matches("dev").is_none() {
+        return Err(rush_core::Error::Setup("Network manager required for dev command".to_string()));
+    }
+    
+    // Create network manager for dev command (required for proper network setup)
+    info!("Setting up network: net-{}", product_name.replace('.', "-"));
+    let network_manager = Arc::new(
+        rush_container::network::NetworkManager::new(
+            docker_client.clone(), 
+            &product_name
+        )
+        .await
+        .map_err(|e| rush_core::Error::Setup(format!("Failed to setup network: {e}")))?
+    );
+
     // Start local services BEFORE creating .env files (if this is for the dev command)
     let (local_service_env_vars, local_services_manager) = if matches.subcommand_matches("dev").is_some() {
         info!("Starting local services before environment file generation...");
@@ -92,7 +111,8 @@ pub async fn create_context(
         silence_components,
         local_service_env_vars,
         force_rebuild,
-    )?;
+        network_manager.clone(),
+    ).await?;
     
     // Set the output sink on the reactor
     {
@@ -101,7 +121,7 @@ pub async fn create_context(
         // We need to extract the inner sink to pass to the reactor
         // This is a temporary solution - ideally the reactor would accept Arc<Mutex<Box<dyn Sink>>>
         let sink_for_reactor = Box::new(SinkProxy::new(sink_clone));
-        reactor.set_output_sink(sink_for_reactor);
+        reactor.set_output_sink_boxed(sink_for_reactor);
     }
 
     Ok(CliContext::new(
@@ -359,7 +379,7 @@ fn create_toolchain(target_os: &str, target_arch: &str) -> Arc<ToolchainContext>
     toolchain
 }
 
-fn create_reactor(
+async fn create_reactor(
     config: Arc<Config>,
     _toolchain: Arc<ToolchainContext>,
     vault: Arc<Mutex<dyn Vault + Send>>,
@@ -367,7 +387,8 @@ fn create_reactor(
     silence_components: Vec<String>,
     local_service_env_vars: HashMap<String, String>,
     force_rebuild: bool,
-) -> Result<ContainerReactor> {
+    network_manager: Arc<rush_container::network::NetworkManager>,
+) -> Result<Reactor> {
     // TODO: Resolve conflicting name for NoopEncoder
     let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
     // TODO: Fix k8s encoding - also this seems redudant or at least very similar to dev
@@ -383,14 +404,17 @@ fn create_reactor(
         _ => panic!("Invalid k8s encoder"),
     };
 
+    // Network manager was created earlier and should be available
+
     println!("\n\n");
-    match ContainerReactor::from_product_dir(
+    match Reactor::from_product_dir(
         config,
         vault,
         secrets_encoder,
         redirected_components,
         silence_components,
-    ) {
+        network_manager,
+    ).await {
         Ok(mut reactor) => {
             // Set force rebuild if requested
             if force_rebuild {

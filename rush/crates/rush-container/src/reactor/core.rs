@@ -567,7 +567,7 @@ impl ContainerReactor {
                 reactor.set_services(all_services);
                 
                 // Pass the output sink for log capture
-                reactor.set_output_sink(self.output_sink.clone()).await;
+                reactor.set_output_sink(self.output_sink.clone());
                 
                 self.modular_reactor = Some(reactor);
                 info!("Modular reactor initialized successfully");
@@ -1991,6 +1991,7 @@ impl ContainerReactor {
                 component_name,
                 vec!["bash".to_string(), "./build_script.sh".to_string()],
                 sink,
+                Some(self.config.product_dir.clone()),
             )
             .await
             .map(|_| String::new())

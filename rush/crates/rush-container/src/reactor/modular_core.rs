@@ -22,6 +22,7 @@ use rush_core::shutdown;
 use rush_config::Config;
 use std::sync::Arc;
 use std::time::Duration;
+use std::collections::HashMap;
 use tokio::sync::broadcast;
 use log::{info, debug, error, warn};
 
@@ -206,6 +207,10 @@ impl Reactor {
             }
         }
         
+        // Propagate output sink to build orchestrator and lifecycle manager
+        self.build_orchestrator.set_output_sink(self.output_sink.clone()).await;
+        self.lifecycle_manager.set_output_sink(self.output_sink.clone()).await;
+        
         // Start Docker health monitoring
         self.docker_integration.health_check().await?;
         
@@ -345,11 +350,29 @@ impl Reactor {
             Ok(successful_builds) => {
                 info!("Build completed successfully for {} components", successful_builds.len());
                 
-                // Start the rebuilt components
-                for component_name in successful_builds.keys() {
-                    if let Err(e) = self.lifecycle_manager.start_component(component_name).await {
-                        error!("Failed to start component {}: {}", component_name, e);
-                    }
+                // Update built images
+                for (name, image) in &successful_builds {
+                    self.built_images.insert(name.clone(), image.clone());
+                }
+                
+                // Recreate services from updated specs
+                self.create_services_from_specs()?;
+                
+                // Start the rebuilt components using start_services
+                // This will actually create the Docker containers
+                let services_to_start: Vec<_> = self.services.iter()
+                    .filter(|s| successful_builds.contains_key(&s.name))
+                    .cloned()
+                    .collect();
+                
+                if !services_to_start.is_empty() {
+                    let running_services = self.lifecycle_manager.start_services(
+                        services_to_start,
+                        &self.component_specs,
+                        &self.built_images,
+                    ).await?;
+                    
+                    info!("Started {} rebuilt containers", running_services.len());
                 }
                 
                 // Transition back to running from rebuilding
@@ -657,14 +680,16 @@ impl Reactor {
     }
     
     /// Set output sink for capturing container and build logs
-    pub async fn set_output_sink(&mut self, sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>) {
-        self.output_sink = sink.clone();
+    pub fn set_output_sink(&mut self, sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>) {
+        self.output_sink = sink;
         
-        // Propagate to build orchestrator
-        self.build_orchestrator.set_output_sink(sink.clone()).await;
-        
-        // Propagate to lifecycle manager
-        self.lifecycle_manager.set_output_sink(sink).await;
+        // Store for later propagation to build orchestrator and lifecycle manager
+        // This will be done during launch() when they are active
+    }
+    
+    /// Set output sink from Box (for compatibility)
+    pub fn set_output_sink_boxed(&mut self, sink: Box<dyn rush_output::simple::Sink>) {
+        self.output_sink = Arc::new(tokio::sync::Mutex::new(sink));
     }
     
     /// Add an environment variable
@@ -723,6 +748,9 @@ impl Reactor {
                 state.transition_to(ReactorPhase::Building)?;
             }
         }
+        
+        // Propagate output sink to build orchestrator
+        self.build_orchestrator.set_output_sink(self.output_sink.clone()).await;
         
         let built_images = self.build_orchestrator.build_components(
             self.component_specs.clone(),
@@ -912,8 +940,250 @@ impl Reactor {
         // Start the reactor lifecycle management
         self.start().await?;
         
+        // Build and start all containers initially
+        if let Err(e) = self.rebuild_all().await {
+            error!("Initial build failed: {}", e);
+            // Continue anyway - the reactor will handle file watching and rebuilds
+            info!("Waiting for file changes to retry build...");
+            info!("💡 Tip: Fix the build error and save a file to trigger rebuild");
+        }
+        
         // Run the main reactor loop
         self.run().await
+    }
+    
+    /// Create a Reactor from a product directory
+    /// This is the primary factory method for creating a reactor with all components configured
+    pub async fn from_product_dir(
+        config: Arc<rush_config::Config>,
+        vault: Arc<std::sync::Mutex<dyn rush_security::Vault + Send>>,
+        secrets_encoder: Arc<dyn rush_security::SecretsEncoder>,
+        redirected_components: HashMap<String, (String, u16)>,
+        silence_components: Vec<String>,
+        network_manager: Arc<crate::network::NetworkManager>,
+    ) -> Result<Self> {
+        use std::collections::HashSet;
+        use std::fs;
+        use std::process::Command;
+        use rush_core::constants::DOCKER_TAG_LATEST;
+        use rush_build::ComponentBuildSpec;
+        
+        // Get the git hash for tagging
+        let git_hash = {
+            let hash_output = Command::new("git")
+                .args(["log", "-n", "1", "--format=%H", "--", &config.product_path().display().to_string()])
+                .output()
+                .ok();
+            
+            if let Some(output) = hash_output {
+                if output.status.success() {
+                    if let Ok(hash) = String::from_utf8(output.stdout) {
+                        let hash = hash.trim();
+                        if !hash.is_empty() {
+                            hash[..8.min(hash.len())].to_string()
+                        } else {
+                            DOCKER_TAG_LATEST.to_string()
+                        }
+                    } else {
+                        DOCKER_TAG_LATEST.to_string()
+                    }
+                } else {
+                    DOCKER_TAG_LATEST.to_string()
+                }
+            } else {
+                DOCKER_TAG_LATEST.to_string()
+            }
+        };
+        
+        let product_path = config.product_path();
+        let docker_client = Arc::new(crate::docker::DockerCliClient::new("docker".to_string()));
+        
+        // Create set of silenced components
+        let silenced_components = silence_components.into_iter().collect::<HashSet<_>>();
+        
+        // Read stack configuration
+        let stack_config = 
+            match fs::read_to_string(format!("{}/stack.spec.yaml", product_path.display())) {
+                Ok(config) => config,
+                Err(e) => return Err(format!("Failed to read stack config: {e}").into()),
+            };
+        
+        // Parse stack spec and create component build specs
+        let spec = match serde_yaml::from_str::<serde_yaml::Value>(&stack_config) {
+            Ok(spec) => spec,
+            Err(e) => return Err(format!("Failed to parse stack config: {e}").into()),
+        };
+        
+        // Build component specs from stack configuration
+        let mut component_specs = Vec::new();
+        if let Some(components) = spec.as_mapping() {
+            for (name, component_config) in components {
+                if let Some(name_str) = name.as_str() {
+                    // Parse the build_type from the component configuration
+                    let build_type_str = component_config.get("build_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("RustBinary");
+                    
+                    let location = component_config.get("location")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(name_str)
+                        .to_string();
+                    
+                    let dockerfile = component_config.get("dockerfile")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Dockerfile")
+                        .to_string();
+                    
+                    // Parse build type based on the string value
+                    let build_type = match build_type_str {
+                        "Ingress" => rush_build::BuildType::Ingress {
+                            components: component_config.get("components")
+                                .and_then(|v| v.as_sequence())
+                                .map(|seq| seq.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect())
+                                .unwrap_or_default(),
+                            dockerfile_path: dockerfile.clone(),
+                            context_dir: component_config.get("context_dir")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                        },
+                        "TrunkWasm" => rush_build::BuildType::TrunkWasm {
+                            location: location.clone(),
+                            dockerfile_path: dockerfile.clone(),
+                            context_dir: component_config.get("context_dir")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            ssr: component_config.get("ssr")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false),
+                            features: component_config.get("features")
+                                .and_then(|v| v.as_sequence())
+                                .map(|seq| seq.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()),
+                            precompile_commands: component_config.get("precompile_commands")
+                                .and_then(|v| v.as_sequence())
+                                .map(|seq| seq.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()),
+                        },
+                        "LocalService" => rush_build::BuildType::LocalService {
+                            service_type: component_config.get("service_type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string(),
+                            version: component_config.get("version")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            persist_data: component_config.get("persist_data")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false),
+                            env: component_config.get("env")
+                                .and_then(|v| v.as_mapping())
+                                .map(|m| m.iter()
+                                    .filter_map(|(k, v)| {
+                                        k.as_str().and_then(|key| 
+                                            v.as_str().map(|val| (key.to_string(), val.to_string()))
+                                        )
+                                    })
+                                    .collect()),
+                            health_check: component_config.get("health_check")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            init_scripts: component_config.get("init_scripts")
+                                .and_then(|v| v.as_sequence())
+                                .map(|seq| seq.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()),
+                            command: component_config.get("command")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            depends_on: component_config.get("depends_on")
+                                .and_then(|v| v.as_sequence())
+                                .map(|seq| seq.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect::<Vec<_>>()),
+                        },
+                        _ => rush_build::BuildType::RustBinary {
+                            location: location.clone(),
+                            dockerfile_path: dockerfile.clone(),
+                            context_dir: component_config.get("context_dir")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            features: component_config.get("features")
+                                .and_then(|v| v.as_sequence())
+                                .map(|seq| seq.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()),
+                            precompile_commands: component_config.get("precompile_commands")
+                                .and_then(|v| v.as_sequence())
+                                .map(|seq| seq.iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect()),
+                        },
+                    };
+                    
+                    let spec = ComponentBuildSpec {
+                        build_type,
+                        product_name: config.product_name().to_string(),
+                        component_name: name_str.to_string(),
+                        color: "white".to_string(),
+                        depends_on: vec![],
+                        build: None,
+                        mount_point: None,
+                        subdomain: None,
+                        artefacts: None,
+                        artefact_output_dir: "target".to_string(),
+                        docker_extra_run_args: vec![],
+                        env: None,
+                        volumes: None,
+                        port: None,
+                        target_port: None,
+                        k8s: None,
+                        priority: 100,
+                        watch: None,
+                        config: config.clone(),
+                        variables: rush_build::Variables::empty(),
+                        services: None,
+                        domains: None,
+                        tagged_image_name: Some(format!("{}:{}", name_str, git_hash)),
+                        dotenv: HashMap::new(),
+                        dotenv_secrets: HashMap::new(),
+                        domain: format!("{}.local", name_str),
+                        cross_compile: "native".to_string(),
+                    };
+                    
+                    // Skip silenced components
+                    if !silenced_components.contains(name_str) {
+                        component_specs.push(spec);
+                    }
+                }
+            }
+        }
+        
+        // Create modular reactor configuration
+        let mut modular_config = ModularReactorConfig::default();
+        // Use consistent network name from network manager
+        let network_name = network_manager.network_name().to_string();
+        modular_config.base.network_name = network_name.clone();
+        modular_config.base.redirected_components = redirected_components;
+        modular_config.docker.use_enhanced_client = true;
+        modular_config.watcher.auto_rebuild = true;
+        modular_config.lifecycle.auto_restart = true;
+        
+        // Configure build orchestrator with the product directory
+        modular_config.build.product_dir = config.product_path().to_path_buf();
+        modular_config.build.product_name = config.product_name().to_string();
+        
+        // Configure lifecycle manager with the product name and network name
+        modular_config.lifecycle.product_name = config.product_name().to_string();
+        modular_config.lifecycle.network_name = network_name;
+        
+        // Create the reactor using the existing new() method
+        let reactor = Self::new(modular_config, docker_client, component_specs).await?;
+        
+        Ok(reactor)
     }
 }
 

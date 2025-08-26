@@ -3,7 +3,7 @@ use colored::Colorize;
 use log::{error, trace};
 use rush_config::environment::setup_environment;
 use rush_config::Config;
-use rush_container::ContainerReactor;
+use rush_container::Reactor;
 use rush_core::error::Error;
 use rush_core::error::Result;
 use std::process;
@@ -14,7 +14,7 @@ pub struct RolloutCommand;
 impl RolloutCommand {
     pub async fn execute(
         _config: Arc<Config>,
-        container_reactor: &mut ContainerReactor,
+        container_reactor: &mut Reactor,
     ) -> Result<()> {
         println!("{}", "Rolling out product".bold().white());
 

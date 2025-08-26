@@ -8,7 +8,7 @@ use rush_output::simple::Sink as OutputSink;
 use tokio::sync::Mutex as TokioMutex;
 
 use rush_config::Config;
-use rush_container::{ContainerReactor, DevEnvironment, DockerCliClient};
+use rush_container::{Reactor, DevEnvironment, DockerCliClient};
 use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_core::error::{Error, Result};
 // Legacy imports removed - this module is deprecated
@@ -87,14 +87,26 @@ impl DevCommand {
         // Create docker client
         let docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));
 
+        // Create and setup network manager BEFORE creating reactor or local services
+        let network_manager = Arc::new(
+            rush_container::network::NetworkManager::new(
+                docker_client.clone(), 
+                self.config.product_name()
+            )
+            .await
+            .map_err(|e| Error::Setup(format!("Failed to setup network: {e}")))?
+        );
+
         // Create the container reactor from product directory
-        let mut reactor = ContainerReactor::from_product_dir(
+        let mut reactor = Reactor::from_product_dir(
             self.config.clone(),
             vault_adapter,
             secrets_encoder,
             self.redirect_components.clone(),
             self.silence_components.clone(),
+            network_manager.clone(),
         )
+        .await
         .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {e}")))?;
         
         // Set force rebuild if requested
@@ -107,7 +119,7 @@ impl DevCommand {
         let mut dev_env = DevEnvironment::new(
             reactor,
             docker_client,
-            self.config.network_name().to_string(),
+            network_manager.network_name().to_string(),
             data_dir,
         );
         

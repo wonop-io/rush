@@ -1,5 +1,5 @@
 use rush_config::Config;
-use rush_container::ContainerReactor;
+use rush_container::Reactor;
 use rush_local_services::LocalServiceManager;
 use rush_output::simple::Sink;
 use rush_security::{SecretsDefinitions, Vault};
@@ -12,7 +12,7 @@ pub struct CliContext {
     pub environment: String,
     pub product_name: String,
     pub toolchain: Arc<ToolchainContext>,
-    pub reactor: ContainerReactor,
+    pub reactor: Reactor,
     pub vault: Arc<Mutex<dyn Vault + Send>>,
     pub secrets_context: SecretsDefinitions,
     pub output_sink: Arc<TokioMutex<Box<dyn Sink>>>,
@@ -25,7 +25,7 @@ impl CliContext {
         environment: String,
         product_name: String,
         toolchain: Arc<ToolchainContext>,
-        reactor: ContainerReactor,
+        reactor: Reactor,
         vault: Arc<Mutex<dyn Vault + Send>>,
         secrets_context: SecretsDefinitions,
         output_sink: Arc<TokioMutex<Box<dyn Sink>>>,

@@ -24,6 +24,6 @@ pub use modular_core::{Reactor, ModularReactorConfig, ReactorStatus};
 pub use state::{ReactorPhase, ReactorState, SharedReactorState, ComponentState, ComponentStatus, StateError};
 pub use watcher_integration::{WatcherIntegration, WatcherIntegrationConfig};
 
-// Include the main reactor implementations
+// Legacy reactor implementation (kept for internal use)
 mod core;
-pub use core::ContainerReactor;
+// ContainerReactor is now a type alias for Reactor in lib.rs

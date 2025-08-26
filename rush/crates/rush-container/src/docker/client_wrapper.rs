@@ -286,15 +286,9 @@ impl DockerClient for DockerClientWrapper {
     }
 
     async fn network_exists(&self, name: &str) -> Result<bool> {
-        let name = name.to_string();
-        
-        self.execute_with_retry("network_exists", || {
-            let client = self.inner.clone();
-            let name = name.clone();
-            Box::pin(async move {
-                client.network_exists(&name).await
-            })
-        }).await
+        // Call underlying client directly - network checks should be immediate
+        // and not retried as this can interfere with container startup logic
+        self.inner.network_exists(name).await
     }
 
     async fn build_image(
@@ -327,32 +321,9 @@ impl DockerClient for DockerClientWrapper {
         ports: &[String],
         volumes: &[String],
     ) -> Result<String> {
-        let image = image.to_string();
-        let name = name.to_string();
-        let network = network.to_string();
-        let env_vars = env_vars.to_vec();
-        let ports = ports.to_vec();
-        let volumes = volumes.to_vec();
-        
-        self.execute_with_retry("run_container", || {
-            let client = self.inner.clone();
-            let image = image.clone();
-            let name = name.clone();
-            let network = network.clone();
-            let env_vars = env_vars.clone();
-            let ports = ports.clone();
-            let volumes = volumes.clone();
-            Box::pin(async move {
-                client.run_container(
-                    &image,
-                    &name,
-                    &network,
-                    &env_vars,
-                    &ports,
-                    &volumes,
-                ).await
-            })
-        }).await
+        // Call underlying client directly - don't retry container creation
+        // as the lifecycle manager handles retries with proper cleanup
+        self.inner.run_container(image, name, network, env_vars, ports, volumes).await
     }
 
     async fn run_container_with_command(
@@ -365,35 +336,9 @@ impl DockerClient for DockerClientWrapper {
         volumes: &[String],
         command: Option<&[String]>,
     ) -> Result<String> {
-        let image = image.to_string();
-        let name = name.to_string();
-        let network = network.to_string();
-        let env_vars = env_vars.to_vec();
-        let ports = ports.to_vec();
-        let volumes = volumes.to_vec();
-        let command = command.map(|c| c.to_vec());
-        
-        self.execute_with_retry("run_container_with_command", || {
-            let client = self.inner.clone();
-            let image = image.clone();
-            let name = name.clone();
-            let network = network.clone();
-            let env_vars = env_vars.clone();
-            let ports = ports.clone();
-            let volumes = volumes.clone();
-            let command = command.clone();
-            Box::pin(async move {
-                client.run_container_with_command(
-                    &image,
-                    &name,
-                    &network,
-                    &env_vars,
-                    &ports,
-                    &volumes,
-                    command.as_deref(),
-                ).await
-            })
-        }).await
+        // Call underlying client directly - don't retry container creation
+        // as the lifecycle manager handles retries with proper cleanup
+        self.inner.run_container_with_command(image, name, network, env_vars, ports, volumes, command).await
     }
 
     async fn stop_container(&self, id: &str) -> Result<()> {

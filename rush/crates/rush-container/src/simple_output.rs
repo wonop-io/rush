@@ -8,6 +8,7 @@ use log::{debug, error};
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
 use rush_output::simple::{LogEntry, Sink};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -22,6 +23,7 @@ pub struct CaptureOptions {
     pub sink: Arc<Mutex<Box<dyn Sink>>>,
     pub is_build: bool,
     pub respect_shutdown: bool,
+    pub working_dir: Option<PathBuf>,
 }
 
 /// Capture output from any spawned process and forward to sink
@@ -43,6 +45,7 @@ pub async fn capture_process_output(
         sink,
         is_build,
         respect_shutdown: false,
+        working_dir: None,
     })
     .await
 }
@@ -56,6 +59,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
         sink,
         is_build,
         respect_shutdown,
+        working_dir,
     } = options;
 
     debug!(
@@ -69,12 +73,19 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
         None
     };
 
-    let mut child = Command::new(&command)
-        .args(&args)
+    let mut cmd = Command::new(&command);
+    cmd.args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| Error::Docker(format!("Failed to spawn process {command}: {e}")))?;
+        .stderr(Stdio::piped());
+    
+    // Set working directory if provided
+    if let Some(dir) = working_dir {
+        debug!("Setting working directory to: {:?}", dir);
+        cmd.current_dir(dir);
+    }
+    
+    let mut child = cmd.spawn()
+        .map_err(|e| Error::Docker(format!("Failed to spawn process {command} with args {:?}: {e}", args)))?;
 
     let stdout = child
         .stdout
@@ -257,6 +268,7 @@ pub async fn capture_process_output_with_shutdown(
         sink,
         is_build,
         respect_shutdown: true,
+        working_dir: None,
     })
     .await
 }
@@ -300,24 +312,27 @@ pub async fn follow_build_output_simple(
     component_name: String,
     build_command: Vec<String>,
     sink: Arc<Mutex<Box<dyn Sink>>>,
+    working_dir: Option<PathBuf>,
 ) -> Result<()> {
     debug!(
-        "Starting build command for {}: {:?}",
-        component_name, build_command
+        "Starting build command for {}: {:?} in dir: {:?}",
+        component_name, build_command, working_dir
     );
 
     if build_command.is_empty() {
         return Err(Error::Docker("Build command is empty".to_string()));
     }
 
-    // Use the generic capture function
-    capture_process_output(
-        &build_command[0],
-        build_command[1..].to_vec(),
+    // Use the generic capture function with working directory
+    capture_output(CaptureOptions {
+        command: build_command[0].clone(),
+        args: build_command[1..].to_vec(),
         component_name,
         sink,
-        true, // is_build = true for build commands
-    )
+        is_build: true,
+        respect_shutdown: false,
+        working_dir,
+    })
     .await
 }
 

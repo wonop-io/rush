@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use rush_core::{Error, Result};
 use std::process::Stdio;
 use tokio::process::Command;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 /// Docker executor that implements DockerClient using command-line interface
 #[derive(Debug, Clone)]
@@ -127,7 +127,10 @@ impl DockerClient for DockerExecutor {
             "{{.Name}}".to_string(),
         ];
         let output = self.execute(args).await?;
-        Ok(output.lines().any(|line| line.trim() == name))
+        let exists = output.lines().any(|line| line.trim() == name);
+        warn!("network_exists check: searching for '{}', found: {}", name, exists);
+        warn!("Available networks: {}", output.lines().collect::<Vec<_>>().join(", "));
+        Ok(exists)
     }
 
     // Image operations

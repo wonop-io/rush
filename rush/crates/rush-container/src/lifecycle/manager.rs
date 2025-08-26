@@ -10,7 +10,7 @@ use crate::{
     service::ContainerService,
     simple_output,
 };
-use rush_core::error::Result;
+use rush_core::error::{Error, Result};
 use rush_output::simple::Sink;
 use rush_security::Vault;
 use std::collections::HashMap;
@@ -74,6 +74,8 @@ pub struct LifecycleManager {
     shutdown_sender: broadcast::Sender<()>,
     /// Output sink for container logs
     output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
+    /// Track active log streams to prevent duplicates
+    active_log_streams: Arc<tokio::sync::RwLock<std::collections::HashSet<String>>>,
 }
 
 impl LifecycleManager {
@@ -95,6 +97,7 @@ impl LifecycleManager {
             state,
             shutdown_sender,
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
+            active_log_streams: Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new())),
         }
     }
     
@@ -102,6 +105,54 @@ impl LifecycleManager {
     pub async fn set_output_sink(&self, sink: Arc<tokio::sync::Mutex<Box<dyn Sink>>>) {
         let mut output_sink = self.output_sink.write().await;
         *output_sink = Some(sink);
+    }
+
+    /// Start log streaming for a container if not already active
+    async fn start_log_streaming_if_needed(&self, container_id: &str, component_name: &str) {
+        // Check if logging is already active for this container
+        {
+            let active_streams = self.active_log_streams.read().await;
+            if active_streams.contains(container_id) {
+                debug!("Log streaming already active for container {}", container_id);
+                return;
+            }
+        }
+
+        // Get output sink
+        let sink_option = {
+            let output_sink_guard = self.output_sink.read().await;
+            output_sink_guard.clone()
+        };
+
+        if let Some(sink) = sink_option {
+            // Mark as active
+            {
+                let mut active_streams = self.active_log_streams.write().await;
+                active_streams.insert(container_id.to_string());
+            }
+
+            let docker_client = self.docker_client.clone();
+            let container_id_clone = container_id.to_string();
+            let component_name_clone = component_name.to_string();
+            let active_streams_cleanup = self.active_log_streams.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) = simple_output::follow_container_logs_from_start(
+                    docker_client,
+                    &container_id_clone,
+                    component_name_clone.clone(),
+                    sink,
+                ).await {
+                    debug!("Container log following ended for {}: {}", component_name_clone, e);
+                }
+
+                // Clean up active streams tracking when done
+                {
+                    let mut active_streams = active_streams_cleanup.write().await;
+                    active_streams.remove(&container_id_clone);
+                }
+            });
+        }
     }
 
     /// Start the lifecycle manager
@@ -137,6 +188,7 @@ impl LifecycleManager {
     }
 
     /// Start a specific component
+    /// Note: This method only updates state - actual container creation is done by start_services
     pub async fn start_component(&self, component_name: &str) -> Result<()> {
         info!("Starting component: {}", component_name);
         
@@ -228,27 +280,10 @@ impl LifecycleManager {
                     }
                     
                     // Start log following if output sink is available
-                    let sink_option = {
-                        let output_sink_guard = self.output_sink.read().await;
-                        output_sink_guard.clone()
-                    };
-                    
-                    if let Some(sink) = sink_option {
-                        let docker_client = self.docker_client.clone();
-                        let container_id = docker_service.id().to_string();
-                        let component_name = service.name.clone();
-                        
-                        tokio::spawn(async move {
-                            if let Err(e) = simple_output::follow_container_logs_from_start(
-                                docker_client,
-                                &container_id,
-                                component_name.clone(),
-                                sink,
-                            ).await {
-                                debug!("Container log following ended for {}: {}", component_name, e);
-                            }
-                        });
-                    }
+                    self.start_log_streaming_if_needed(
+                        &docker_service.id().to_string(),
+                        &service.name
+                    ).await;
                     
                     // Publish event
                     if let Err(e) = self.event_bus.publish(Event::new(
@@ -265,7 +300,7 @@ impl LifecycleManager {
                     running_services.push(docker_service);
                 }
                 Err(e) => {
-                    error!("Failed to start {}: {}", service.name, e);
+                    error!("Failed to start {}: {} - SHUTTING DOWN IMMEDIATELY", service.name, e);
                     
                     // Update state
                     {
@@ -282,7 +317,8 @@ impl LifecycleManager {
                         debug!("Failed to publish error event: {}", pub_err);
                     }
                     
-                    // Continue with other services
+                    // Return error immediately - do not continue with other services
+                    return Err(e);
                 }
             }
         }
@@ -363,6 +399,14 @@ impl LifecycleManager {
             volumes: vec![],
         };
         
+        // Remove any existing container with the same name first
+        info!("Cleaning up any existing container: {}", docker_config.name);
+        if let Err(e) = self.docker_client.remove_container(&docker_config.name).await {
+            info!("No existing container to remove ({}): {}", docker_config.name, e);
+        } else {
+            info!("Successfully removed existing container: {}", docker_config.name);
+        }
+        
         // Create and start the container
         let mut retries = 0;
         let container_id = loop {
@@ -384,15 +428,35 @@ impl LifecycleManager {
                         self.config.max_retries,
                         e
                     );
+                    
+                    // Handle specific error types
+                    let error_str = e.to_string();
+                    
+                    if error_str.contains("already in use") {
+                        warn!("Container name conflict, attempting cleanup for {}", docker_config.name);
+                        if let Err(cleanup_err) = self.docker_client.remove_container(&docker_config.name).await {
+                            warn!("Failed to cleanup container {}: {}", docker_config.name, cleanup_err);
+                        } else {
+                            info!("Successfully cleaned up conflicting container: {}", docker_config.name);
+                        }
+                    } else if error_str.contains("network") && error_str.contains("not found") {
+                        warn!("Network {} temporarily unavailable, waiting before retry", docker_config.network);
+                        // Add extra delay for network issues
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
+                    
                     retries += 1;
                     tokio::time::sleep(self.config.retry_delay).await;
                 }
                 Err(e) => {
-                    error!("Failed to start {} after {} retries", service.name, self.config.max_retries);
+                    error!("Failed to start {} after {} retries: {}", service.name, self.config.max_retries, e);
                     return Err(e);
                 }
             }
         };
+        
+        // Start log streaming if output sink is configured
+        self.start_log_streaming_if_needed(&container_id, &service.name).await;
         
         // Create the DockerService struct
         let docker_service = DockerService::new(

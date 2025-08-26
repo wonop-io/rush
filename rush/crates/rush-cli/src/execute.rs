@@ -48,7 +48,7 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         let sink = rush_output::simple::create_sink(output_format, no_color);
 
         // Set the sink on the reactor
-        ctx.reactor.set_output_sink(sink);
+        ctx.reactor.set_output_sink_boxed(sink);
 
         // Note: Local services are already started in context_builder before .env generation
         // We just need to launch the application containers now
@@ -96,6 +96,10 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         trace!("Executing unapply command");
         // TODO: Implement unapply with context
         Ok(())
+    } else if matches.subcommand_matches("build").is_some() {
+        trace!("Executing build command");
+        // Build just the images without running containers
+        ctx.reactor.build().await
     } else {
         Ok(())
     }
