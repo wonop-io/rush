@@ -128,36 +128,12 @@ impl ReactorFactory {
         config: ModularReactorConfig,
         docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
-        legacy_config: Option<ContainerReactorConfig>,
+        _legacy_config: Option<ContainerReactorConfig>,
     ) -> Result<ReactorImplementation> {
-        #[allow(deprecated)]
-        if config.use_legacy {
-            info!("Creating legacy reactor implementation");
-            Self::create_legacy_reactor(
-                legacy_config.unwrap_or_else(|| config.base.clone()),
-                docker_client,
-                component_specs,
-            ).await
-        } else {
-            info!("Creating primary reactor implementation");
-            Self::create_primary_reactor(config, docker_client, component_specs).await
-        }
+        info!("Creating primary reactor implementation");
+        Self::create_primary_reactor(config, docker_client, component_specs).await
     }
     
-    /// Create the legacy reactor
-    async fn create_legacy_reactor(
-        config: ContainerReactorConfig,
-        docker_client: Arc<dyn DockerClient>,
-        component_specs: Vec<ComponentBuildSpec>,
-    ) -> Result<ReactorImplementation> {
-        warn!("Using legacy reactor implementation - consider migrating to modular");
-        
-        // We can't easily create the legacy reactor here since it has many dependencies
-        // and a complex constructor. For now, return an error suggesting modular usage.
-        Err(Error::Internal(
-            "Legacy reactor creation not supported in factory. Use primary reactor or create legacy reactor directly.".into()
-        ))
-    }
     
     /// Create the primary reactor
     async fn create_primary_reactor(
@@ -259,12 +235,6 @@ impl ModularReactorConfigBuilder {
         }
     }
     
-    /// Set whether to use legacy reactor implementation (deprecated - always uses primary)
-    #[deprecated(note = "Legacy reactor no longer supported, this method has no effect")]
-    pub fn use_legacy(self, _use_legacy: bool) -> Self {
-        self
-    }
-    
     /// Enable or disable enhanced Docker features
     pub fn with_enhanced_docker(mut self, enabled: bool) -> Self {
         self.config.docker.use_enhanced_client = enabled;
@@ -331,9 +301,7 @@ mod tests {
 
     #[test]
     fn test_reactor_config_builder() {
-        #[allow(deprecated)]
         let config = ModularReactorConfigBuilder::new()
-            .use_legacy(false)
             .with_enhanced_docker(true)
             .with_file_watching(true)
             .with_auto_restart(true)
@@ -342,8 +310,6 @@ mod tests {
             .with_verbose_logging(true)
             .build();
         
-        #[allow(deprecated)]
-        assert!(!config.use_legacy);
         assert!(config.docker.use_enhanced_client);
         assert!(config.watcher.auto_rebuild);
         assert!(config.lifecycle.auto_restart);

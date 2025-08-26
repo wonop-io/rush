@@ -12,7 +12,6 @@ mod tests {
             factory::{ReactorFactory, ModularReactorConfigBuilder},
             modular_core::{ModularReactorConfig, ReactorStatus},
             state::{ReactorPhase, ComponentStatus},
-            migration::{ReactorMigrator, MigrationConfig, MigrationStrategy},
         },
     };
     use rush_build::{ComponentBuildSpec, BuildType, Variables};
@@ -345,82 +344,7 @@ mod tests {
         reactor.shutdown().await.unwrap();
     }
 
-    #[tokio::test]
-    async fn test_migration_immediate() {
-        let docker_client = Arc::new(MockDockerClient::new());
-        let component_specs = create_test_component_specs();
-        
-        let migration_config = MigrationConfig {
-            strategy: MigrationStrategy::Immediate,
-            compatibility_mode: true,
-            fallback_on_error: true,
-            verbose_logging: false,
-        };
 
-        let migrator = ReactorMigrator::new(migration_config);
-        let legacy_config = crate::reactor::config::ContainerReactorConfig::default();
-
-        let result = migrator.migrate_reactor(
-            legacy_config,
-            docker_client,
-            component_specs,
-        ).await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_migration_gradual() {
-        let docker_client = Arc::new(MockDockerClient::new());
-        let component_specs = create_test_component_specs();
-        
-        let migration_config = MigrationConfig {
-            strategy: MigrationStrategy::Gradual {
-                enabled_features: vec![
-                    crate::reactor::migration::ModularFeature::EnhancedDocker,
-                    crate::reactor::migration::ModularFeature::LifecycleManagement,
-                ],
-            },
-            compatibility_mode: true,
-            fallback_on_error: false,
-            verbose_logging: true,
-        };
-
-        let migrator = ReactorMigrator::new(migration_config);
-        let legacy_config = crate::reactor::config::ContainerReactorConfig::default();
-
-        let result = migrator.migrate_reactor(
-            legacy_config,
-            docker_client,
-            component_specs,
-        ).await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_migration_step_tracker() {
-        let mut tracker = crate::reactor::migration::MigrationStepTracker::new();
-        
-        assert_eq!(tracker.progress(), 0.0);
-        assert!(!tracker.is_complete());
-        
-        // Complete a few steps
-        tracker.complete_current_step();
-        tracker.complete_current_step();
-        
-        assert!(tracker.progress() > 0.0);
-        assert!(tracker.progress() < 1.0);
-        assert!(!tracker.is_complete());
-        
-        // Complete all steps
-        while !tracker.is_complete() {
-            tracker.complete_current_step();
-        }
-        
-        assert_eq!(tracker.progress(), 1.0);
-        assert!(tracker.is_complete());
-    }
 
     // Helper event handler for testing
     struct TestEventHandler {
@@ -463,8 +387,6 @@ mod tests {
     #[tokio::test]
     async fn test_modular_reactor_config_validation() {
         let config = ModularReactorConfig {
-            #[allow(deprecated)]
-            use_legacy: false,
             docker: crate::reactor::docker_integration::DockerIntegrationConfig {
                 use_enhanced_client: true,
                 enable_metrics: true,
@@ -474,8 +396,6 @@ mod tests {
             ..Default::default()
         };
 
-        #[allow(deprecated)]
-        assert!(!config.use_legacy);
         assert!(config.docker.use_enhanced_client);
         assert!(config.docker.enable_metrics);
         assert!(config.docker.enable_pooling);

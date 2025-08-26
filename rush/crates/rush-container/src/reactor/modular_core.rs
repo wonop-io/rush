@@ -39,9 +39,6 @@ pub struct ModularReactorConfig {
     pub watcher: CoordinatorConfig,
     /// Docker integration configuration
     pub docker: DockerIntegrationConfig,
-    /// Whether to use legacy reactor (deprecated - always false)
-    #[deprecated(note = "Legacy reactor no longer supported")]
-    pub use_legacy: bool,
 }
 
 impl Default for ModularReactorConfig {
@@ -52,8 +49,6 @@ impl Default for ModularReactorConfig {
             build: BuildOrchestratorConfig::default(),
             watcher: CoordinatorConfig::default(),
             docker: DockerIntegrationConfig::default(),
-            #[allow(deprecated)]
-            use_legacy: false,
         }
     }
 }
@@ -687,7 +682,7 @@ impl Reactor {
         // This will be done during launch() when they are active
     }
     
-    /// Set output sink from Box (for compatibility)
+    /// Set output sink from Box
     pub fn set_output_sink_boxed(&mut self, sink: Box<dyn rush_output::simple::Sink>) {
         self.output_sink = Arc::new(tokio::sync::Mutex::new(sink));
     }
@@ -1206,8 +1201,6 @@ mod tests {
     #[tokio::test]
     async fn test_modular_reactor_config_default() {
         let config = ModularReactorConfig::default();
-        #[allow(deprecated)]
-        assert!(!config.use_legacy);
         assert!(config.docker.use_enhanced_client);
         assert!(config.lifecycle.auto_restart);
     }
