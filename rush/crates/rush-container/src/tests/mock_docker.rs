@@ -45,6 +45,7 @@ pub struct MockResponses {
     pub should_fail_container_run: bool,
     pub should_fail_container_stop: bool,
     pub should_fail_image_build: bool,
+    pub should_fail_image_push: bool,
     pub container_exit_code: Option<i32>,
     pub container_crash_after_ms: Option<u64>,
     pub startup_logs: Vec<String>,
@@ -357,5 +358,16 @@ impl DockerClient for MockDockerClient {
         containers.insert(name.to_string(), container_clone);
 
         Ok(container_id)
+    }
+    
+    async fn push_image(&self, image: &str) -> Result<()> {
+        self.record_call(format!("push_image({image})")).await;
+        
+        let responses = self.responses.lock().await;
+        if responses.should_fail_image_push {
+            return Err(Error::Docker(format!("Failed to push image: {image}")));
+        }
+        
+        Ok(())
     }
 }

@@ -26,6 +26,33 @@ use std::collections::HashMap;
 use tokio::sync::broadcast;
 use log::{info, debug, error, warn};
 
+/// Docker registry configuration
+#[derive(Debug, Clone)]
+pub struct RegistryConfig {
+    /// Registry URL (e.g., "docker.io", "gcr.io", custom registry)
+    pub url: Option<String>,
+    /// Registry namespace/organization
+    pub namespace: Option<String>,
+    /// Registry username (for authentication)
+    pub username: Option<String>,
+    /// Registry password (from environment or secrets)
+    pub password: Option<String>,
+    /// Whether to use Docker credentials helper
+    pub use_credentials_helper: bool,
+}
+
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        Self {
+            url: None,
+            namespace: None,
+            username: None,
+            password: None,
+            use_credentials_helper: true,
+        }
+    }
+}
+
 /// Configuration for the modular reactor
 #[derive(Debug, Clone)]
 pub struct ModularReactorConfig {
@@ -39,6 +66,8 @@ pub struct ModularReactorConfig {
     pub watcher: CoordinatorConfig,
     /// Docker integration configuration
     pub docker: DockerIntegrationConfig,
+    /// Docker registry configuration
+    pub registry: RegistryConfig,
 }
 
 impl Default for ModularReactorConfig {
@@ -49,6 +78,7 @@ impl Default for ModularReactorConfig {
             build: BuildOrchestratorConfig::default(),
             watcher: CoordinatorConfig::default(),
             docker: DockerIntegrationConfig::default(),
+            registry: RegistryConfig::default(),
         }
     }
 }
@@ -793,6 +823,62 @@ impl Reactor {
         Ok(())
     }
     
+    /// Perform Docker login if credentials are configured
+    async fn docker_login(&self) -> Result<()> {
+        if let (Some(username), Some(password)) = (&self.config.registry.username, &self.config.registry.password) {
+            info!("Logging into Docker registry...");
+            
+            let mut args = vec!["login".to_string()];
+            
+            if let Some(url) = &self.config.registry.url {
+                args.push(url.clone());
+            }
+            
+            args.extend(vec![
+                "--username".to_string(),
+                username.clone(),
+                "--password-stdin".to_string(),
+            ]);
+            
+            // Use echo to pipe password to docker login
+            let cmd = format!("echo '{}' | docker {}", password, args.join(" "));
+            
+            // Execute through shell for pipe support
+            let output = tokio::process::Command::new("sh")
+                .arg("-c")
+                .arg(&cmd)
+                .output()
+                .await
+                .map_err(|e| Error::Docker(format!("Failed to run docker login: {}", e)))?;
+            
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(Error::Docker(format!("Docker login failed: {}", stderr)));
+            }
+            
+            info!("Successfully logged into Docker registry");
+        } else if !self.config.registry.use_credentials_helper {
+            warn!("No Docker registry credentials configured and credentials helper disabled");
+        }
+        
+        Ok(())
+    }
+    
+    /// Get the full image tag including registry URL if configured
+    fn get_registry_tag(&self, image_name: &str) -> String {
+        if let Some(url) = &self.config.registry.url {
+            if let Some(namespace) = &self.config.registry.namespace {
+                format!("{}/{}/{}", url, namespace, image_name)
+            } else {
+                format!("{}/{}", url, image_name)
+            }
+        } else if let Some(namespace) = &self.config.registry.namespace {
+            format!("{}/{}", namespace, image_name)
+        } else {
+            image_name.to_string()
+        }
+    }
+
     /// Build and push Docker images for all components
     pub async fn build_and_push(&mut self) -> Result<()> {
         info!("Building and pushing Docker images...");
@@ -800,11 +886,38 @@ impl Reactor {
         // Build all components first
         self.build().await?;
         
-        // Push images to registry (placeholder implementation)
+        // Login to registry if needed
+        self.docker_login().await?;
+        
+        // Push images to registry
         for (component_name, image_name) in &self.built_images {
-            info!("Pushing image: {} -> {}", component_name, image_name);
-            // Docker push implementation would require registry authentication and push commands
-            debug!("Docker push not implemented yet for {}", image_name);
+            // Get the full registry tag
+            let registry_tag = self.get_registry_tag(image_name);
+            info!("Pushing image: {} -> {}", component_name, registry_tag);
+            
+            // Tag the image for the registry if needed
+            if registry_tag != *image_name {
+                // Tag the local image with the registry URL
+                let tag_output = tokio::process::Command::new("docker")
+                    .args(&["tag", image_name, &registry_tag])
+                    .output()
+                    .await
+                    .map_err(|e| Error::Docker(format!("Failed to tag image: {}", e)))?;
+                    
+                if !tag_output.status.success() {
+                    let stderr = String::from_utf8_lossy(&tag_output.stderr);
+                    return Err(Error::Docker(format!("Failed to tag image: {}", stderr)));
+                }
+            }
+            
+            // Use the Docker client to push the image
+            if let Err(e) = self.docker_integration.client().push_image(&registry_tag).await {
+                error!("Failed to push image {} for component {}: {}", 
+                       registry_tag, component_name, e);
+                return Err(e);
+            }
+            
+            info!("Successfully pushed image: {}", registry_tag);
         }
         
         info!("Build and push completed successfully");

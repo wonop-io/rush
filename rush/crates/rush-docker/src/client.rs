@@ -368,4 +368,19 @@ impl DockerClient for DockerExecutor {
             Ok(id.to_string())
         }
     }
+    
+    async fn push_image(&self, image: &str) -> Result<()> {
+        info!("Pushing Docker image: {}", image);
+        let args = vec!["push".to_string(), image.to_string()];
+        
+        // Docker push can take a while, especially for large images
+        // The output will show progress
+        let output = self.execute(args).await?;
+        
+        // Log the output for debugging
+        debug!("Docker push output: {}", output);
+        
+        info!("Successfully pushed Docker image: {}", image);
+        Ok(())
+    }
 }

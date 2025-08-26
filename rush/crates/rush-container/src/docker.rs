@@ -677,6 +677,27 @@ impl DockerClient for DockerCliClient {
 
         Ok(container_id)
     }
+    
+    async fn push_image(&self, image: &str) -> Result<()> {
+        info!("Pushing Docker image: {}", image);
+
+        let output = Command::new(&self.docker_path)
+            .args(["push", image])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to push image: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("Failed to push Docker image: {}", stderr);
+            return Err(Error::Docker(format!("Image push failed: {stderr}")));
+        }
+
+        debug!("Successfully pushed Docker image: {}", image);
+        Ok(())
+    }
 }
 
 impl DockerCliClient {
@@ -1005,6 +1026,10 @@ mod tests {
             async fn get_container_by_name(&self, _name: &str) -> Result<String> {
                 unimplemented!()
             }
+            
+            async fn push_image(&self, _image: &str) -> Result<()> {
+                unimplemented!()
+            }
         }
 
         let mock = Arc::new(MockDockerClient {
@@ -1130,6 +1155,10 @@ mod tests {
                 unimplemented!()
             }
             async fn get_container_by_name(&self, _name: &str) -> Result<String> {
+                unimplemented!()
+            }
+            
+            async fn push_image(&self, _image: &str) -> Result<()> {
                 unimplemented!()
             }
         }

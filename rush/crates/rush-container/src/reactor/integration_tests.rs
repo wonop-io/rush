@@ -161,6 +161,11 @@ mod tests {
             self.record_operation(&format!("exec_in_container:{}:{:?}", container_id, command));
             Ok("Mock exec result".to_string())
         }
+        
+        async fn push_image(&self, image: &str) -> Result<()> {
+            self.record_operation(&format!("push_image:{}", image));
+            Ok(())
+        }
     }
 
     fn create_test_component_specs() -> Vec<ComponentBuildSpec> {

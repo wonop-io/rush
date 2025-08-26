@@ -471,6 +471,20 @@ impl DockerClient for DockerClientWrapper {
             })
         }).await
     }
+    
+    async fn push_image(&self, image: &str) -> Result<()> {
+        let image = image.to_string();
+        
+        // Docker push can take longer, so we might want fewer retries
+        // but let's use the standard retry logic for consistency
+        self.execute_with_retry("push_image", || {
+            let client = self.inner.clone();
+            let image = image.clone();
+            Box::pin(async move {
+                client.push_image(&image).await
+            })
+        }).await
+    }
 }
 
 #[cfg(test)]

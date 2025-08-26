@@ -24,3 +24,6 @@ pub mod shutdown_tests;
 
 #[cfg(test)]
 pub mod test_helpers;
+
+#[cfg(test)]
+pub mod docker_push_test;

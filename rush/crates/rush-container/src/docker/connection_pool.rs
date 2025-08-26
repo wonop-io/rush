@@ -477,6 +477,11 @@ impl DockerClient for PooledDockerClient {
         let guard = self.pool.clone().acquire().await?;
         guard.client().pull_image(name).await
     }
+    
+    async fn push_image(&self, image: &str) -> Result<()> {
+        let guard = self.pool.clone().acquire().await?;
+        guard.client().push_image(image).await
+    }
 
     async fn run_container_with_command(
         &self,

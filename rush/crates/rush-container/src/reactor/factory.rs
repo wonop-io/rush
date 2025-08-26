@@ -274,6 +274,20 @@ impl ModularReactorConfigBuilder {
         self
     }
     
+    /// Configure Docker registry
+    pub fn with_registry(mut self, url: Option<String>, namespace: Option<String>) -> Self {
+        self.config.registry.url = url;
+        self.config.registry.namespace = namespace;
+        self
+    }
+    
+    /// Configure Docker registry credentials
+    pub fn with_registry_credentials(mut self, username: String, password: String) -> Self {
+        self.config.registry.username = Some(username);
+        self.config.registry.password = Some(password);
+        self
+    }
+    
     /// Build the configuration
     pub fn build(self) -> ModularReactorConfig {
         self.config

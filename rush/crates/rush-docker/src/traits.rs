@@ -77,4 +77,7 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
 
     /// Get container by name
     async fn get_container_by_name(&self, name: &str) -> Result<String>;
+    
+    /// Push a Docker image to a registry
+    async fn push_image(&self, image: &str) -> Result<()>;
 }
