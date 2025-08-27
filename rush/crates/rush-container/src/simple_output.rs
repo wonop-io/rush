@@ -78,6 +78,16 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     
+    // Force color output for common tools
+    // Most tools check these environment variables when output is not a TTY
+    cmd.env("FORCE_COLOR", "1")
+        .env("CARGO_TERM_COLOR", "always")
+        .env("RUST_LOG_STYLE", "always")
+        .env("CLICOLOR_FORCE", "1")
+        .env("COLORTERM", "truecolor")
+        .env("TERM", std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()))
+        .env_remove("NO_COLOR");  // Make sure NO_COLOR is not set
+    
     // Set working directory if provided
     if let Some(dir) = working_dir {
         debug!("Setting working directory to: {:?}", dir);
@@ -124,10 +134,14 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
                 break;
             }
 
+            // Strip trailing newlines but preserve the content otherwise
+            // Don't strip \r as it might be used for progress indicators
+            let content = line.trim_end_matches('\n');
+            
             let entry = if is_build {
-                LogEntry::script(&component_clone, &line)
+                LogEntry::script(&component_clone, content)
             } else {
-                LogEntry::docker(&component_clone, &line)
+                LogEntry::docker(&component_clone, content)
             };
 
             let mut sink_guard = sink_clone.lock().await;
@@ -169,10 +183,17 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
                 break;
             }
 
+            // Strip trailing newlines but preserve the content otherwise
+            // Don't strip \r as it might be used for progress indicators
+            let content = line.trim_end_matches('\n');
+            
             let entry = if is_build {
-                LogEntry::script(&component_clone, &line).as_error()
+                // For build scripts, stderr is often used for normal output (progress, warnings, etc.)
+                // Don't automatically mark it as error - preserve the original formatting
+                LogEntry::script(&component_clone, content)
             } else {
-                LogEntry::docker(&component_clone, &line).as_error()
+                // For Docker containers, stderr typically indicates errors
+                LogEntry::docker(&component_clone, content).as_error()
             };
 
             let mut sink_guard = sink_clone.lock().await;
