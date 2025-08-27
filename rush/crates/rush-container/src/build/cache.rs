@@ -76,6 +76,8 @@ pub struct CacheStats {
 pub struct BuildCache {
     /// Cache directory
     cache_dir: PathBuf,
+    /// Base directory for the product (used for path resolution)
+    base_dir: PathBuf,
     /// In-memory cache entries
     entries: HashMap<String, CacheEntry>,
     /// Cache statistics
@@ -88,9 +90,10 @@ pub struct BuildCache {
 
 impl BuildCache {
     /// Create a new build cache
-    pub fn new(cache_dir: &Path) -> Self {
+    pub fn new(cache_dir: &Path, base_dir: &Path) -> Self {
         Self {
             cache_dir: cache_dir.to_path_buf(),
+            base_dir: base_dir.to_path_buf(),
             entries: HashMap::new(),
             stats: CacheStats::default(),
             expiry: Duration::from_secs(3600), // 1 hour default
@@ -140,10 +143,11 @@ impl BuildCache {
     /// Get a cached image
     pub async fn get(&self, component: &str) -> Option<String> {
         if let Some(entry) = self.entries.get(component) {
-            debug!("Cache hit for {}", component);
+            info!("[CACHE HIT] Component '{}': Using cached image '{}' built at {}", 
+                component, entry.image_name, entry.built_at);
             Some(entry.image_name.clone())
         } else {
-            debug!("Cache miss for {}", component);
+            info!("[CACHE MISS] Component '{}': No cached image found", component);
             None
         }
     }
@@ -180,6 +184,11 @@ impl BuildCache {
     pub async fn invalidate_changed(&mut self, changed_files: &[PathBuf]) {
         let mut invalidated = Vec::new();
         
+        info!("[CACHE] Checking {} changed files for cache invalidation", changed_files.len());
+        for file in changed_files {
+            debug!("[CACHE]   Changed file: {}", file.display());
+        }
+        
         for (component, entry) in &self.entries {
             // Check if any changed file affects this component
             if let Some(spec) = &entry.spec {
@@ -195,18 +204,43 @@ impl BuildCache {
                 };
                 
                 if let Some(loc) = location {
+                    // Convert relative location to absolute path for comparison
+                    let abs_location = if Path::new(loc).is_absolute() {
+                        PathBuf::from(loc)
+                    } else {
+                        self.base_dir.join(loc)
+                    };
+                    
+                    debug!("[CACHE] Checking component '{}' with location: {}", 
+                        component, abs_location.display());
+                    
                     for file in changed_files {
-                        if file.starts_with(loc) {
+                        if file.starts_with(&abs_location) {
+                            info!("[CACHE INVALIDATE] Component '{}': File '{}' changed in component directory '{}'", 
+                                component, file.display(), abs_location.display());
                             invalidated.push(component.clone());
                             break;
                         }
                     }
+                    
+                    if !invalidated.contains(&component) {
+                        debug!("[CACHE] Component '{}' not affected by file changes", component);
+                    }
+                } else {
+                    debug!("[CACHE] Component '{}' has no location to check", component);
                 }
+            } else {
+                debug!("[CACHE] Component '{}' has no build spec", component);
             }
         }
         
+        if invalidated.is_empty() {
+            info!("[CACHE] No components invalidated by file changes");
+        } else {
+            info!("[CACHE] Invalidating {} components: {:?}", invalidated.len(), invalidated);
+        }
+        
         for component in invalidated {
-            info!("Invalidating cache for {} due to file changes", component);
             self.entries.remove(&component);
         }
         
@@ -348,7 +382,9 @@ mod tests {
     #[tokio::test]
     async fn test_cache_operations() {
         let temp_dir = TempDir::new().unwrap();
-        let mut cache = BuildCache::new(temp_dir.path());
+        let base_dir = temp_dir.path().join("product");
+        std::fs::create_dir(&base_dir).unwrap();
+        let mut cache = BuildCache::new(temp_dir.path(), &base_dir);
         
         let spec = create_test_spec();
         
@@ -368,10 +404,12 @@ mod tests {
     async fn test_cache_persistence() {
         let temp_dir = TempDir::new().unwrap();
         let cache_dir = temp_dir.path();
+        let base_dir = temp_dir.path().join("product");
+        std::fs::create_dir(&base_dir).unwrap();
         
         // Create and save cache
         {
-            let mut cache = BuildCache::new(cache_dir);
+            let mut cache = BuildCache::new(cache_dir, &base_dir);
             
             let spec = create_test_spec();
             
@@ -382,7 +420,7 @@ mod tests {
         
         // Load cache in new instance
         {
-            let mut cache = BuildCache::new(cache_dir);
+            let mut cache = BuildCache::new(cache_dir, &base_dir);
             cache.load().await.unwrap();
             
             let cached = cache.get("test").await;
@@ -393,7 +431,9 @@ mod tests {
     #[tokio::test]
     async fn test_cache_stats() {
         let temp_dir = TempDir::new().unwrap();
-        let mut cache = BuildCache::new(temp_dir.path());
+        let base_dir = temp_dir.path().join("product");
+        std::fs::create_dir(&base_dir).unwrap();
+        let mut cache = BuildCache::new(temp_dir.path(), &base_dir);
         
         // Record some hits and misses
         cache.record_hit();
@@ -404,5 +444,66 @@ mod tests {
         assert_eq!(stats.hits, 2);
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.hit_rate, 2.0 / 3.0);
+    }
+
+    #[tokio::test]
+    async fn test_cache_invalidation_with_file_changes() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_dir = temp_dir.path().join("product");
+        std::fs::create_dir(&base_dir).unwrap();
+        
+        // Create component directory structure
+        let frontend_dir = base_dir.join("frontend/webui");
+        std::fs::create_dir_all(&frontend_dir).unwrap();
+        
+        let mut cache = BuildCache::new(temp_dir.path(), &base_dir);
+        
+        // Create a spec with location
+        let spec = ComponentBuildSpec {
+            build_type: rush_build::BuildType::TrunkWasm { 
+                location: "frontend/webui".to_string(),
+                dockerfile_path: "frontend/Dockerfile".to_string(),
+                context_dir: Some("frontend".to_string()),
+                ssr: false,
+                features: None,
+                precompile_commands: None,
+            },
+            component_name: "frontend".to_string(),
+            ..create_test_spec()
+        };
+        
+        // Add entry to cache
+        let entry = CacheEntry::new("frontend:v1".to_string(), spec);
+        cache.put("frontend".to_string(), entry).await;
+        
+        // Verify entry exists
+        assert_eq!(cache.get("frontend").await, Some("frontend:v1".to_string()));
+        
+        // Test 1: File change in component directory should invalidate
+        let changed_file = base_dir.join("frontend/webui/src/main.rs");
+        cache.invalidate_changed(&[changed_file]).await;
+        assert_eq!(cache.get("frontend").await, None, "Cache should be invalidated for file in component directory");
+        
+        // Re-add entry for next test
+        let spec2 = ComponentBuildSpec {
+            build_type: rush_build::BuildType::TrunkWasm { 
+                location: "frontend/webui".to_string(),
+                dockerfile_path: "frontend/Dockerfile".to_string(),
+                context_dir: Some("frontend".to_string()),
+                ssr: false,
+                features: None,
+                precompile_commands: None,
+            },
+            component_name: "frontend".to_string(),
+            ..create_test_spec()
+        };
+        let entry2 = CacheEntry::new("frontend:v2".to_string(), spec2);
+        cache.put("frontend".to_string(), entry2).await;
+        
+        // Test 2: File change outside component directory should NOT invalidate
+        let unrelated_file = base_dir.join("backend/src/main.rs");
+        cache.invalidate_changed(&[unrelated_file]).await;
+        assert_eq!(cache.get("frontend").await, Some("frontend:v2".to_string()), 
+            "Cache should NOT be invalidated for file outside component directory");
     }
 }

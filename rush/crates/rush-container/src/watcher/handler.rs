@@ -33,11 +33,15 @@ impl Default for HandlerConfig {
             ignore_patterns: vec![
                 ".git".to_string(),
                 "target".to_string(),
+                "dist".to_string(),
                 "node_modules".to_string(),
                 ".rush".to_string(),
                 "*.swp".to_string(),
                 "*.tmp".to_string(),
                 ".DS_Store".to_string(),
+                "*.cache".to_string(),
+                "build".to_string(),
+                ".stage".to_string(),
             ],
             max_batch_size: 100,
             verbose: false,
@@ -216,9 +220,11 @@ impl FileChangeHandler {
                 // Simple glob matching
                 let pattern = pattern.replace("*", "");
                 if path_str.contains(&pattern) {
+                    trace!("Ignoring path '{}' (matched pattern '*{}')", path_str, pattern);
                     return true;
                 }
             } else if path_str.contains(pattern) {
+                trace!("Ignoring path '{}' (matched pattern '{}')", path_str, pattern);
                 return true;
             }
         }
@@ -226,6 +232,7 @@ impl FileChangeHandler {
         // Ignore hidden files and directories (starting with .)
         if let Some(file_name) = path.file_name() {
             if file_name.to_string_lossy().starts_with('.') {
+                trace!("Ignoring hidden file/directory: {}", path_str);
                 return true;
             }
         }

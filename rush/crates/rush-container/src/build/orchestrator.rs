@@ -85,7 +85,7 @@ impl BuildOrchestrator {
         event_bus: EventBus,
         state: SharedReactorState,
     ) -> Self {
-        let cache = Arc::new(Mutex::new(BuildCache::new(&config.cache_dir)));
+        let cache = Arc::new(Mutex::new(BuildCache::new(&config.cache_dir, &config.product_dir)));
         let build_processor = Arc::new(BuildProcessor::new(false));
         
         Self {
@@ -132,12 +132,16 @@ impl BuildOrchestrator {
         
         // Build each component
         for spec in component_specs {
+            info!("[BUILD DECISION] Component '{}': Evaluating build requirement", spec.component_name);
+            
             // Check cache if enabled
             if self.config.enable_cache && !force_rebuild {
+                info!("[BUILD DECISION] Component '{}': Cache enabled, checking for cached image", spec.component_name);
                 let cache_guard = self.cache.lock().await;
                 if let Some(cached_image) = cache_guard.get(&spec.component_name).await {
                     if !cache_guard.is_expired(&spec.component_name).await {
-                        info!("Using cached image for {}: {}", spec.component_name, cached_image);
+                        info!("[BUILD DECISION] Component '{}': ✓ Using cached image '{}' (not expired)", 
+                            spec.component_name, cached_image);
                         built_images.insert(spec.component_name.clone(), cached_image.clone());
                         
                         // Update state
@@ -147,14 +151,24 @@ impl BuildOrchestrator {
                         }
                         
                         continue;
+                    } else {
+                        info!("[BUILD DECISION] Component '{}': Cache expired, will rebuild", spec.component_name);
                     }
+                } else {
+                    info!("[BUILD DECISION] Component '{}': No cached image found, will build", spec.component_name);
                 }
+            } else if force_rebuild {
+                info!("[BUILD DECISION] Component '{}': Force rebuild requested, ignoring cache", spec.component_name);
+            } else {
+                info!("[BUILD DECISION] Component '{}': Cache disabled, will build", spec.component_name);
             }
             
             // Build the component
+            info!("[BUILD DECISION] Component '{}': ⚙️  Starting build", spec.component_name);
             match self.build_single(spec.clone()).await {
                 Ok(image_name) => {
-                    info!("Successfully built {}: {}", spec.component_name, image_name);
+                    info!("[BUILD DECISION] Component '{}': ✓ Successfully built new image '{}'", 
+                        spec.component_name, image_name);
                     built_images.insert(spec.component_name.clone(), image_name.clone());
                     
                     // Update cache
@@ -186,7 +200,7 @@ impl BuildOrchestrator {
                     }
                 }
                 Err(e) => {
-                    error!("Failed to build {}: {}", spec.component_name, e);
+                    error!("[BUILD DECISION] Component '{}': ✗ Build failed: {}", spec.component_name, e);
                     build_errors.push((spec.component_name.clone(), e.to_string()));
                     
                     // Update state
@@ -490,6 +504,14 @@ impl BuildOrchestrator {
     pub async fn clear_cache(&self) -> Result<()> {
         let mut cache_guard = self.cache.lock().await;
         cache_guard.clear().await;
+        Ok(())
+    }
+
+    /// Invalidate cache entries based on file changes
+    pub async fn invalidate_cache_for_files(&self, changed_files: &[PathBuf]) -> Result<()> {
+        let mut cache_guard = self.cache.lock().await;
+        cache_guard.invalidate_changed(changed_files).await;
+        info!("Invalidated cache entries for {} changed files", changed_files.len());
         Ok(())
     }
     

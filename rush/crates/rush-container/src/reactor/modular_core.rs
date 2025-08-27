@@ -313,9 +313,10 @@ impl Reactor {
                             info!("File changes detected, triggering rebuild for {} components", 
                                 batch.affected_components.len());
                             
-                            if let Err(e) = self.handle_rebuild(batch.affected_components).await {
+                            if let Err(e) = self.handle_rebuild(batch).await {
                                 error!("Rebuild failed: {}", e);
-                                // Don't break the loop, continue processing
+                                // Build failure is handled in handle_rebuild - containers are stopped
+                                // Continue processing to maintain reactive behavior for future file changes
                             }
                         }
                         WatchResult::Shutdown => {
@@ -343,8 +344,8 @@ impl Reactor {
     }
     
     /// Handle rebuild request for specific components
-    async fn handle_rebuild(&mut self, components: std::collections::HashSet<String>) -> Result<()> {
-        debug!("Handling rebuild for components: {:?}", components);
+    async fn handle_rebuild(&mut self, batch: crate::watcher::handler::ChangeBatch) -> Result<()> {
+        debug!("Handling rebuild for components: {:?}", batch.affected_components);
         
         // Transition to rebuilding phase
         {
@@ -364,8 +365,23 @@ impl Reactor {
             watcher.mark_rebuild_started().await;
         }
         
+        // Invalidate cache based on changed files
+        let all_changed_files: Vec<std::path::PathBuf> = batch.modified.iter()
+            .chain(batch.created.iter())
+            .chain(batch.deleted.iter())
+            .cloned()
+            .collect();
+        
+        if !all_changed_files.is_empty() {
+            info!("Invalidating cache for {} changed files", all_changed_files.len());
+            if let Err(e) = self.build_orchestrator.invalidate_cache_for_files(&all_changed_files).await {
+                warn!("Failed to invalidate cache: {}", e);
+                // Continue with rebuild even if cache invalidation fails
+            }
+        }
+        
         // Stop affected containers before rebuilding
-        for component_name in &components {
+        for component_name in &batch.affected_components {
             if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
                 warn!("Failed to stop component {}: {}", component_name, e);
             }
@@ -374,11 +390,21 @@ impl Reactor {
         // Get component specs for affected components
         let component_specs = {
             let state = self.state.read().await;
-            components.iter()
+            batch.affected_components.iter()
                 .filter_map(|name| state.get_component(name))
                 .filter_map(|comp| comp.build_spec.as_ref().cloned())
                 .collect::<Vec<_>>()
         };
+        
+        if component_specs.is_empty() {
+            warn!("No component specs found for rebuild, skipping build");
+            // Still transition back to running state
+            let mut state = self.state.write().await;
+            if state.phase() == &ReactorPhase::Rebuilding {
+                state.transition_to(ReactorPhase::Running)?;
+            }
+            return Ok(());
+        }
         
         let build_result = self.build_orchestrator.build_components(component_specs, false).await;
         
@@ -456,6 +482,111 @@ impl Reactor {
                     },
                 )).await;
                 
+                // For development workflow: ensure no containers are running for failed components
+                // This prevents confusing behavior where old containers might still be running
+                for component_name in &batch.affected_components {
+                    if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
+                        warn!("Failed to ensure component {} is stopped after build failure: {}", component_name, e);
+                    }
+                }
+                
+                info!("Build failed for {} components, all containers stopped", batch.affected_components.len());
+                
+                Err(e)
+            }
+        }
+    }
+    
+    /// Handle manual rebuild request (not triggered by file changes)
+    async fn handle_manual_rebuild(&mut self, components: std::collections::HashSet<String>) -> Result<()> {
+        debug!("Handling manual rebuild for components: {:?}", components);
+        
+        // Transition to rebuilding phase
+        {
+            let mut state = self.state.write().await;
+            // We should be in Running state to start a rebuild
+            if state.phase() == &ReactorPhase::Running {
+                state.transition_to(ReactorPhase::Rebuilding)?;
+            } else if state.phase() != &ReactorPhase::Rebuilding {
+                // If not running and not already rebuilding, something is wrong
+                warn!("Unexpected state for manual rebuild: {:?}", state.phase());
+                return Ok(()); // Skip rebuild
+            }
+        }
+        
+        // Stop affected containers before rebuilding
+        for component_name in &components {
+            if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
+                warn!("Failed to stop component {}: {}", component_name, e);
+            }
+        }
+        
+        // Get component specs for affected components
+        let component_specs = {
+            let state = self.state.read().await;
+            components.iter()
+                .filter_map(|name| state.get_component(name))
+                .filter_map(|comp| comp.build_spec.as_ref().cloned())
+                .collect::<Vec<_>>()
+        };
+        
+        // For manual rebuilds, we use force_rebuild: true to bypass cache
+        let build_result = self.build_orchestrator.build_components(component_specs, true).await;
+        
+        match build_result {
+            Ok(successful_builds) => {
+                info!("Manual build completed successfully for {} components", successful_builds.len());
+                
+                // Update built images
+                for (name, image) in &successful_builds {
+                    self.built_images.insert(name.clone(), image.clone());
+                }
+                
+                // Recreate services from updated specs
+                self.create_services_from_specs()?;
+                
+                // Start the services
+                self.lifecycle_manager.start_services(
+                    self.services.clone(),
+                    &self.component_specs,
+                    &successful_builds,
+                ).await?;
+                
+                info!("Started {} rebuilt containers", successful_builds.len());
+                
+                // Publish build success event
+                let _ = self.event_bus.publish(Event::new(
+                    "build",
+                    ContainerEvent::BuildCompleted {
+                        component: "all".to_string(),
+                        success: true,
+                        duration: std::time::Duration::from_secs(0), // TODO: Track actual duration
+                        error: None,
+                    },
+                )).await;
+                
+                // Transition back to running phase
+                {
+                    let mut state = self.state.write().await;
+                    state.transition_to(ReactorPhase::Running)?;
+                }
+                
+                Ok(())
+            }
+            Err(e) => {
+                error!("Manual build failed: {}", e);
+                
+                // Publish build failure event
+                let _ = self.event_bus.publish(Event::new(
+                    "build",
+                    ContainerEvent::BuildCompleted {
+                        component: "all".to_string(),
+                        success: false,
+                        duration: std::time::Duration::from_secs(0),
+                        error: Some(e.to_string()),
+                    },
+                )).await;
+                
                 Err(e)
             }
         }
@@ -491,8 +622,8 @@ impl Reactor {
                 self.initial_build(component_names).await
             }
             ReactorPhase::Running => {
-                // Normal rebuild
-                self.handle_rebuild(component_names).await
+                // Manual rebuild (not triggered by file changes)
+                self.handle_manual_rebuild(component_names).await
             }
             _ => {
                 warn!("Cannot rebuild in current phase: {:?}", current_phase);
