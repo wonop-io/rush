@@ -1,4 +1,4 @@
-use log::{debug, info, warn, error};
+use log::{debug, info, warn};
 use rush_config::Config;
 use rush_core::error::{Error, Result};
 use std::sync::Arc;
@@ -110,11 +110,47 @@ impl ProgressReporter {
     }
 }
 
-/// Execute the full deployment pipeline
+/// Execute the full deployment pipeline with production features
 pub async fn execute(
     config: Arc<Config>,
     deployment_config: DeploymentConfig,
 ) -> Result<()> {
+    // Initialize audit logging
+    let audit_log_dir = std::path::PathBuf::from(".rush/audit");
+    let audit_manager = rush_k8s::AuditManager::with_file_logger(audit_log_dir)?;
+    
+    let environment = config.environment().to_string();
+    let product_name = config.product_name().to_string();
+    let version = std::env::var("GIT_COMMIT")
+        .or_else(|_| std::env::var("DEPLOYMENT_VERSION"))
+        .unwrap_or_else(|_| "latest".to_string());
+    
+    // Log deployment started
+    audit_manager.log_deployment_started(&product_name, &environment, &version)?;
+    
+    // Initialize hook manager
+    let mut hook_manager = rush_k8s::HookManager::new();
+    
+    // Add validation hooks
+    hook_manager.add_pre_deploy_hook(Box::new(
+        rush_k8s::ValidationHook::new("resource-quota-check".to_string())
+    ));
+    
+    // Create hook context
+    let hook_context = rush_k8s::HookContext {
+        product_name: product_name.clone(),
+        environment: environment.clone(),
+        version: version.clone(),
+        dry_run: deployment_config.dry_run,
+        metadata: HashMap::new(),
+    };
+    
+    // Run pre-deployment hooks
+    if let Err(e) = hook_manager.run_pre_deploy_hooks(&hook_context).await {
+        audit_manager.log_deployment_failed(&product_name, &environment, &version, e.to_string())?;
+        return Err(e);
+    }
+    
     let mut reporter = ProgressReporter::new(8);
     
     println!("\n{} {} to {}", 
@@ -209,6 +245,15 @@ pub async fn execute(
     }
     
     reporter.finish();
+    
+    // Run post-deployment hooks
+    if let Err(e) = hook_manager.run_post_deploy_hooks(&hook_context).await {
+        warn!("Post-deployment hook failed: {}", e);
+        // Post-deployment hooks are usually optional, so we don't fail the deployment
+    }
+    
+    // Log deployment success
+    audit_manager.log_deployment_succeeded(&product_name, &environment, &version)?;
     
     Ok(())
 }

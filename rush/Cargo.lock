@@ -2729,15 +2729,18 @@ name = "rush-k8s"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.22.1",
  "chrono",
  "handlebars",
  "k8s-openapi",
  "kube",
  "log",
+ "reqwest",
  "rush-build",
  "rush-config",
  "rush-core",
+ "rush-security",
  "rush-toolchain",
  "rush-utils",
  "serde",
@@ -2747,6 +2750,7 @@ dependencies = [
  "tera",
  "thiserror 2.0.14",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

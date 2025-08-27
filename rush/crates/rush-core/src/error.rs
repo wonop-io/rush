@@ -98,6 +98,34 @@ pub enum Error {
     #[error("Dependency '{0}' failed to start: {1}")]
     DependencyFailed(String, String),
     
+    /// Hook execution error
+    #[error("Hook error: {0}")]
+    Hook(String),
+    
+    /// Audit logging error
+    #[error("Audit error: {0}")]
+    Audit(String),
+    
+    /// Network error
+    #[error("Network error: {0}")]
+    Network(String),
+    
+    /// Command execution error
+    #[error("Command error: {0}")]
+    Command(String),
+    
+    /// Serialization error
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+    
+    /// Configuration error
+    #[error("Configuration error: {0}")]
+    Configuration(String),
+    
+    /// Async task error
+    #[error("Async error: {0}")]
+    Async(String),
+    
     /// Generic error for other cases
     #[error("Error: {0}")]
     Other(String),
@@ -151,6 +179,13 @@ impl PartialEq for Error {
             (Error::DependencyFailed(a1, a2), Error::DependencyFailed(b1, b2)) => {
                 a1 == b1 && a2 == b2
             }
+            (Error::Hook(a), Error::Hook(b)) => a == b,
+            (Error::Audit(a), Error::Audit(b)) => a == b,
+            (Error::Network(a), Error::Network(b)) => a == b,
+            (Error::Command(a), Error::Command(b)) => a == b,
+            (Error::Serialization(a), Error::Serialization(b)) => a == b,
+            (Error::Configuration(a), Error::Configuration(b)) => a == b,
+            (Error::Async(a), Error::Async(b)) => a == b,
             (Error::Other(a), Error::Other(b)) => a == b,
             // IO errors and Anyhow errors cannot be reliably compared
             _ => false,
