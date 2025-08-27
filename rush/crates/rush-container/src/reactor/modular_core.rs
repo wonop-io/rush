@@ -825,40 +825,70 @@ impl Reactor {
     
     /// Perform Docker login if credentials are configured
     async fn docker_login(&self) -> Result<()> {
-        if let (Some(username), Some(password)) = (&self.config.registry.username, &self.config.registry.password) {
-            info!("Logging into Docker registry...");
-            
-            let mut args = vec!["login".to_string()];
-            
-            if let Some(url) = &self.config.registry.url {
-                args.push(url.clone());
+        // Check if we have credentials configured
+        let username = self.config.registry.username.as_ref();
+        let password = self.config.registry.password.as_ref();
+        
+        match (username, password) {
+            (Some(user), Some(pass)) => {
+                info!("Logging into Docker registry...");
+                
+                let registry_url = self.config.registry.url.as_deref().unwrap_or("");
+                
+                // Create a temporary file for the password to avoid shell injection
+                use std::io::Write;
+                let mut temp_file = ::tempfile::NamedTempFile::new()
+                    .map_err(|e| Error::Docker(format!("Failed to create temp file: {}", e)))?;
+                    
+                temp_file.write_all(pass.as_bytes())
+                    .map_err(|e| Error::Docker(format!("Failed to write password: {}", e)))?;
+                    
+                temp_file.flush()
+                    .map_err(|e| Error::Docker(format!("Failed to flush temp file: {}", e)))?;
+                
+                // Build docker login command
+                let mut cmd = tokio::process::Command::new("docker");
+                cmd.arg("login");
+                
+                if !registry_url.is_empty() {
+                    cmd.arg(registry_url);
+                }
+                
+                cmd.args(&["--username", user, "--password-stdin"]);
+                cmd.stdin(std::process::Stdio::from(temp_file.reopen()
+                    .map_err(|e| Error::Docker(format!("Failed to reopen temp file: {}", e)))?));
+                
+                let output = cmd.output().await
+                    .map_err(|e| Error::Docker(format!("Failed to run docker login: {}", e)))?;
+                
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    
+                    // Check for common errors
+                    if stderr.contains("unauthorized") || stdout.contains("unauthorized") {
+                        return Err(Error::Docker("Docker login failed: Invalid credentials".to_string()));
+                    }
+                    
+                    return Err(Error::Docker(format!("Docker login failed: {}", stderr)));
+                }
+                
+                info!("Successfully logged into Docker registry");
             }
-            
-            args.extend(vec![
-                "--username".to_string(),
-                username.clone(),
-                "--password-stdin".to_string(),
-            ]);
-            
-            // Use echo to pipe password to docker login
-            let cmd = format!("echo '{}' | docker {}", password, args.join(" "));
-            
-            // Execute through shell for pipe support
-            let output = tokio::process::Command::new("sh")
-                .arg("-c")
-                .arg(&cmd)
-                .output()
-                .await
-                .map_err(|e| Error::Docker(format!("Failed to run docker login: {}", e)))?;
-            
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(Error::Docker(format!("Docker login failed: {}", stderr)));
+            (Some(_), None) => {
+                warn!("Docker registry username configured but no password provided");
+                if !self.config.registry.use_credentials_helper {
+                    return Err(Error::Docker("Registry password required when credentials helper is disabled".to_string()));
+                }
             }
-            
-            info!("Successfully logged into Docker registry");
-        } else if !self.config.registry.use_credentials_helper {
-            warn!("No Docker registry credentials configured and credentials helper disabled");
+            (None, Some(_)) => {
+                warn!("Docker registry password configured but no username provided");
+            }
+            (None, None) => {
+                if self.config.registry.url.is_some() && !self.config.registry.use_credentials_helper {
+                    info!("No registry credentials configured, using anonymous access");
+                }
+            }
         }
         
         Ok(())
@@ -1279,6 +1309,12 @@ impl Reactor {
         modular_config.docker.use_enhanced_client = true;
         modular_config.watcher.auto_rebuild = true;
         modular_config.lifecycle.auto_restart = true;
+        
+        // Configure Docker registry from config
+        modular_config.registry.url = Some(config.docker_registry().to_string());
+        modular_config.registry.namespace = config.docker_registry_namespace().map(|s| s.to_string());
+        modular_config.registry.username = config.docker_registry_username().map(|s| s.to_string());
+        modular_config.registry.password = config.docker_registry_password().map(|s| s.to_string());
         
         // Configure build orchestrator with the product directory
         modular_config.build.product_dir = config.product_path().to_path_buf();

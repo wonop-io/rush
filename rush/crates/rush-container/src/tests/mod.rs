@@ -27,3 +27,6 @@ pub mod test_helpers;
 
 #[cfg(test)]
 pub mod docker_push_test;
+
+#[cfg(test)]
+pub mod registry_config_test;

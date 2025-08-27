@@ -25,6 +25,9 @@ pub struct Config {
     kube_context: String,
     infrastructure_repository: String,
     docker_registry: String,
+    docker_registry_namespace: Option<String>,
+    docker_registry_username: Option<String>,
+    docker_registry_password: Option<String>,
     root_path: String,
     vault_name: String,
     k8s_encoder: String,
@@ -94,6 +97,18 @@ impl Config {
 
     pub fn docker_registry(&self) -> &str {
         &self.docker_registry
+    }
+    
+    pub fn docker_registry_namespace(&self) -> Option<&str> {
+        self.docker_registry_namespace.as_deref()
+    }
+    
+    pub fn docker_registry_username(&self) -> Option<&str> {
+        self.docker_registry_username.as_deref()
+    }
+    
+    pub fn docker_registry_password(&self) -> Option<&str> {
+        self.docker_registry_password.as_deref()
     }
 
     pub fn one_password_account(&self) -> Option<&String> {
@@ -274,6 +289,14 @@ impl Config {
 
         let one_password_account = std::env::var(ONE_PASSWORD_ACCOUNT_VAR).ok();
         let json_vault_dir = std::env::var(JSON_VAULT_DIR_VAR).ok();
+        
+        // Load registry configuration from environment variables
+        let docker_registry_namespace = std::env::var("DOCKER_REGISTRY_NAMESPACE").ok()
+            .or_else(|| std::env::var(format!("{}_DOCKER_NAMESPACE", environment.to_uppercase())).ok());
+        let docker_registry_username = std::env::var("DOCKER_REGISTRY_USERNAME").ok()
+            .or_else(|| std::env::var(format!("{}_DOCKER_USERNAME", environment.to_uppercase())).ok());
+        let docker_registry_password = std::env::var("DOCKER_REGISTRY_PASSWORD").ok()
+            .or_else(|| std::env::var(format!("{}_DOCKER_PASSWORD", environment.to_uppercase())).ok());
 
         let ret = Self {
             root_path: root_path.to_string(),
@@ -287,6 +310,9 @@ impl Config {
             kube_context,
             infrastructure_repository,
             docker_registry,
+            docker_registry_namespace,
+            docker_registry_username,
+            docker_registry_password,
             vault_name,
             k8s_encoder,
             k8s_validator,
@@ -313,6 +339,9 @@ impl Config {
             kube_context: "test-context".to_string(),
             infrastructure_repository: "git@github.com:test/infra.git".to_string(),
             docker_registry: "ghcr.io/test".to_string(),
+            docker_registry_namespace: None,
+            docker_registry_username: None,
+            docker_registry_password: None,
             root_path: "/tmp".to_string(),
             vault_name: "test-vault".to_string(),
             k8s_encoder: "default".to_string(),
