@@ -53,21 +53,28 @@ pub async fn create_context(
     // Create docker client FIRST (needed by local services and network manager)
     let docker_client = Arc::new(rush_docker::DockerExecutor::new());
     
-    // Ensure we're running the dev command (network manager is required)
-    if matches.subcommand_matches("dev").is_none() {
-        return Err(rush_core::Error::Setup("Network manager required for dev command".to_string()));
-    }
+    // Determine if this command needs full container support
+    let needs_container_support = matches.subcommand_matches("dev").is_some()
+        || matches.subcommand_matches("build").is_some()
+        || matches.subcommand_matches("push").is_some()
+        || matches.subcommand_matches("rollout").is_some()
+        || matches.subcommand_matches("deploy").is_some();
     
-    // Create network manager for dev command (required for proper network setup)
-    info!("Setting up network: net-{}", product_name.replace('.', "-"));
-    let network_manager = Arc::new(
-        rush_container::network::NetworkManager::new(
-            docker_client.clone(), 
-            &product_name
-        )
-        .await
-        .map_err(|e| rush_core::Error::Setup(format!("Failed to setup network: {e}")))?
-    );
+    // Create network manager only for commands that need it
+    let network_manager = if needs_container_support {
+        info!("Setting up network: net-{}", product_name.replace('.', "-"));
+        Some(Arc::new(
+            rush_container::network::NetworkManager::new(
+                docker_client.clone(), 
+                &product_name
+            )
+            .await
+            .map_err(|e| rush_core::Error::Setup(format!("Failed to setup network: {e}")))?
+        ))
+    } else {
+        debug!("Skipping network setup for non-container command");
+        None
+    };
 
     // Start local services BEFORE creating .env files (if this is for the dev command)
     let (local_service_env_vars, local_services_manager) = if matches.subcommand_matches("dev").is_some() {
@@ -102,27 +109,40 @@ pub async fn create_context(
     // Create toolchain
     let toolchain = create_toolchain(&target_os, &target_arch);
 
-    // Create reactor
-    let mut reactor = create_reactor(
-        config.clone(),
-        toolchain.clone(),
-        vault.clone(),
-        redirected_components,
-        silence_components,
-        local_service_env_vars,
-        force_rebuild,
-        network_manager.clone(),
-    ).await?;
-    
-    // Set the output sink on the reactor
-    {
-        // Clone the Arc to get a reference we can use
-        let sink_clone = output_sink.clone();
-        // We need to extract the inner sink to pass to the reactor
-        // This is a temporary solution - ideally the reactor would accept Arc<Mutex<Box<dyn Sink>>>
-        let sink_for_reactor = Box::new(SinkProxy::new(sink_clone));
-        reactor.set_output_sink_boxed(sink_for_reactor);
-    }
+    // Create reactor only for commands that need it
+    let mut reactor = if needs_container_support {
+        let net_manager = network_manager.ok_or_else(|| 
+            rush_core::Error::Setup("Network manager required but not initialized".to_string())
+        )?;
+        
+        let mut r = create_reactor(
+            config.clone(),
+            toolchain.clone(),
+            vault.clone(),
+            redirected_components,
+            silence_components,
+            local_service_env_vars,
+            force_rebuild,
+            net_manager,
+        ).await?;
+        
+        // Set the output sink on the reactor
+        {
+            // Clone the Arc to get a reference we can use
+            let sink_clone = output_sink.clone();
+            // We need to extract the inner sink to pass to the reactor
+            // This is a temporary solution - ideally the reactor would accept Arc<Mutex<Box<dyn Sink>>>
+            let sink_for_reactor = Box::new(SinkProxy::new(sink_clone));
+            r.set_output_sink_boxed(sink_for_reactor);
+        }
+        
+        r
+    } else {
+        // For non-container commands, create a minimal reactor
+        // that won't actually be used for container operations
+        debug!("Creating minimal reactor for non-container command");
+        create_minimal_reactor(config.clone(), vault.clone()).await?
+    };
 
     Ok(CliContext::new(
         config,
@@ -179,6 +199,57 @@ fn parse_force_rebuild(matches: &ArgMatches) -> bool {
         .subcommand_matches("dev")
         .map(|dev_matches| dev_matches.get_flag("force-rebuild"))
         .unwrap_or(false)
+}
+
+async fn create_minimal_reactor(
+    config: Arc<Config>,
+    vault: Arc<Mutex<dyn Vault + Send>>,
+) -> Result<Reactor> {
+    // Create a minimal reactor for non-container commands
+    // This reactor won't be used for container operations
+    let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
+    
+    // Create a dummy network manager that won't be used
+    // We need this because Reactor::new expects one, but we could refactor
+    // Reactor to make it truly optional in the future
+    let docker_client = Arc::new(rush_docker::DockerExecutor::new());
+    let product_name = config.product_name().to_string();
+    
+    // Try to create network manager, but if it fails for minimal reactor, that's ok
+    let network_manager = match rush_container::network::NetworkManager::new(
+        docker_client.clone(),
+        &product_name
+    ).await {
+        Ok(nm) => Arc::new(nm),
+        Err(_) => {
+            // For minimal reactor, we can proceed without network manager
+            // by creating a stub one
+            debug!("Creating stub network manager for minimal reactor");
+            // For now, we'll just create it anyway since it's required by Reactor
+            // In the future, we should refactor Reactor to make network_manager optional
+            Arc::new(
+                rush_container::network::NetworkManager::new(
+                    docker_client,
+                    &product_name
+                ).await?
+            )
+        }
+    };
+    
+    match Reactor::from_product_dir(
+        config,
+        vault,
+        secrets_encoder,
+        HashMap::new(), // No redirected components for minimal reactor
+        Vec::new(),     // No silence components for minimal reactor  
+        network_manager,
+    ).await {
+        Ok(reactor) => Ok(reactor),
+        Err(e) => {
+            error!("Failed to create minimal Reactor: {}", e);
+            Err(e)
+        }
+    }
 }
 
 pub fn setup_logging(matches: &ArgMatches) {
