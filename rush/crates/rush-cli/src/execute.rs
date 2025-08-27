@@ -84,18 +84,73 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
     } else if matches.subcommand_matches("uninstall").is_some() {
         trace!("Executing uninstall command");
         commands::install::uninstall(ctx).await
-    } else if matches.subcommand_matches("deploy").is_some() {
+    } else if let Some(deploy_matches) = matches.subcommand_matches("deploy") {
         trace!("Executing deploy command");
-        // TODO: Implement deploy with context
-        Ok(())
-    } else if matches.subcommand_matches("apply").is_some() {
+        
+        // Parse deployment configuration from command line arguments
+        let mut deployment_config = commands::deploy::DeploymentConfig::default();
+        
+        // Check for dry-run flag
+        if deploy_matches.get_flag("dry-run") {
+            deployment_config.dry_run = true;
+        }
+        
+        // Check for force rebuild flag
+        if deploy_matches.get_flag("force-rebuild") {
+            deployment_config.force_rebuild = true;
+        }
+        
+        // Check for skip-push flag
+        if deploy_matches.get_flag("skip-push") {
+            deployment_config.skip_push = true;
+        }
+        
+        // Check for no-wait flag
+        if deploy_matches.get_flag("no-wait") {
+            deployment_config.wait_for_ready = false;
+        }
+        
+        // Check for no-rollback flag
+        if deploy_matches.get_flag("no-rollback") {
+            deployment_config.auto_rollback = false;
+        }
+        
+        // Check for deployment strategy
+        if let Some(strategy) = deploy_matches.get_one::<String>("strategy") {
+            deployment_config.strategy = match strategy.as_str() {
+                "rolling" => commands::deploy::DeploymentStrategy::RollingUpdate { 
+                    max_surge: 1, 
+                    max_unavailable: 1 
+                },
+                "blue-green" => commands::deploy::DeploymentStrategy::BlueGreen,
+                "canary" => commands::deploy::DeploymentStrategy::Canary { percentage: 10 },
+                "direct" => commands::deploy::DeploymentStrategy::Direct,
+                _ => commands::deploy::DeploymentStrategy::default(),
+            };
+        }
+        
+        // Execute deployment
+        commands::deploy::execute(ctx.config.clone(), deployment_config).await
+    } else if let Some(apply_matches) = matches.subcommand_matches("apply") {
         trace!("Executing apply command");
-        // TODO: Implement apply with context
-        Ok(())
-    } else if matches.subcommand_matches("unapply").is_some() {
+        
+        // Check for dry-run flag
+        if apply_matches.get_flag("dry-run") {
+            std::env::set_var("K8S_DRY_RUN", "true");
+        }
+        
+        // Apply Kubernetes manifests without building
+        ctx.reactor.apply().await
+    } else if let Some(unapply_matches) = matches.subcommand_matches("unapply") {
         trace!("Executing unapply command");
-        // TODO: Implement unapply with context
-        Ok(())
+        
+        // Check for dry-run flag
+        if unapply_matches.get_flag("dry-run") {
+            std::env::set_var("K8S_DRY_RUN", "true");
+        }
+        
+        // Remove Kubernetes resources
+        ctx.reactor.unapply().await
     } else if matches.subcommand_matches("build").is_some() {
         trace!("Executing build command");
         // Build just the images without running containers
