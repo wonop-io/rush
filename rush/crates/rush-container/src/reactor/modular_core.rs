@@ -795,13 +795,8 @@ impl Reactor {
         self.services.clear();
         
         for spec in &self.component_specs {
-            // Skip non-container components
+            // Skip components that don't require Docker builds (LocalService, PureKubernetes, etc.)
             if !spec.build_type.requires_docker_build() {
-                continue;
-            }
-            
-            // Skip ingress and other special components that don't have images
-            if matches!(spec.component_name.as_str(), "ingress" | "database" | "stripe") {
                 continue;
             }
             

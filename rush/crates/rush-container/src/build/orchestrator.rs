@@ -260,7 +260,8 @@ impl BuildOrchestrator {
             | BuildType::DixiousWasm { .. }
             | BuildType::Script { .. }
             | BuildType::Zola { .. }
-            | BuildType::Book { .. } => {
+            | BuildType::Book { .. }
+            | BuildType::Ingress { .. } => {
                 // Build using Dockerfile
                 if let Some(dockerfile) = spec.build_type.dockerfile_path() {
                     let dockerfile_path = self.config.product_dir.join(dockerfile);
@@ -323,11 +324,6 @@ impl BuildOrchestrator {
             BuildType::LocalService { .. } => {
                 // Local services don't need container images
                 debug!("Skipping build for local service {}", spec.component_name);
-                Ok(String::new())
-            }
-            BuildType::Ingress { .. } => {
-                // Ingress doesn't need a container image
-                debug!("Skipping build for ingress {}", spec.component_name);
                 Ok(String::new())
             }
             BuildType::PureKubernetes => {
