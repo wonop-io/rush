@@ -161,8 +161,32 @@ This document outlines a phased plan to enable full Kubernetes deployment capabi
 - Encode with kubeseal
 - Deploy and verify in cluster
 
-### Phase 5: Kubectl Integration
+### Phase 5: Kubectl Integration ✅
 **Goal**: Apply manifests to Kubernetes clusters
+
+**Status**: COMPLETED
+
+**Completed Items**:
+- Created comprehensive kubectl wrapper in rush-k8s/src/kubectl.rs
+- Implemented kubectl command executor with proper error handling
+- Support for namespace, context, and kubeconfig configuration
+- Full dry-run mode support for safe testing
+- Apply and delete operations with proper ordering
+- Directory-based manifest application (respects resource dependencies)
+- Updated reactor's apply() method to use kubectl wrapper
+- Implemented proper unapply() with reverse-order deletion
+- Added rollback support with version tracking
+- Deployment version tracking with manifest hashing
+- Rollback to previous or specific versions
+- Wait for deployment readiness after apply
+- Comprehensive tests for kubectl operations
+- All tests passing
+
+**Configuration**:
+- `K8S_NAMESPACE` - Target namespace (defaults to product-env)
+- `K8S_CONTEXT` - Kubernetes context to use
+- `K8S_DRY_RUN=true` - Enable dry-run mode for testing
+- `GIT_COMMIT` or `DEPLOYMENT_VERSION` - Version tracking for rollback
 
 **Tasks**:
 1. **Implement kubectl wrapper** (`crates/rush-k8s/src/kubectl.rs`)

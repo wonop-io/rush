@@ -13,6 +13,7 @@ chrono = { workspace = true }
 colored = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
+md5 = "0.7"
 notify = { workspace = true }
 rush-build = { workspace = true }
 rush-config = { workspace = true }

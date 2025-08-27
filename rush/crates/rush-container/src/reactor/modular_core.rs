@@ -16,7 +16,7 @@ use crate::{
         errors::ReactorError,
     },
 };
-use rush_build::ComponentBuildSpec;
+use rush_build::{ComponentBuildSpec, BuildType};
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
 use rush_config::Config;
@@ -116,6 +116,8 @@ pub struct Reactor {
     vault: Option<Arc<std::sync::Mutex<dyn rush_security::Vault + Send>>>,
     /// Secrets encoder for K8s
     secrets_encoder: Option<Arc<dyn rush_security::SecretsEncoder>>,
+    /// Track deployment versions for rollback
+    deployment_versions: Vec<rush_k8s::kubectl::DeploymentVersion>,
 }
 
 impl Reactor {
@@ -204,6 +206,7 @@ impl Reactor {
             k8s_manifest_dir: None,
             vault: None,
             secrets_encoder: None,
+            deployment_versions: Vec::new(),
         };
         
         // Initialize state with component specs
@@ -997,20 +1000,101 @@ impl Reactor {
             )));
         }
         
-        // Apply manifests using kubectl
-        let output = tokio::process::Command::new("kubectl")
-            .args(&["apply", "-f", manifest_dir.to_str().unwrap(), "--recursive"])
-            .output()
-            .await
-            .map_err(|e| Error::External(format!("Failed to run kubectl apply: {}", e)))?;
+        // Create kubectl wrapper with configuration
+        let mut kubectl_config = rush_k8s::KubectlConfig::default();
         
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::External(format!("kubectl apply failed: {}", stderr)));
+        // Set namespace from environment or use default
+        let namespace = std::env::var("K8S_NAMESPACE")
+            .unwrap_or_else(|_| format!("{}-{}", 
+                self.config.build.product_name, 
+                std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string())
+            ));
+        kubectl_config.namespace = Some(namespace);
+        
+        // Set context if provided
+        if let Ok(context) = std::env::var("K8S_CONTEXT") {
+            kubectl_config.context = Some(context);
         }
         
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        info!("Applied manifests: {}", stdout.trim());
+        // Enable dry-run if requested
+        kubectl_config.dry_run = std::env::var("K8S_DRY_RUN")
+            .unwrap_or_else(|_| "false".to_string()) == "true";
+        
+        kubectl_config.verbose = true;
+        
+        let kubectl = rush_k8s::Kubectl::new(kubectl_config);
+        
+        // Apply all manifests in the directory
+        let results = kubectl.apply_dir(manifest_dir).await?;
+        
+        // Check if all applications succeeded
+        let failed_count = results.iter().filter(|r| !r.success).count();
+        if failed_count > 0 {
+            return Err(Error::External(format!(
+                "Failed to apply {} out of {} manifests", 
+                failed_count, 
+                results.len()
+            )));
+        }
+        
+        info!("Successfully applied {} Kubernetes manifests", results.len());
+        
+        // Track deployment versions for rollback support
+        if !kubectl.config.dry_run {
+            let timestamp = chrono::Utc::now();
+            let version = std::env::var("GIT_COMMIT")
+                .or_else(|_| std::env::var("DEPLOYMENT_VERSION"))
+                .unwrap_or_else(|_| timestamp.timestamp().to_string());
+            
+            // Track each deployed component
+            for spec in &self.component_specs {
+                // Skip components that don't create deployments
+                match &spec.build_type {
+                    BuildType::LocalService { .. } => continue,
+                    _ => {}
+                }
+                
+                // Calculate manifest hash for change detection
+                let manifest_path = manifest_dir.join(format!("{}-deployment.yaml", spec.component_name));
+                let manifest_hash = if manifest_path.exists() {
+                    let content = std::fs::read_to_string(&manifest_path)?;
+                    format!("{:x}", md5::compute(content.as_bytes()))
+                } else {
+                    String::new()
+                };
+                
+                let deployment_version = rush_k8s::kubectl::DeploymentVersion {
+                    deployment_name: spec.component_name.clone(),
+                    namespace: kubectl.config.namespace.clone().unwrap_or_else(|| "default".to_string()),
+                    version: version.clone(),
+                    timestamp,
+                    manifest_hash,
+                };
+                
+                self.deployment_versions.push(deployment_version);
+            }
+            
+            // Keep only last 10 versions per deployment
+            self.deployment_versions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+            self.deployment_versions.truncate(10 * self.component_specs.len());
+        }
+        
+        // Wait for deployments to be ready if not in dry-run mode
+        if !kubectl.config.dry_run {
+            info!("Waiting for deployments to be ready...");
+            for spec in &self.component_specs {
+                // Skip components that don't create deployments
+                match &spec.build_type {
+                    BuildType::LocalService { .. } => continue,
+                    _ => {}
+                }
+                
+                match kubectl.wait_for_deployment(&spec.component_name, 300).await {
+                    Ok(_) => info!("Deployment {} is ready", spec.component_name),
+                    Err(e) => warn!("Deployment {} may not be ready: {}", spec.component_name, e),
+                }
+            }
+        }
         
         Ok(())
     }
@@ -1022,19 +1106,43 @@ impl Reactor {
         // Use manifest directory if available
         if let Some(manifest_dir) = &self.k8s_manifest_dir {
             if manifest_dir.exists() {
-                let output = tokio::process::Command::new("kubectl")
-                    .args(&["delete", "-f", manifest_dir.to_str().unwrap(), "--recursive", "--ignore-not-found"])
-                    .output()
-                    .await
-                    .map_err(|e| Error::External(format!("Failed to run kubectl delete: {}", e)))?;
+                // Create kubectl wrapper with same configuration as apply
+                let mut kubectl_config = rush_k8s::KubectlConfig::default();
                 
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(Error::External(format!("kubectl delete failed: {}", stderr)));
+                // Set namespace from environment or use default
+                let namespace = std::env::var("K8S_NAMESPACE")
+                    .unwrap_or_else(|_| format!("{}-{}", 
+                        self.config.build.product_name, 
+                        std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string())
+                    ));
+                kubectl_config.namespace = Some(namespace);
+                
+                // Set context if provided
+                if let Ok(context) = std::env::var("K8S_CONTEXT") {
+                    kubectl_config.context = Some(context);
                 }
                 
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                info!("Removed resources: {}", stdout.trim());
+                // Enable dry-run if requested
+                kubectl_config.dry_run = std::env::var("K8S_DRY_RUN")
+                    .unwrap_or_else(|_| "false".to_string()) == "true";
+                
+                kubectl_config.verbose = true;
+                
+                let kubectl = rush_k8s::Kubectl::new(kubectl_config);
+                
+                // Delete all resources from manifests
+                let results = kubectl.delete_dir(manifest_dir).await?;
+                
+                // Check results
+                let failed_count = results.iter()
+                    .filter(|r| !r.success && !r.stderr.contains("NotFound"))
+                    .count();
+                
+                if failed_count > 0 {
+                    warn!("Failed to delete {} out of {} manifests", failed_count, results.len());
+                } else {
+                    info!("Successfully removed {} Kubernetes resources", results.len());
+                }
             } else {
                 warn!("Manifest directory does not exist, nothing to remove");
             }
@@ -1043,6 +1151,71 @@ impl Reactor {
         }
         
         Ok(())
+    }
+    
+    /// Rollback to a previous deployment version
+    pub async fn rollback(&mut self, version: Option<String>) -> Result<()> {
+        info!("Rolling back Kubernetes deployment...");
+        
+        if self.deployment_versions.is_empty() {
+            return Err(Error::Internal("No deployment versions available for rollback".to_string()));
+        }
+        
+        // Find the version to rollback to
+        let target_version = if let Some(v) = version {
+            self.deployment_versions.iter()
+                .find(|dv| dv.version == v)
+                .ok_or_else(|| Error::Internal(format!("Version {} not found", v)))?
+        } else {
+            // Rollback to previous version (skip current which is at index 0)
+            self.deployment_versions.get(1)
+                .ok_or_else(|| Error::Internal("No previous version available".to_string()))?
+        };
+        
+        info!("Rolling back to version {} from {}", 
+              target_version.version, 
+              target_version.timestamp);
+        
+        // Create kubectl wrapper
+        let mut kubectl_config = rush_k8s::KubectlConfig::default();
+        kubectl_config.namespace = Some(target_version.namespace.clone());
+        
+        if let Ok(context) = std::env::var("K8S_CONTEXT") {
+            kubectl_config.context = Some(context);
+        }
+        
+        let kubectl = rush_k8s::Kubectl::new(kubectl_config);
+        
+        // Perform rollback using kubectl rollout undo
+        for deployment_version in &self.deployment_versions {
+            if deployment_version.version == target_version.version {
+                info!("Rolling back deployment: {}", deployment_version.deployment_name);
+                let result = kubectl.execute(vec![
+                    "rollout".to_string(),
+                    "undo".to_string(),
+                    format!("deployment/{}", deployment_version.deployment_name),
+                ]).await?;
+                
+                if !result.success {
+                    return Err(Error::External(format!(
+                        "Failed to rollback {}: {}", 
+                        deployment_version.deployment_name,
+                        result.stderr
+                    )));
+                }
+                
+                // Wait for rollout to complete
+                kubectl.rollout_status(&deployment_version.deployment_name).await?;
+                info!("Successfully rolled back {}", deployment_version.deployment_name);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get deployment history
+    pub fn get_deployment_history(&self) -> Vec<rush_k8s::kubectl::DeploymentVersion> {
+        self.deployment_versions.clone()
     }
     
     /// Install Kubernetes manifests
@@ -1246,7 +1419,7 @@ impl Reactor {
         use std::fs;
         use std::process::Command;
         use rush_core::constants::DOCKER_TAG_LATEST;
-        use rush_build::ComponentBuildSpec;
+        use rush_build::{ComponentBuildSpec, BuildType};
         
         // Get the git hash for tagging
         let git_hash = {
