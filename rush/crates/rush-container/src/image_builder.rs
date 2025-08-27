@@ -570,7 +570,12 @@ impl ImageBuilder {
             name: spec_guard.docker_local_name(),
             image: format!("{}-{}", spec_guard.product_name, spec_guard.component_name),
             network: spec_guard.config.network_name().to_string(),
-            env_vars: spec_guard.dotenv.clone(),
+            env_vars: {
+                // Merge dotenv and dotenv_secrets for image building
+                let mut env = spec_guard.dotenv.clone();
+                env.extend(spec_guard.dotenv_secrets.clone());
+                env
+            },
             ports: if let Some(port) = spec_guard.port {
                 if let Some(target_port) = spec_guard.target_port {
                     vec![format!("{}:{}", port, target_port)]

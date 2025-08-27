@@ -397,12 +397,19 @@ impl ComponentBuildSpec {
                 let dotenv_secrets_path = Path::new(path).join(".env.secrets");
                 if dotenv_secrets_path.exists() {
                     match load_dotenv(&dotenv_secrets_path) {
-                        Ok(env) => env,
+                        Ok(env) => {
+                            log::debug!("Loaded {} secrets from .env.secrets for component", env.len());
+                            for key in env.keys() {
+                                log::debug!("  Secret key: {}", key);
+                            }
+                            env
+                        },
                         Err(e) => {
                             panic!("Failed to load .env.secrets file: {e}");
                         }
                     }
                 } else {
+                    log::debug!("No .env.secrets file found at: {}", dotenv_secrets_path.display());
                     HashMap::new()
                 }
             }

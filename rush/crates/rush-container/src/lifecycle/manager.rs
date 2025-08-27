@@ -365,12 +365,19 @@ impl LifecycleManager {
         
         // Add environment from spec
         if let Some(spec) = component_spec {
-            // Add dotenv variables
+            // Add dotenv variables (from .env file)
             for (key, value) in &spec.dotenv {
                 env_vars.insert(key.clone(), value.clone());
             }
             
-            // Add env variables from YAML
+            // Add dotenv secrets (from .env.secrets file)
+            debug!("Adding {} dotenv_secrets for {}", spec.dotenv_secrets.len(), spec.component_name);
+            for (key, value) in &spec.dotenv_secrets {
+                debug!("  Adding secret env var: {}=***", key);
+                env_vars.insert(key.clone(), value.clone());
+            }
+            
+            // Add env variables from YAML (can override dotenv and secrets)
             if let Some(env) = &spec.env {
                 for (key, value) in env {
                     env_vars.insert(key.clone(), value.clone());

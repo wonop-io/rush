@@ -1599,23 +1599,45 @@ impl Reactor {
         
         // Build component specs from stack configuration
         let mut component_specs = Vec::new();
+        let variables = Arc::new(rush_build::Variables::empty());
+        
         if let Some(components) = spec.as_mapping() {
             for (name, component_config) in components {
                 if let Some(name_str) = name.as_str() {
-                    // Parse the build_type from the component configuration
-                    let build_type_str = component_config.get("build_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("RustBinary");
+                    // Check if this component should be silenced
+                    if silenced_components.contains(name_str) {
+                        continue;
+                    }
                     
-                    let location = component_config.get("location")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(name_str)
-                        .to_string();
-                    
-                    let dockerfile = component_config.get("dockerfile")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("Dockerfile")
-                        .to_string();
+                    // Use the proper from_yaml method to create ComponentBuildSpec
+                    // This will properly load .env and .env.secrets files
+                    let mut spec = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        rush_build::ComponentBuildSpec::from_yaml(
+                            config.clone(),
+                            rush_build::Variables::empty(),
+                            component_config
+                        )
+                    })) {
+                        Ok(spec) => spec,
+                        Err(_) => {
+                            // If from_yaml fails (e.g., for legacy build types), 
+                            // fall back to manual creation but still try to load env files
+                            warn!("Failed to load component {} via from_yaml, using fallback", name_str);
+                            
+                            // Parse the build_type from the component configuration
+                            let build_type_str = component_config.get("build_type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("RustBinary");
+                            
+                            let location = component_config.get("location")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(name_str)
+                                .to_string();
+                            
+                            let dockerfile = component_config.get("dockerfile")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Dockerfile")
+                                .to_string();
                     
                     // Parse build type based on the string value
                     let build_type = match build_type_str {
@@ -1707,7 +1729,7 @@ impl Reactor {
                         },
                     };
                     
-                    let spec = ComponentBuildSpec {
+                    let mut spec = ComponentBuildSpec {
                         build_type,
                         product_name: config.product_name().to_string(),
                         component_name: name_str.to_string(),
@@ -1737,10 +1759,55 @@ impl Reactor {
                         cross_compile: "native".to_string(),
                     };
                     
-                    // Skip silenced components
-                    if !silenced_components.contains(name_str) {
-                        component_specs.push(spec);
+                    // Load .env and .env.secrets files for the manual fallback
+                    // This is critical for dev mode to work properly
+                    let component_location = match &spec.build_type {
+                        rush_build::BuildType::TrunkWasm { location, .. } => Some(location.clone()),
+                        rush_build::BuildType::RustBinary { location, .. } => Some(location.clone()),
+                        rush_build::BuildType::DixiousWasm { location, .. } => Some(location.clone()),
+                        rush_build::BuildType::Script { location, .. } => Some(location.clone()),
+                        rush_build::BuildType::Zola { location, .. } => Some(location.clone()),
+                        rush_build::BuildType::Book { location, .. } => Some(location.clone()),
+                        _ => None,
+                    };
+                    
+                    if let Some(location) = component_location {
+                        let component_path = config.product_path().join(&location);
+                        
+                        // Load .env file
+                        let env_path = component_path.join(".env");
+                        if env_path.exists() {
+                            match rush_core::dotenv::load_dotenv(&env_path) {
+                                Ok(env) => {
+                                    debug!("Loaded {} env vars from .env for {}", env.len(), name_str);
+                                    spec.dotenv = env;
+                                }
+                                Err(e) => warn!("Failed to load .env for {}: {}", name_str, e),
+                            }
+                        }
+                        
+                        // Load .env.secrets file
+                        let secrets_path = component_path.join(".env.secrets");
+                        if secrets_path.exists() {
+                            match rush_core::dotenv::load_dotenv(&secrets_path) {
+                                Ok(secrets) => {
+                                    info!("Loaded {} secrets from .env.secrets for {}", secrets.len(), name_str);
+                                    spec.dotenv_secrets = secrets;
+                                }
+                                Err(e) => warn!("Failed to load .env.secrets for {}: {}", name_str, e),
+                            }
+                        }
                     }
+                    
+                    spec  // Return the spec from the fallback block
+                }
+            };
+            
+            // Override the tagged image name for the git hash
+            spec.tagged_image_name = Some(format!("{}:{}", name_str, git_hash));
+            
+            // Add the spec to our list
+            component_specs.push(spec);
                 }
             }
         }

@@ -553,7 +553,12 @@ impl BuildOrchestrator {
             docker_registry: String::new(),
             image_name: format!("{}-{}", spec.product_name, spec.component_name),
             domains: Default::default(),
-            env: spec.dotenv.clone(),
+            env: {
+                // Merge dotenv and dotenv_secrets for build context
+                let mut env = spec.dotenv.clone();
+                env.extend(spec.dotenv_secrets.clone());
+                env
+            },
             secrets: Default::default(),
             cross_compile: spec.cross_compile.clone(),
         };
@@ -668,7 +673,12 @@ impl BuildOrchestrator {
             docker_registry: String::new(),
             image_name: format!("{}-{}", spec.product_name, spec.component_name),
             domains: Default::default(),
-            env: spec.dotenv.clone(),
+            env: {
+                // Merge dotenv and dotenv_secrets for build context
+                let mut env = spec.dotenv.clone();
+                env.extend(spec.dotenv_secrets.clone());
+                env
+            },
             secrets: Default::default(),
             cross_compile: spec.cross_compile.clone(),
         };
