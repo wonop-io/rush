@@ -264,7 +264,16 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let mut reactor = ReactorFactory::create_default_primary_reactor(
+        // Create a temporary directory for the test
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let mut config = ModularReactorConfig::default();
+        config.base.product_dir = temp_dir.path().to_path_buf();
+        config.base.product_name = "test-product".to_string();
+        config.build.product_dir = temp_dir.path().to_path_buf();
+        config.build.cache_dir = temp_dir.path().join(".cache");
+        
+        let mut reactor = ReactorFactory::create_primary_reactor(
+            config,
             docker_client.clone(),
             component_specs,
         ).await.unwrap();
@@ -287,7 +296,24 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let mut reactor = ReactorFactory::create_enhanced_reactor(
+        // Create a temporary directory for the test
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let mut config = ModularReactorConfig::default();
+        config.base.product_dir = temp_dir.path().to_path_buf();
+        config.base.product_name = "test-product".to_string();
+        config.build.product_dir = temp_dir.path().to_path_buf();
+        config.build.cache_dir = temp_dir.path().join(".cache");
+        // Enable enhanced features
+        config.docker.use_enhanced_client = true;
+        config.docker.enable_metrics = true;
+        config.docker.enable_pooling = true;
+        config.lifecycle.auto_restart = true;
+        config.lifecycle.enable_health_checks = true;
+        config.build.parallel_builds = true;
+        config.build.enable_cache = true;
+        
+        let mut reactor = ReactorFactory::create_primary_reactor(
+            config,
             docker_client.clone(),
             component_specs,
         ).await.unwrap();
@@ -325,7 +351,16 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let mut reactor = ReactorFactory::create_default_primary_reactor(
+        // Create a temporary directory for the test
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let mut config = ModularReactorConfig::default();
+        config.base.product_dir = temp_dir.path().to_path_buf();
+        config.base.product_name = "test-product".to_string();
+        config.build.product_dir = temp_dir.path().to_path_buf();
+        config.build.cache_dir = temp_dir.path().join(".cache");
+        
+        let mut reactor = ReactorFactory::create_primary_reactor(
+            config,
             docker_client,
             component_specs,
         ).await.unwrap();
@@ -373,8 +408,17 @@ mod tests {
     async fn test_reactor_status_reporting() {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
+        
+        // Create a temporary directory for the test
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let mut config = ModularReactorConfig::default();
+        config.base.product_dir = temp_dir.path().to_path_buf();
+        config.base.product_name = "test-product".to_string();
+        config.build.product_dir = temp_dir.path().to_path_buf();
+        config.build.cache_dir = temp_dir.path().join(".cache");
 
-        let mut reactor = ReactorFactory::create_default_primary_reactor(
+        let mut reactor = ReactorFactory::create_primary_reactor(
+            config,
             docker_client,
             component_specs,
         ).await.unwrap();

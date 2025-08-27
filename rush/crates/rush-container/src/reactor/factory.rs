@@ -136,7 +136,7 @@ impl ReactorFactory {
     
     
     /// Create the primary reactor
-    async fn create_primary_reactor(
+    pub async fn create_primary_reactor(
         config: ModularReactorConfig,
         docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
