@@ -73,8 +73,8 @@ impl ManifestGenerator {
                 _ => {}
             }
             
-            // Generate deployment
-            if let Some(deployment) = self.generate_deployment(component)? {
+            // Generate deployment (pass whether secrets exist)
+            if let Some(deployment) = self.generate_deployment(component, secrets.is_some())? {
                 let path = self.output_dir.join(format!("{}-deployment.yaml", component.component_name));
                 fs::write(&path, &deployment.content)?;
                 debug!("Generated deployment manifest: {:?}", path);
@@ -122,7 +122,7 @@ impl ManifestGenerator {
     }
     
     /// Generate a Deployment manifest for a component
-    fn generate_deployment(&self, component: &ComponentBuildSpec) -> Result<Option<GeneratedManifest>> {
+    fn generate_deployment(&self, component: &ComponentBuildSpec, has_secrets: bool) -> Result<Option<GeneratedManifest>> {
         let mut deployment = BTreeMap::new();
         deployment.insert("apiVersion".to_string(), serde_yaml::Value::String("apps/v1".to_string()));
         deployment.insert("kind".to_string(), serde_yaml::Value::String("Deployment".to_string()));
@@ -200,12 +200,52 @@ impl ManifestGenerator {
             }
         }
         
+        // Add envFrom to reference all secrets if they exist
+        if has_secrets {
+            let mut env_from = Vec::new();
+            let mut secret_ref = BTreeMap::new();
+            let mut secret_ref_inner = BTreeMap::new();
+            secret_ref_inner.insert("name".to_string(), 
+                serde_yaml::Value::String(format!("{}-secrets", self.environment)));
+            secret_ref.insert("secretRef".to_string(), 
+                serde_yaml::Value::Mapping(Self::btree_to_mapping(secret_ref_inner)));
+            env_from.push(serde_yaml::Value::Mapping(Self::btree_to_mapping(secret_ref)));
+            container.insert("envFrom".to_string(), serde_yaml::Value::Sequence(env_from));
+        }
+        
         if !env_vars.is_empty() {
             container.insert("env".to_string(), serde_yaml::Value::Sequence(env_vars));
         }
         
+        // Add volume mount for secrets if needed
+        if has_secrets && std::env::var("K8S_MOUNT_SECRETS").unwrap_or_else(|_| "false".to_string()) == "true" {
+            // Add volumeMounts to container
+            let mut volume_mounts = Vec::new();
+            let mut volume_mount = BTreeMap::new();
+            volume_mount.insert("name".to_string(), serde_yaml::Value::String("secrets".to_string()));
+            volume_mount.insert("mountPath".to_string(), serde_yaml::Value::String("/etc/secrets".to_string()));
+            volume_mount.insert("readOnly".to_string(), serde_yaml::Value::Bool(true));
+            volume_mounts.push(serde_yaml::Value::Mapping(Self::btree_to_mapping(volume_mount)));
+            container.insert("volumeMounts".to_string(), serde_yaml::Value::Sequence(volume_mounts));
+        }
+        
         let containers = vec![serde_yaml::Value::Mapping(Self::btree_to_mapping(container))];
         template_spec.insert("containers".to_string(), serde_yaml::Value::Sequence(containers));
+        
+        // Add volumes to pod spec if secrets are mounted
+        if has_secrets && std::env::var("K8S_MOUNT_SECRETS").unwrap_or_else(|_| "false".to_string()) == "true" {
+            let mut volumes = Vec::new();
+            let mut volume = BTreeMap::new();
+            volume.insert("name".to_string(), serde_yaml::Value::String("secrets".to_string()));
+            
+            let mut secret = BTreeMap::new();
+            secret.insert("secretName".to_string(), 
+                serde_yaml::Value::String(format!("{}-secrets", self.environment)));
+            volume.insert("secret".to_string(), serde_yaml::Value::Mapping(Self::btree_to_mapping(secret)));
+            
+            volumes.push(serde_yaml::Value::Mapping(Self::btree_to_mapping(volume)));
+            template_spec.insert("volumes".to_string(), serde_yaml::Value::Sequence(volumes));
+        }
         
         template.insert("spec".to_string(), serde_yaml::Value::Mapping(Self::btree_to_mapping(template_spec)));
         

@@ -112,6 +112,10 @@ pub struct Reactor {
     output_sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>,
     /// Kubernetes manifest output directory
     k8s_manifest_dir: Option<std::path::PathBuf>,
+    /// Vault for secrets management
+    vault: Option<Arc<std::sync::Mutex<dyn rush_security::Vault + Send>>>,
+    /// Secrets encoder for K8s
+    secrets_encoder: Option<Arc<dyn rush_security::SecretsEncoder>>,
 }
 
 impl Reactor {
@@ -198,6 +202,8 @@ impl Reactor {
                 Box::new(rush_output::simple::StdoutSink::new()),
             )),
             k8s_manifest_dir: None,
+            vault: None,
+            secrets_encoder: None,
         };
         
         // Initialize state with component specs
@@ -1083,12 +1089,71 @@ impl Reactor {
             self.config.registry.namespace.clone(),
         );
         
-        // Generate manifests (no secrets for now)
-        let manifests = generator.generate_manifests(&self.component_specs, None).await?;
+        // Load secrets from vault if available
+        let secrets = if let Some(vault) = &self.vault {
+            let mut all_secrets = std::collections::BTreeMap::new();
+            let environment = std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string());
+            
+            // Load secrets for each component
+            for spec in &self.component_specs {
+                match vault.lock().unwrap().get(
+                    &spec.product_name,
+                    &spec.component_name,
+                    &environment
+                ).await {
+                    Ok(component_secrets) => {
+                        // Prefix secrets with component name to avoid conflicts
+                        for (key, value) in component_secrets {
+                            let prefixed_key = format!("{}_{}", 
+                                spec.component_name.to_uppercase().replace('-', "_"), 
+                                key
+                            );
+                            all_secrets.insert(prefixed_key, value);
+                        }
+                    }
+                    Err(e) => {
+                        debug!("No secrets found for component {}: {}", spec.component_name, e);
+                    }
+                }
+            }
+            
+            if all_secrets.is_empty() {
+                None
+            } else {
+                Some(all_secrets)
+            }
+        } else {
+            None
+        };
+        
+        // Generate manifests with secrets
+        let manifests = generator.generate_manifests(&self.component_specs, secrets.clone()).await?;
         
         info!("Generated {} Kubernetes manifests in {}", 
               manifests.len(), 
               output_dir.display());
+        
+        // Apply SealedSecrets encoder if configured
+        if secrets.is_some() {
+            // Check if we should use kubeseal
+            let use_sealed_secrets = std::env::var("K8S_USE_SEALED_SECRETS")
+                .unwrap_or_else(|_| "false".to_string()) == "true";
+            
+            if use_sealed_secrets {
+                info!("Applying SealedSecrets encoder to secret manifests");
+                let encoder = rush_k8s::encoder::create_encoder("kubeseal");
+                
+                // Find and encode secret manifest files
+                let secrets_path = output_dir.join("secrets.yaml");
+                if secrets_path.exists() {
+                    if let Err(e) = encoder.encode_file(secrets_path.to_str().unwrap()) {
+                        warn!("Failed to encode secrets with kubeseal: {}. Secrets will remain unencrypted.", e);
+                    } else {
+                        info!("Successfully encoded secrets with kubeseal");
+                    }
+                }
+            }
+        }
         
         // Store the output directory for later use in apply()
         self.k8s_manifest_dir = Some(output_dir);
@@ -1402,7 +1467,11 @@ impl Reactor {
         modular_config.lifecycle.network_name = network_name;
         
         // Create the reactor using the existing new() method
-        let reactor = Self::new(modular_config, docker_client, component_specs).await?;
+        let mut reactor = Self::new(modular_config, docker_client, component_specs).await?;
+        
+        // Set the vault and secrets encoder
+        reactor.vault = Some(vault);
+        reactor.secrets_encoder = Some(secrets_encoder);
         
         Ok(reactor)
     }
