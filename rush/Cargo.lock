@@ -2654,6 +2654,7 @@ dependencies = [
  "rush-config",
  "rush-core",
  "rush-docker",
+ "rush-k8s",
  "rush-local-services",
  "rush-output",
  "rush-security",
@@ -2721,13 +2722,13 @@ name = "rush-k8s"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "handlebars",
  "k8s-openapi",
  "kube",
  "log",
  "rush-build",
  "rush-config",
- "rush-container",
  "rush-core",
  "rush-toolchain",
  "rush-utils",

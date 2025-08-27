@@ -7,13 +7,13 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+base64 = { workspace = true }
 handlebars = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
 log = { workspace = true }
 rush-build = { workspace = true }
 rush-config = { workspace = true }
-rush-container = { workspace = true }
 rush-core = { workspace = true }
 rush-toolchain = { workspace = true }
 rush-utils = { workspace = true }
@@ -25,4 +25,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+rush-build = { workspace = true }
+rush-config = { workspace = true }
 tempfile = { workspace = true }

@@ -110,6 +110,8 @@ pub struct Reactor {
     built_images: std::collections::HashMap<String, String>,
     /// Output sink for container and build logs
     output_sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>,
+    /// Kubernetes manifest output directory
+    k8s_manifest_dir: Option<std::path::PathBuf>,
 }
 
 impl Reactor {
@@ -195,6 +197,7 @@ impl Reactor {
             output_sink: Arc::new(tokio::sync::Mutex::new(
                 Box::new(rush_output::simple::StdoutSink::new()),
             )),
+            k8s_manifest_dir: None,
         };
         
         // Initialize state with component specs
@@ -969,11 +972,39 @@ impl Reactor {
     pub async fn apply(&mut self) -> Result<()> {
         info!("Applying Kubernetes manifests...");
         
-        // TODO: Generate and apply K8s manifests
-        // This would typically:
-        // 1. Generate manifests from component specs
-        // 2. Apply them using kubectl or the Kubernetes API
-        debug!("Kubernetes manifest application not implemented yet");
+        // Ensure manifests have been built
+        let manifest_dir = match &self.k8s_manifest_dir {
+            Some(dir) => dir,
+            None => {
+                // Build manifests if not already done
+                self.build_manifests().await?;
+                self.k8s_manifest_dir.as_ref()
+                    .ok_or_else(|| Error::Internal("Failed to build manifests".to_string()))?
+            }
+        };
+        
+        // Check if manifest directory exists
+        if !manifest_dir.exists() {
+            return Err(Error::Filesystem(format!(
+                "Manifest directory does not exist: {}",
+                manifest_dir.display()
+            )));
+        }
+        
+        // Apply manifests using kubectl
+        let output = tokio::process::Command::new("kubectl")
+            .args(&["apply", "-f", manifest_dir.to_str().unwrap(), "--recursive"])
+            .output()
+            .await
+            .map_err(|e| Error::External(format!("Failed to run kubectl apply: {}", e)))?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::External(format!("kubectl apply failed: {}", stderr)));
+        }
+        
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        info!("Applied manifests: {}", stdout.trim());
         
         Ok(())
     }
@@ -982,9 +1013,28 @@ impl Reactor {
     pub async fn unapply(&mut self) -> Result<()> {
         info!("Removing Kubernetes resources...");
         
-        // TODO: Delete K8s resources
-        // This would typically run kubectl delete commands
-        debug!("Kubernetes resource removal not implemented yet");
+        // Use manifest directory if available
+        if let Some(manifest_dir) = &self.k8s_manifest_dir {
+            if manifest_dir.exists() {
+                let output = tokio::process::Command::new("kubectl")
+                    .args(&["delete", "-f", manifest_dir.to_str().unwrap(), "--recursive", "--ignore-not-found"])
+                    .output()
+                    .await
+                    .map_err(|e| Error::External(format!("Failed to run kubectl delete: {}", e)))?;
+                
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(Error::External(format!("kubectl delete failed: {}", stderr)));
+                }
+                
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                info!("Removed resources: {}", stdout.trim());
+            } else {
+                warn!("Manifest directory does not exist, nothing to remove");
+            }
+        } else {
+            warn!("No manifests have been generated, nothing to remove");
+        }
         
         Ok(())
     }
@@ -1013,8 +1063,35 @@ impl Reactor {
     pub async fn build_manifests(&mut self) -> Result<()> {
         info!("Building Kubernetes manifests...");
         
-        // TODO: Generate K8s manifests from component specs
-        debug!("Kubernetes manifest building not implemented yet");
+        // Create output directory for manifests
+        let output_dir = std::path::PathBuf::from(".rush/k8s");
+        
+        // Determine namespace from environment or use default
+        let namespace = std::env::var("K8S_NAMESPACE")
+            .unwrap_or_else(|_| format!("{}-{}", 
+                self.config.build.product_name, 
+                std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string())
+            ));
+        
+        // Create manifest generator
+        let generator = rush_k8s::ManifestGenerator::new(
+            output_dir.clone(),
+            namespace.clone(),
+            std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string()),
+        ).with_registry(
+            self.config.registry.url.clone(),
+            self.config.registry.namespace.clone(),
+        );
+        
+        // Generate manifests (no secrets for now)
+        let manifests = generator.generate_manifests(&self.component_specs, None).await?;
+        
+        info!("Generated {} Kubernetes manifests in {}", 
+              manifests.len(), 
+              output_dir.display());
+        
+        // Store the output directory for later use in apply()
+        self.k8s_manifest_dir = Some(output_dir);
         
         Ok(())
     }
