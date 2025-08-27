@@ -171,15 +171,15 @@ impl Reactor {
             )
         );
         
-        // Create file watcher coordinator (optional)
-        let watcher_coordinator = if config.watcher.handler_config.ignore_patterns.is_empty() {
-            None
-        } else {
+        // Create file watcher coordinator
+        // Always create watcher for automatic rebuilds during development
+        let watcher_coordinator = {
             let mut coordinator = crate::watcher::CoordinatorBuilder::new()
                 .with_config(config.watcher.clone())
                 .with_event_bus(event_bus.clone())
                 .with_state(state.clone())
                 .with_shutdown_sender(shutdown_sender.clone())
+                .with_base_dir(config.base.product_dir.clone())
                 .build()
                 .map_err(|e| Error::Internal(format!("Failed to create watcher coordinator: {}", e)))?;
             
@@ -256,8 +256,7 @@ impl Reactor {
         
         // Start file watching if configured
         if let Some(watcher) = &mut self.watcher_coordinator {
-            let watch_path = std::env::current_dir()?;
-            watcher.watch_directory(&watch_path)
+            watcher.watch_directory(&self.config.base.product_dir)
                 .map_err(|e| Error::Internal(format!("Failed to start file watcher: {}", e)))?;
         }
         
@@ -1620,6 +1619,10 @@ impl Reactor {
         // Use consistent network name from network manager
         let network_name = network_manager.network_name().to_string();
         modular_config.base.network_name = network_name.clone();
+        modular_config.base.product_name = config.product_name().to_string();
+        modular_config.base.product_dir = config.product_path().to_path_buf();
+        modular_config.base.environment = config.environment().to_string();
+        modular_config.base.git_hash = git_hash.clone();
         modular_config.base.redirected_components = redirected_components;
         modular_config.docker.use_enhanced_client = true;
         modular_config.watcher.auto_rebuild = true;

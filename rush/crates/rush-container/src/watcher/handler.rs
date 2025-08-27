@@ -6,7 +6,7 @@
 use crate::events::{Event, EventBus, ContainerEvent};
 use notify::{Event as NotifyEvent, EventKind};
 use rush_build::ComponentBuildSpec;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -100,6 +100,7 @@ pub struct FileChangeHandler {
     component_specs: Arc<RwLock<Vec<ComponentBuildSpec>>>,
     change_sender: mpsc::UnboundedSender<ChangeBatch>,
     change_receiver: Arc<RwLock<mpsc::UnboundedReceiver<ChangeBatch>>>,
+    base_dir: Arc<PathBuf>,
 }
 
 impl FileChangeHandler {
@@ -115,12 +116,19 @@ impl FileChangeHandler {
             component_specs: Arc::new(RwLock::new(Vec::new())),
             change_sender: tx,
             change_receiver: Arc::new(RwLock::new(rx)),
+            base_dir: Arc::new(std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
         }
     }
 
     /// Set the event bus for publishing events  
     pub fn with_event_bus(mut self, event_bus: EventBus) -> Self {
         self.event_bus = Some(event_bus);
+        self
+    }
+    
+    /// Set the base directory for path resolution
+    pub fn with_base_dir(mut self, base_dir: PathBuf) -> Self {
+        self.base_dir = Arc::new(base_dir);
         self
     }
 
@@ -300,19 +308,38 @@ impl FileChangeHandler {
         };
 
         if let Some(loc) = location {
+            // Convert relative location to absolute path for comparison
+            let abs_location = if Path::new(loc).is_absolute() {
+                PathBuf::from(loc)
+            } else {
+                self.base_dir.join(loc)
+            };
+            
+            debug!(
+                "Checking if component {} (location: {}) is affected by changes",
+                spec.component_name,
+                abs_location.display()
+            );
+            
             // Check if any changed file is in the component's location
             for path in &batch.modified {
-                if path.starts_with(loc) {
+                trace!("  Checking modified path: {}", path.display());
+                if path.starts_with(&abs_location) {
+                    info!("Component {} affected by change to: {}", spec.component_name, path.display());
                     return true;
                 }
             }
             for path in &batch.created {
-                if path.starts_with(loc) {
+                trace!("  Checking created path: {}", path.display());
+                if path.starts_with(&abs_location) {
+                    info!("Component {} affected by new file: {}", spec.component_name, path.display());
                     return true;
                 }
             }
             for path in &batch.deleted {
-                if path.starts_with(loc) {
+                trace!("  Checking deleted path: {}", path.display());
+                if path.starts_with(&abs_location) {
+                    info!("Component {} affected by deleted file: {}", spec.component_name, path.display());
                     return true;
                 }
             }

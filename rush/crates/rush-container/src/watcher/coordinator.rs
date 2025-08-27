@@ -10,7 +10,7 @@ use crate::{
 };
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use rush_build::ComponentBuildSpec;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
@@ -75,10 +75,26 @@ impl WatcherCoordinator {
         state: SharedReactorState,
         shutdown_sender: broadcast::Sender<()>,
     ) -> Self {
-        let handler = Arc::new(
-            FileChangeHandler::new(config.handler_config.clone())
-                .with_event_bus(event_bus.clone())
-        );
+        Self::new_with_base_dir(config, event_bus, state, shutdown_sender, None)
+    }
+    
+    /// Create a new watcher coordinator with base directory
+    pub fn new_with_base_dir(
+        config: CoordinatorConfig,
+        event_bus: EventBus,
+        state: SharedReactorState,
+        shutdown_sender: broadcast::Sender<()>,
+        base_dir: Option<PathBuf>,
+    ) -> Self {
+        let mut handler_builder = FileChangeHandler::new(config.handler_config.clone())
+            .with_event_bus(event_bus.clone());
+            
+        // Set base directory if provided
+        if let Some(base_dir) = &base_dir {
+            handler_builder = handler_builder.with_base_dir(base_dir.clone());
+        }
+        
+        let handler = Arc::new(handler_builder);
         let shutdown_receiver = shutdown_sender.subscribe();
         let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel();
         
@@ -269,6 +285,7 @@ pub struct CoordinatorBuilder {
     event_bus: Option<EventBus>,
     state: Option<SharedReactorState>,
     shutdown_sender: Option<broadcast::Sender<()>>,
+    base_dir: Option<PathBuf>,
 }
 
 impl CoordinatorBuilder {
@@ -279,6 +296,7 @@ impl CoordinatorBuilder {
             event_bus: None,
             state: None,
             shutdown_sender: None,
+            base_dir: None,
         }
     }
 
@@ -305,6 +323,12 @@ impl CoordinatorBuilder {
         self.shutdown_sender = Some(sender);
         self
     }
+    
+    /// Set the base directory
+    pub fn with_base_dir(mut self, base_dir: PathBuf) -> Self {
+        self.base_dir = Some(base_dir);
+        self
+    }
 
     /// Build the coordinator
     pub fn build(self) -> Result<WatcherCoordinator, String> {
@@ -312,11 +336,12 @@ impl CoordinatorBuilder {
         let state = self.state.ok_or("Reactor state not set")?;
         let shutdown_sender = self.shutdown_sender.ok_or("Shutdown sender not set")?;
         
-        Ok(WatcherCoordinator::new(
+        Ok(WatcherCoordinator::new_with_base_dir(
             self.config,
             event_bus,
             state,
             shutdown_sender,
+            self.base_dir,
         ))
     }
 }
