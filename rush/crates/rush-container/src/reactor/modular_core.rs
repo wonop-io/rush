@@ -757,7 +757,20 @@ impl Reactor {
             state.transition_to(ReactorPhase::ShuttingDown)?;
         }
         
-        // Stop all components
+        // Stop all running Docker services
+        let services_to_stop = {
+            let state_guard = self.state.read().await;
+            state_guard.running_services().to_vec()
+        };
+        
+        if !services_to_stop.is_empty() {
+            info!("Stopping {} Docker services", services_to_stop.len());
+            if let Err(e) = self.lifecycle_manager.stop_services(&services_to_stop).await {
+                warn!("Failed to stop services during shutdown: {}", e);
+            }
+        }
+        
+        // Also update component states
         let component_names: Vec<String> = {
             let state = self.state.read().await;
             state.components().keys().cloned().collect()
@@ -765,7 +778,7 @@ impl Reactor {
         
         for component_name in component_names {
             if let Err(e) = self.lifecycle_manager.stop_component(&component_name).await {
-                warn!("Failed to stop component {} during shutdown: {}", component_name, e);
+                warn!("Failed to update component {} state during shutdown: {}", component_name, e);
             }
         }
         

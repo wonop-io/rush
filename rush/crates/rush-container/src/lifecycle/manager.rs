@@ -479,10 +479,12 @@ impl LifecycleManager {
     pub async fn stop_services(&self, services: &[DockerService]) -> Result<()> {
         info!("Stopping {} services", services.len());
         
-        // Update state
+        // Update state only if not already shutting down
         {
             let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::ShuttingDown)?;
+            if state.phase() != &ReactorPhase::ShuttingDown {
+                state.transition_to(ReactorPhase::ShuttingDown)?;
+            }
         }
         
         // Broadcast shutdown signal
@@ -534,12 +536,24 @@ impl LifecycleManager {
     async fn stop_service(&self, service: &DockerService) -> Result<()> {
         let mut retries = 0;
         
+        info!("Attempting to stop Docker container: {} ({})", 
+              service.name().unwrap_or_else(|| "unknown".to_string()), 
+              service.id());
+        
         while retries < self.config.max_retries {
             // Try to stop gracefully
             let stop_result = service.stop().await;
+            if let Err(e) = &stop_result {
+                error!("Failed to stop container {}: {}", service.id(), e);
+            }
+            
             let remove_result = service.remove().await;
+            if let Err(e) = &remove_result {
+                error!("Failed to remove container {}: {}", service.id(), e);
+            }
             
             if stop_result.is_ok() && remove_result.is_ok() {
+                info!("Successfully stopped and removed container: {}", service.id());
                 // Publish event
                 // Get service name from config
                 let service_name = service.name().unwrap_or_else(|| "unknown".to_string());

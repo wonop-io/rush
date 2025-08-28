@@ -506,11 +506,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_entry_creation() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_dir = temp_dir.path();
         let spec = create_test_spec();
         
         let entry = CacheEntry::new("test:v1".to_string(), spec.clone());
         assert_eq!(entry.image_name, "test:v1");
-        assert!(entry.is_valid(&spec));
+        assert!(entry.is_valid(&spec, base_dir));
     }
 
     #[tokio::test]
@@ -523,14 +525,14 @@ mod tests {
         let spec = create_test_spec();
         
         // Test put and get
-        let entry = CacheEntry::new("test:v1".to_string(), spec);
-        cache.put("test".to_string(), entry).await;
+        cache.put_with_spec("test".to_string(), "test:v1".to_string(), spec.clone()).await;
         
-        let cached = cache.get("test").await;
+        let cached = cache.get("test", &spec).await;
         assert_eq!(cached, Some("test:v1".to_string()));
         
         // Test miss
-        let missing = cache.get("missing").await;
+        let missing_spec = create_test_spec();
+        let missing = cache.get("missing", &missing_spec).await;
         assert_eq!(missing, None);
     }
 
@@ -541,14 +543,12 @@ mod tests {
         let base_dir = temp_dir.path().join("product");
         std::fs::create_dir(&base_dir).unwrap();
         
+        let spec = create_test_spec();
+        
         // Create and save cache
         {
             let mut cache = BuildCache::new(cache_dir, &base_dir);
-            
-            let spec = create_test_spec();
-            
-            let entry = CacheEntry::new("test:v1".to_string(), spec);
-            cache.put("test".to_string(), entry).await;
+            cache.put_with_spec("test".to_string(), "test:v1".to_string(), spec.clone()).await;
             cache.save().await.unwrap();
         }
         
@@ -557,7 +557,7 @@ mod tests {
             let mut cache = BuildCache::new(cache_dir, &base_dir);
             cache.load().await.unwrap();
             
-            let cached = cache.get("test").await;
+            let cached = cache.get("test", &spec).await;
             assert_eq!(cached, Some("test:v1".to_string()));
         }
     }
@@ -607,16 +607,15 @@ mod tests {
         };
         
         // Add entry to cache
-        let entry = CacheEntry::new("frontend:v1".to_string(), spec);
-        cache.put("frontend".to_string(), entry).await;
+        cache.put_with_spec("frontend".to_string(), "frontend:v1".to_string(), spec.clone()).await;
         
         // Verify entry exists
-        assert_eq!(cache.get("frontend").await, Some("frontend:v1".to_string()));
+        assert_eq!(cache.get("frontend", &spec).await, Some("frontend:v1".to_string()));
         
         // Test 1: File change in component directory should invalidate
         let changed_file = base_dir.join("frontend/webui/src/main.rs");
         cache.invalidate_changed(&[changed_file]).await;
-        assert_eq!(cache.get("frontend").await, None, "Cache should be invalidated for file in component directory");
+        assert_eq!(cache.get("frontend", &spec).await, None, "Cache should be invalidated for file in component directory");
         
         // Re-add entry for next test
         let spec2 = ComponentBuildSpec {
@@ -631,13 +630,12 @@ mod tests {
             component_name: "frontend".to_string(),
             ..create_test_spec()
         };
-        let entry2 = CacheEntry::new("frontend:v2".to_string(), spec2);
-        cache.put("frontend".to_string(), entry2).await;
+        cache.put_with_spec("frontend".to_string(), "frontend:v2".to_string(), spec2.clone()).await;
         
         // Test 2: File change outside component directory should NOT invalidate
         let unrelated_file = base_dir.join("backend/src/main.rs");
         cache.invalidate_changed(&[unrelated_file]).await;
-        assert_eq!(cache.get("frontend").await, Some("frontend:v2".to_string()), 
+        assert_eq!(cache.get("frontend", &spec2).await, Some("frontend:v2".to_string()), 
             "Cache should NOT be invalidated for file outside component directory");
     }
 }
