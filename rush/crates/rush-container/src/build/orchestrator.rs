@@ -700,10 +700,10 @@ impl BuildOrchestrator {
                         port: component_spec.port.unwrap_or(8080),
                         target_port: component_spec.target_port.unwrap_or(80),
                         mount_point: component_spec.mount_point.clone(),
-                        domain: spec.domain.clone(),
+                        domain: component_spec.domain.clone(),
                         docker_host: format!("{}-{}", spec.product_name, component_name),
                     };
-                    services_map.entry(spec.domain.clone())
+                    services_map.entry(component_spec.domain.clone())
                         .or_insert_with(Vec::new)
                         .push(service_spec);
                 } else {
