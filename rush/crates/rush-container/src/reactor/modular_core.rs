@@ -108,6 +108,8 @@ pub struct Reactor {
     component_specs: Vec<ComponentBuildSpec>,
     /// Built images mapping
     built_images: std::collections::HashMap<String, String>,
+    /// Force rebuild flag
+    force_rebuild: bool,
     /// Output sink for container and build logs
     output_sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>,
     /// Kubernetes manifest output directory
@@ -200,6 +202,7 @@ impl Reactor {
             services: Vec::new(),
             component_specs: component_specs.clone(),
             built_images: std::collections::HashMap::new(),
+            force_rebuild: false,
             output_sink: Arc::new(tokio::sync::Mutex::new(
                 Box::new(rush_output::simple::StdoutSink::new()),
             )),
@@ -498,8 +501,8 @@ impl Reactor {
     }
     
     /// Handle manual rebuild request (not triggered by file changes)
-    async fn handle_manual_rebuild(&mut self, components: std::collections::HashSet<String>) -> Result<()> {
-        debug!("Handling manual rebuild for components: {:?}", components);
+    async fn handle_manual_rebuild(&mut self, components: std::collections::HashSet<String>, force_rebuild: bool) -> Result<()> {
+        debug!("Handling manual rebuild for components: {:?}, force: {}", components, force_rebuild);
         
         // Transition to rebuilding phase
         {
@@ -530,8 +533,9 @@ impl Reactor {
                 .collect::<Vec<_>>()
         };
         
-        // For manual rebuilds, we use force_rebuild: true to bypass cache
-        let build_result = self.build_orchestrator.build_components(component_specs, true).await;
+        // For manual rebuilds, use cache unless force_rebuild is true
+        // This allows cache invalidation logic to work properly
+        let build_result = self.build_orchestrator.build_components(component_specs, force_rebuild).await;
         
         match build_result {
             Ok(successful_builds) => {
@@ -594,7 +598,16 @@ impl Reactor {
     
     /// Trigger a manual rebuild of all components
     pub async fn rebuild_all(&mut self) -> Result<()> {
-        info!("Manual rebuild of all components requested");
+        self.rebuild_all_with_force(self.force_rebuild).await
+    }
+    
+    /// Trigger a manual rebuild of all components with optional force
+    pub async fn rebuild_all_with_force(&mut self, force_rebuild: bool) -> Result<()> {
+        if force_rebuild {
+            info!("Manual rebuild of all components requested (force: true)");
+        } else {
+            info!("Manual rebuild of all components requested (force: false)");
+        }
         
         let component_names: std::collections::HashSet<String> = {
             let state = self.state.read().await;
@@ -623,7 +636,7 @@ impl Reactor {
             }
             ReactorPhase::Running => {
                 // Manual rebuild (not triggered by file changes)
-                self.handle_manual_rebuild(component_names).await
+                self.handle_manual_rebuild(component_names, force_rebuild).await
             }
             _ => {
                 warn!("Cannot rebuild in current phase: {:?}", current_phase);
@@ -809,22 +822,17 @@ impl Reactor {
                 }
             };
             
-            // Create a container service with proper ports
-            // Use different default ports for different components
-            let (default_port, default_target) = match spec.component_name.as_str() {
-                "frontend" => (9000, 80),
-                "backend" => (8000, 8000),
-                "ingress" => (8080, 80),
-                _ => (3000, 3000),
-            };
+            // Ports are already resolved in from_product_dir, just use them
+            let host_port = spec.port.expect("Port should have been resolved");
+            let target_port = spec.target_port.expect("Target port should have been resolved");
             
             let service = crate::ContainerService {
                 id: uuid::Uuid::new_v4().to_string(),
                 name: spec.component_name.clone(),
                 image,
                 host: spec.component_name.clone(),
-                port: spec.port.unwrap_or(default_port),
-                target_port: spec.target_port.unwrap_or(default_target),
+                port: host_port,
+                target_port,
                 mount_point: spec.mount_point.clone(),
                 domain: spec.domain.clone(),
                 docker_host: format!("{}.docker", spec.component_name),
@@ -874,7 +882,7 @@ impl Reactor {
         // Store the force rebuild setting for use in build operations
         // This affects the behavior of build_components method
         info!("Force rebuild set to: {}", force);
-        // Note: The actual force rebuild is passed to build_components method
+        self.force_rebuild = force;
     }
     
     /// Get the Docker client
@@ -1594,7 +1602,6 @@ impl Reactor {
         
         // Build component specs from stack configuration
         let mut component_specs = Vec::new();
-        let variables = Arc::new(rush_build::Variables::empty());
         
         if let Some(components) = spec.as_mapping() {
             for (name, component_config) in components {
@@ -1606,203 +1613,27 @@ impl Reactor {
                     
                     // Use the proper from_yaml method to create ComponentBuildSpec
                     // This will properly load .env and .env.secrets files
-                    let mut spec = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        rush_build::ComponentBuildSpec::from_yaml(
-                            config.clone(),
-                            rush_build::Variables::empty(),
-                            component_config
-                        )
-                    })) {
-                        Ok(spec) => spec,
-                        Err(_) => {
-                            // If from_yaml fails (e.g., for legacy build types), 
-                            // fall back to manual creation but still try to load env files
-                            warn!("Failed to load component {} via from_yaml, using fallback", name_str);
-                            
-                            // Parse the build_type from the component configuration
-                            let build_type_str = component_config.get("build_type")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("RustBinary");
-                            
-                            let location = component_config.get("location")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or(name_str)
-                                .to_string();
-                            
-                            let dockerfile = component_config.get("dockerfile")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Dockerfile")
-                                .to_string();
-                    
-                    // Parse build type based on the string value
-                    let build_type = match build_type_str {
-                        "Ingress" => rush_build::BuildType::Ingress {
-                            components: component_config.get("components")
-                                .and_then(|v| v.as_sequence())
-                                .map(|seq| seq.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect())
-                                .unwrap_or_default(),
-                            dockerfile_path: dockerfile.clone(),
-                            context_dir: component_config.get("context_dir")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                        },
-                        "TrunkWasm" => rush_build::BuildType::TrunkWasm {
-                            location: location.clone(),
-                            dockerfile_path: dockerfile.clone(),
-                            context_dir: component_config.get("context_dir")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            ssr: component_config.get("ssr")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false),
-                            features: component_config.get("features")
-                                .and_then(|v| v.as_sequence())
-                                .map(|seq| seq.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()),
-                            precompile_commands: component_config.get("precompile_commands")
-                                .and_then(|v| v.as_sequence())
-                                .map(|seq| seq.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()),
-                        },
-                        "LocalService" => rush_build::BuildType::LocalService {
-                            service_type: component_config.get("service_type")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown")
-                                .to_string(),
-                            version: component_config.get("version")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            persist_data: component_config.get("persist_data")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false),
-                            env: component_config.get("env")
-                                .and_then(|v| v.as_mapping())
-                                .map(|m| m.iter()
-                                    .filter_map(|(k, v)| {
-                                        k.as_str().and_then(|key| 
-                                            v.as_str().map(|val| (key.to_string(), val.to_string()))
-                                        )
-                                    })
-                                    .collect()),
-                            health_check: component_config.get("health_check")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            init_scripts: component_config.get("init_scripts")
-                                .and_then(|v| v.as_sequence())
-                                .map(|seq| seq.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()),
-                            command: component_config.get("command")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            depends_on: component_config.get("depends_on")
-                                .and_then(|v| v.as_sequence())
-                                .map(|seq| seq.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect::<Vec<_>>()),
-                        },
-                        _ => rush_build::BuildType::RustBinary {
-                            location: location.clone(),
-                            dockerfile_path: dockerfile.clone(),
-                            context_dir: component_config.get("context_dir")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            features: component_config.get("features")
-                                .and_then(|v| v.as_sequence())
-                                .map(|seq| seq.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()),
-                            precompile_commands: component_config.get("precompile_commands")
-                                .and_then(|v| v.as_sequence())
-                                .map(|seq| seq.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()),
-                        },
-                    };
-                    
-                    let mut spec = ComponentBuildSpec {
-                        build_type,
-                        product_name: config.product_name().to_string(),
-                        component_name: name_str.to_string(),
-                        color: "white".to_string(),
-                        depends_on: vec![],
-                        build: None,
-                        mount_point: None,
-                        subdomain: None,
-                        artefacts: None,
-                        artefact_output_dir: "target".to_string(),
-                        docker_extra_run_args: vec![],
-                        env: None,
-                        volumes: None,
-                        port: None,
-                        target_port: None,
-                        k8s: None,
-                        priority: 100,
-                        watch: None,
-                        config: config.clone(),
-                        variables: rush_build::Variables::empty(),
-                        services: None,
-                        domains: None,
-                        tagged_image_name: Some(format!("{}:{}", name_str, git_hash)),
-                        dotenv: HashMap::new(),
-                        dotenv_secrets: HashMap::new(),
-                        domain: format!("{}.local", name_str),
-                        cross_compile: "native".to_string(),
-                    };
-                    
-                    // Load .env and .env.secrets files for the manual fallback
-                    // This is critical for dev mode to work properly
-                    let component_location = match &spec.build_type {
-                        rush_build::BuildType::TrunkWasm { location, .. } => Some(location.clone()),
-                        rush_build::BuildType::RustBinary { location, .. } => Some(location.clone()),
-                        rush_build::BuildType::DixiousWasm { location, .. } => Some(location.clone()),
-                        rush_build::BuildType::Script { location, .. } => Some(location.clone()),
-                        rush_build::BuildType::Zola { location, .. } => Some(location.clone()),
-                        rush_build::BuildType::Book { location, .. } => Some(location.clone()),
-                        _ => None,
-                    };
-                    
-                    if let Some(location) = component_location {
-                        let component_path = config.product_path().join(&location);
-                        
-                        // Load .env file
-                        let env_path = component_path.join(".env");
-                        if env_path.exists() {
-                            match rush_core::dotenv::load_dotenv(&env_path) {
-                                Ok(env) => {
-                                    debug!("Loaded {} env vars from .env for {}", env.len(), name_str);
-                                    spec.dotenv = env;
-                                }
-                                Err(e) => warn!("Failed to load .env for {}: {}", name_str, e),
-                            }
-                        }
-                        
-                        // Load .env.secrets file
-                        let secrets_path = component_path.join(".env.secrets");
-                        if secrets_path.exists() {
-                            match rush_core::dotenv::load_dotenv(&secrets_path) {
-                                Ok(secrets) => {
-                                    info!("Loaded {} secrets from .env.secrets for {}", secrets.len(), name_str);
-                                    spec.dotenv_secrets = secrets;
-                                }
-                                Err(e) => warn!("Failed to load .env.secrets for {}: {}", name_str, e),
-                            }
-                        }
+                    // We need to inject the component_name into the YAML since it's not present
+                    let mut component_config_with_name = component_config.clone();
+                    if let serde_yaml::Value::Mapping(ref mut map) = component_config_with_name {
+                        map.insert(
+                            serde_yaml::Value::String("component_name".to_string()),
+                            serde_yaml::Value::String(name_str.to_string())
+                        );
                     }
                     
-                    spec  // Return the spec from the fallback block
-                }
-            };
+                    // Try to use the from_yaml method which properly loads env files
+                    let mut spec = rush_build::ComponentBuildSpec::from_yaml(
+                        config.clone(),
+                        rush_build::Variables::empty(),
+                        &component_config_with_name
+                    );
+                    
+                    // Override the tagged image name for the git hash
+                    spec.tagged_image_name = Some(format!("{}:{}", name_str, git_hash));
             
-            // Override the tagged image name for the git hash
-            spec.tagged_image_name = Some(format!("{}:{}", name_str, git_hash));
-            
-            // Add the spec to our list
-            component_specs.push(spec);
+                    // Add the spec to our list
+                    component_specs.push(spec);
                 }
             }
         }
@@ -1817,6 +1648,7 @@ impl Reactor {
         modular_config.base.environment = config.environment().to_string();
         modular_config.base.git_hash = git_hash.clone();
         modular_config.base.redirected_components = redirected_components;
+        modular_config.base.start_port = config.start_port();
         modular_config.docker.use_enhanced_client = true;
         modular_config.watcher.auto_rebuild = true;
         modular_config.lifecycle.auto_restart = true;
@@ -1835,6 +1667,9 @@ impl Reactor {
         modular_config.lifecycle.product_name = config.product_name().to_string();
         modular_config.lifecycle.network_name = network_name;
         
+        // Resolve ports for all components before creating the reactor
+        Self::resolve_component_ports(&mut component_specs, &config);
+        
         // Create the reactor using the existing new() method
         let mut reactor = Self::new(modular_config, docker_client, component_specs).await?;
         
@@ -1843,6 +1678,52 @@ impl Reactor {
         reactor.secrets_encoder = Some(secrets_encoder);
         
         Ok(reactor)
+    }
+    
+    /// Scan a Dockerfile for EXPOSE directive to find the exposed port
+    fn scan_dockerfile_for_expose(spec: &ComponentBuildSpec, product_dir: &std::path::Path) -> Option<u16> {
+        if let Some(dockerfile_path) = spec.build_type.dockerfile_path() {
+            let full_path = product_dir.join(&dockerfile_path);
+            if let Ok(content) = std::fs::read_to_string(&full_path) {
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("EXPOSE ") {
+                        let port_str = trimmed.trim_start_matches("EXPOSE ").trim();
+                        if let Ok(port) = port_str.parse::<u16>() {
+                            debug!("Found EXPOSE {} in Dockerfile for {}", port, spec.component_name);
+                            return Some(port);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+    
+    /// Resolve ports for all components before building
+    fn resolve_component_ports(specs: &mut Vec<ComponentBuildSpec>, config: &Arc<rush_config::Config>) {
+        let mut next_port = config.start_port();
+        
+        for spec in specs.iter_mut() {
+            // Skip components that don't require Docker builds
+            if !spec.build_type.requires_docker_build() {
+                continue;
+            }
+            
+            // Assign host port if not specified
+            if spec.port.is_none() {
+                spec.port = Some(next_port);
+                info!("Auto-assigned port {} to component {}", next_port, spec.component_name);
+                next_port += 1;
+            }
+            
+            // Determine target port: YAML > Dockerfile EXPOSE > host port
+            if spec.target_port.is_none() {
+                let dockerfile_port = Self::scan_dockerfile_for_expose(spec, &config.product_path());
+                spec.target_port = Some(dockerfile_port.unwrap_or_else(|| spec.port.unwrap()));
+                info!("Set target_port {} for component {}", spec.target_port.unwrap(), spec.component_name);
+            }
+        }
     }
 }
 

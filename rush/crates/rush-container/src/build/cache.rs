@@ -30,13 +30,46 @@ pub struct CacheEntry {
 impl CacheEntry {
     /// Create a new cache entry
     pub fn new(image_name: String, spec: ComponentBuildSpec) -> Self {
+        Self::new_with_base_dir(image_name, spec, &std::env::current_dir().unwrap_or_default())
+    }
+    
+    /// Create a new cache entry with explicit base directory
+    pub fn new_with_base_dir(image_name: String, spec: ComponentBuildSpec, base_dir: &Path) -> Self {
         Self {
             image_name,
             spec_hash: Self::hash_spec(&spec),
             built_at: chrono::Utc::now(),
-            source_hash: String::new(), // TODO: Implement source hashing
+            source_hash: Self::compute_source_hash(&spec, base_dir),
             spec: Some(spec),
         }
+    }
+    
+    /// Compute hash of source files and artifacts
+    fn compute_source_hash(spec: &ComponentBuildSpec, base_dir: &Path) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        
+        // Hash artifact template content if available
+        if let Some(artifacts) = &spec.artefacts {
+            for (source_path, _) in artifacts {
+                // Try to read and hash the artifact template file
+                if let Ok(content) = std::fs::read_to_string(source_path) {
+                    content.hash(&mut hasher);
+                }
+            }
+        }
+        
+        // For ingress, also hash the rendered nginx.conf if it exists
+        if matches!(spec.build_type, rush_build::BuildType::Ingress { .. }) {
+            let nginx_path = base_dir.join("target/rushd/nginx.conf");
+            if let Ok(content) = std::fs::read_to_string(&nginx_path) {
+                content.hash(&mut hasher);
+            }
+        }
+        
+        format!("{:x}", hasher.finish())
     }
 
     /// Hash the component spec for cache validation
@@ -46,14 +79,53 @@ impl CacheEntry {
         
         let mut hasher = DefaultHasher::new();
         spec.component_name.hash(&mut hasher);
+        
         // Hash build type to detect changes
         format!("{:?}", spec.build_type).hash(&mut hasher);
+        
+        // Hash artifacts to detect template changes
+        if let Some(artifacts) = &spec.artefacts {
+            let mut sorted_artifacts: Vec<_> = artifacts.iter().collect();
+            sorted_artifacts.sort_by_key(|(k, _)| k.as_str());
+            for (source, target) in sorted_artifacts {
+                source.hash(&mut hasher);
+                target.hash(&mut hasher);
+            }
+        }
+        
+        // Hash port configuration (important for ingress)
+        if let Some(port) = spec.port {
+            port.hash(&mut hasher);
+        }
+        if let Some(target_port) = spec.target_port {
+            target_port.hash(&mut hasher);
+        }
+        
+        // Hash mount point (affects routing)
+        if let Some(mount_point) = &spec.mount_point {
+            mount_point.hash(&mut hasher);
+        }
+        
         format!("{:x}", hasher.finish())
     }
 
     /// Check if the entry is still valid
-    pub fn is_valid(&self, spec: &ComponentBuildSpec) -> bool {
-        Self::hash_spec(spec) == self.spec_hash
+    pub fn is_valid(&self, spec: &ComponentBuildSpec, base_dir: &Path) -> bool {
+        // Check both spec hash and source content hash
+        if Self::hash_spec(spec) != self.spec_hash {
+            debug!("Cache entry invalid: spec hash mismatch");
+            return false;
+        }
+        
+        // Also check if source files have changed
+        let current_source_hash = Self::compute_source_hash(spec, base_dir);
+        if current_source_hash != self.source_hash {
+            debug!("Cache entry invalid: source hash mismatch (was: {}, now: {})", 
+                self.source_hash, current_source_hash);
+            return false;
+        }
+        
+        true
     }
 }
 
@@ -140,14 +212,29 @@ impl BuildCache {
         Ok(())
     }
 
-    /// Get a cached image
-    pub async fn get(&self, component: &str) -> Option<String> {
+    /// Get a cached image if valid
+    pub async fn get(&self, component: &str, spec: &ComponentBuildSpec) -> Option<String> {
         if let Some(entry) = self.entries.get(component) {
-            info!("[CACHE HIT] Component '{}': Using cached image '{}' built at {}", 
-                component, entry.image_name, entry.built_at);
-            Some(entry.image_name.clone())
+            // Validate the cache entry against current spec
+            if entry.is_valid(spec, &self.base_dir) {
+                info!("[CACHE HIT] Component '{}': Using cached image '{}' built at {}", 
+                    component, entry.image_name, entry.built_at);
+                Some(entry.image_name.clone())
+            } else {
+                info!("[CACHE MISS] Component '{}': Cache entry invalid (spec or source changed)", component);
+                None
+            }
         } else {
             info!("[CACHE MISS] Component '{}': No cached image found", component);
+            None
+        }
+    }
+    
+    /// Get a cached image without validation (for backwards compatibility)
+    pub async fn get_unchecked(&self, component: &str) -> Option<String> {
+        if let Some(entry) = self.entries.get(component) {
+            Some(entry.image_name.clone())
+        } else {
             None
         }
     }
@@ -162,6 +249,12 @@ impl BuildCache {
         if let Err(e) = self.save().await {
             warn!("Failed to save cache: {}", e);
         }
+    }
+    
+    /// Put an image in the cache with proper base_dir context
+    pub async fn put_with_spec(&mut self, component: String, image_name: String, spec: ComponentBuildSpec) {
+        let entry = CacheEntry::new_with_base_dir(image_name, spec, &self.base_dir);
+        self.put(component, entry).await;
     }
 
     /// Check if a cache entry is expired
@@ -192,6 +285,8 @@ impl BuildCache {
         for (component, entry) in &self.entries {
             // Check if any changed file affects this component
             if let Some(spec) = &entry.spec {
+                let mut should_invalidate = false;
+                
                 // Get location from build_type if available
                 let location = match &spec.build_type {
                     rush_build::BuildType::RustBinary { location, .. } => Some(location.as_str()),
@@ -200,9 +295,11 @@ impl BuildCache {
                     rush_build::BuildType::Script { location, .. } => Some(location.as_str()),
                     rush_build::BuildType::Zola { location, .. } => Some(location.as_str()),
                     rush_build::BuildType::Book { location, .. } => Some(location.as_str()),
+                    rush_build::BuildType::Ingress { .. } => Some("./ingress"), // Ingress typically uses ./ingress directory
                     _ => None,
                 };
                 
+                // Check location-based changes
                 if let Some(loc) = location {
                     // Convert relative location to absolute path for comparison
                     let abs_location = if Path::new(loc).is_absolute() {
@@ -218,16 +315,53 @@ impl BuildCache {
                         if file.starts_with(&abs_location) {
                             info!("[CACHE INVALIDATE] Component '{}': File '{}' changed in component directory '{}'", 
                                 component, file.display(), abs_location.display());
-                            invalidated.push(component.clone());
+                            should_invalidate = true;
                             break;
                         }
                     }
-                    
-                    if !invalidated.contains(&component) {
-                        debug!("[CACHE] Component '{}' not affected by file changes", component);
+                }
+                
+                // Check artifact template changes
+                if !should_invalidate && spec.artefacts.is_some() {
+                    if let Some(artifacts) = &spec.artefacts {
+                        for (source_path, _) in artifacts {
+                            let abs_artifact_path = if Path::new(source_path).is_absolute() {
+                                PathBuf::from(source_path)
+                            } else {
+                                self.base_dir.join(source_path)
+                            };
+                            
+                            for file in changed_files {
+                                if file == &abs_artifact_path || file.ends_with(source_path) {
+                                    info!("[CACHE INVALIDATE] Component '{}': Artifact template '{}' changed", 
+                                        component, source_path);
+                                    should_invalidate = true;
+                                    break;
+                                }
+                            }
+                            if should_invalidate {
+                                break;
+                            }
+                        }
                     }
+                }
+                
+                // For ingress, also check if nginx.conf in target/rushd changed (rendered artifact)
+                if !should_invalidate && matches!(spec.build_type, rush_build::BuildType::Ingress { .. }) {
+                    let rendered_nginx = self.base_dir.join("target/rushd/nginx.conf");
+                    for file in changed_files {
+                        if file == &rendered_nginx {
+                            info!("[CACHE INVALIDATE] Component '{}': Rendered nginx.conf changed", component);
+                            should_invalidate = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if should_invalidate {
+                    invalidated.push(component.clone());
                 } else {
-                    debug!("[CACHE] Component '{}' has no location to check", component);
+                    debug!("[CACHE] Component '{}' not affected by file changes", component);
                 }
             } else {
                 debug!("[CACHE] Component '{}' has no build spec", component);

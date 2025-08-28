@@ -144,15 +144,24 @@ impl DockerClient for DockerExecutor {
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         let mut args = vec!["build".to_string()];
 
-        args.push("-t".to_string());
+        args.push("--tag".to_string());
         args.push(tag.to_string());
 
-        args.push("-f".to_string());
+        args.push("--file".to_string());
         args.push(dockerfile.to_string());
 
         args.push(context.to_string());
 
-        self.execute(args).await?;
+        info!("Docker build command: docker {}", args.join(" "));
+        debug!("Building from context: {}", context);
+        
+        let output = self.execute(args).await?;
+        
+        // Log the build output for debugging
+        if !output.trim().is_empty() {
+            debug!("Docker build output:\n{}", output);
+        }
+        
         info!("Built Docker image: {}", tag);
         Ok(())
     }

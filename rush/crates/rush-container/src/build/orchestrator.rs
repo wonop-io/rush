@@ -131,14 +131,14 @@ impl BuildOrchestrator {
         let mut build_errors = Vec::new();
         
         // Build each component
-        for spec in component_specs {
+        for spec in &component_specs {
             info!("[BUILD DECISION] Component '{}': Evaluating build requirement", spec.component_name);
             
             // Check cache if enabled
             if self.config.enable_cache && !force_rebuild {
                 info!("[BUILD DECISION] Component '{}': Cache enabled, checking for cached image", spec.component_name);
                 let cache_guard = self.cache.lock().await;
-                if let Some(cached_image) = cache_guard.get(&spec.component_name).await {
+                if let Some(cached_image) = cache_guard.get(&spec.component_name, &spec).await {
                     if !cache_guard.is_expired(&spec.component_name).await {
                         info!("[BUILD DECISION] Component '{}': ✓ Using cached image '{}' (not expired)", 
                             spec.component_name, cached_image);
@@ -165,7 +165,7 @@ impl BuildOrchestrator {
             
             // Build the component
             info!("[BUILD DECISION] Component '{}': ⚙️  Starting build", spec.component_name);
-            match self.build_single(spec.clone()).await {
+            match self.build_single(spec.clone(), &component_specs).await {
                 Ok(image_name) => {
                     info!("[BUILD DECISION] Component '{}': ✓ Successfully built new image '{}'", 
                         spec.component_name, image_name);
@@ -174,9 +174,10 @@ impl BuildOrchestrator {
                     // Update cache
                     if self.config.enable_cache {
                         let mut cache_guard = self.cache.lock().await;
-                        cache_guard.put(
+                        cache_guard.put_with_spec(
                             spec.component_name.clone(),
-                            CacheEntry::new(image_name.clone(), spec.clone()),
+                            image_name.clone(),
+                            spec.clone(),
                         ).await;
                     }
                     
@@ -237,7 +238,7 @@ impl BuildOrchestrator {
     }
 
     /// Build a single component
-    pub async fn build_single(&self, spec: ComponentBuildSpec) -> Result<String> {
+    pub async fn build_single(&self, spec: ComponentBuildSpec, all_specs: &[ComponentBuildSpec]) -> Result<String> {
         debug!("Building component: {}", spec.component_name);
         let start_time = Instant::now();
         
@@ -272,12 +273,6 @@ impl BuildOrchestrator {
                         return Err(e);
                     }
                     
-                    // Render artifacts (e.g., nginx.conf from templates)
-                    if let Err(e) = self.render_artifacts_for_component(&spec).await {
-                        error!("Failed to render artifacts for {}: {}", spec.component_name, e);
-                        return Err(e);
-                    }
-                    
                     // Determine the Docker build context directory
                     // The context directory is either explicitly specified or derived from the Dockerfile location
                     let docker_context = match &spec.build_type {
@@ -300,6 +295,15 @@ impl BuildOrchestrator {
                         }
                         _ => self.config.product_dir.clone(),
                     };
+                    
+                    debug!("Docker context for {}: {}", spec.component_name, docker_context.display());
+                    debug!("Dockerfile path: {}", dockerfile_path.display());
+                    
+                    // Render artifacts (e.g., nginx.conf from templates) to the Docker context
+                    if let Err(e) = self.render_artifacts_for_component(&spec, all_specs, &docker_context).await {
+                        error!("Failed to render artifacts for {}: {}", spec.component_name, e);
+                        return Err(e);
+                    }
                     
                     // Build the image
                     self.docker_client.build_image(
@@ -610,13 +614,14 @@ impl BuildOrchestrator {
     }
     
     /// Renders artifacts for a component before Docker build
-    async fn render_artifacts_for_component(&self, spec: &ComponentBuildSpec) -> Result<()> {
+    async fn render_artifacts_for_component(&self, spec: &ComponentBuildSpec, all_specs: &[ComponentBuildSpec], docker_context: &Path) -> Result<()> {
         use rush_build::{Artefact, BuildContext};
         use rush_toolchain::{Platform, ToolchainContext};
         use std::collections::HashMap;
         
         // Check if this component has artifacts to render
         if spec.artefacts.is_none() {
+            debug!("No artifacts to render for {}", spec.component_name);
             return Ok(());
         }
         
@@ -632,21 +637,29 @@ impl BuildOrchestrator {
         
         // For Ingress, we need special handling for services
         let services = if let rush_build::BuildType::Ingress { components, .. } = &spec.build_type {
-            // Build a simple services map for the ingress
+            // Build a services map using actual ports from component specs
             let mut services_map = HashMap::new();
             for component_name in components {
-                let service_spec = rush_build::ServiceSpec {
-                    name: component_name.clone(),
-                    host: component_name.clone(),
-                    port: 8080, // Default port
-                    target_port: 8080,
-                    mount_point: Some(format!("/{}", component_name)),
-                    domain: spec.domain.clone(),
-                    docker_host: format!("{}-{}", spec.product_name, component_name),
-                };
-                services_map.entry(spec.domain.clone())
-                    .or_insert_with(Vec::new)
-                    .push(service_spec);
+                // Find the actual component spec to get its resolved ports
+                let component_spec = all_specs.iter()
+                    .find(|s| &s.component_name == component_name);
+                    
+                if let Some(component_spec) = component_spec {
+                    let service_spec = rush_build::ServiceSpec {
+                        name: component_name.clone(),
+                        host: format!("{}-{}", spec.product_name, component_name),
+                        port: component_spec.port.unwrap_or(8080),
+                        target_port: component_spec.target_port.unwrap_or(80),
+                        mount_point: component_spec.mount_point.clone(),
+                        domain: spec.domain.clone(),
+                        docker_host: format!("{}-{}", spec.product_name, component_name),
+                    };
+                    services_map.entry(spec.domain.clone())
+                        .or_insert_with(Vec::new)
+                        .push(service_spec);
+                } else {
+                    warn!("Component {} referenced by ingress not found in specs", component_name);
+                }
             }
             services_map
         } else {
@@ -692,15 +705,51 @@ impl BuildOrchestrator {
                 // Render the artifact
                 match artefact.render(&context) {
                     Ok(content) => {
-                        let full_output_path = self.config.product_dir
+                        // 1. Write to .rush/artifacts for tracking and cache
+                        let rush_output_path = self.config.product_dir
                             .join(".rush")
                             .join("artifacts")
                             .join(&spec.component_name)
                             .join(output_path);
                             
-                        std::fs::create_dir_all(full_output_path.parent().unwrap())?;
-                        std::fs::write(&full_output_path, content)?;
-                        debug!("Rendered artifact: {}", full_output_path.display());
+                        std::fs::create_dir_all(rush_output_path.parent().unwrap())?;
+                        std::fs::write(&rush_output_path, &content)?;
+                        debug!("Rendered artifact to .rush: {}", rush_output_path.display());
+                        
+                        // 2. Write to component's dist directory for Docker build
+                        // Determine component directory based on build type
+                        let component_dir = match &spec.build_type {
+                            BuildType::TrunkWasm { location, .. } |
+                            BuildType::RustBinary { location, .. } |
+                            BuildType::Script { location, .. } |
+                            BuildType::Zola { location, .. } |
+                            BuildType::Book { location, .. } => {
+                                self.config.product_dir.join(location)
+                            }
+                            BuildType::Ingress { dockerfile_path, .. } => {
+                                // For Ingress, use the directory containing the Dockerfile
+                                let dockerfile_full = self.config.product_dir.join(dockerfile_path);
+                                dockerfile_full.parent()
+                                    .map(|p| p.to_path_buf())
+                                    .unwrap_or_else(|| self.config.product_dir.join(&spec.component_name))
+                            }
+                            _ => self.config.product_dir.join(&spec.component_name),
+                        };
+                        
+                        let dist_output_path = component_dir.join("dist").join(output_path);
+                        debug!("Component dir: {}", component_dir.display());
+                        debug!("Dist output path: {}", dist_output_path.display());
+                        
+                        std::fs::create_dir_all(dist_output_path.parent().unwrap())?;
+                        std::fs::write(&dist_output_path, &content)?;
+                        info!("Rendered artifact to component dist: {}", dist_output_path.display());
+                        
+                        // Verify the file was written
+                        if dist_output_path.exists() {
+                            debug!("Verified artifact exists at: {}", dist_output_path.display());
+                        } else {
+                            error!("WARNING: Artifact was NOT written to: {}", dist_output_path.display());
+                        }
                     }
                     Err(e) => {
                         warn!("Failed to render artifact {}: {}", input_path, e);
