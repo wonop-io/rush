@@ -274,23 +274,66 @@ impl BuildOrchestrator {
                     }
                     
                     // Determine the Docker build context directory
-                    // The context directory is either explicitly specified or derived from the Dockerfile location
+                    // When context_dir is specified, it's relative to the component's location
+                    // When not specified, use the product directory as context (for backward compatibility)
                     let docker_context = match &spec.build_type {
-                        BuildType::TrunkWasm { context_dir, .. }
-                        | BuildType::DixiousWasm { context_dir, .. }
-                        | BuildType::RustBinary { context_dir, .. }
-                        | BuildType::Book { context_dir, .. }
-                        | BuildType::Zola { context_dir, .. }
-                        | BuildType::Script { context_dir, .. }
-                        | BuildType::Ingress { context_dir, .. } => {
+                        BuildType::TrunkWasm { context_dir, location, .. } => {
                             if let Some(ctx) = context_dir {
-                                // Explicit context directory specified
+                                // context_dir is relative to the component's location
+                                let component_base = self.config.product_dir.join(location);
+                                component_base.join(ctx)
+                            } else {
+                                // Default to product directory for backward compatibility
+                                self.config.product_dir.clone()
+                            }
+                        }
+                        BuildType::DixiousWasm { context_dir, location, .. } => {
+                            if let Some(ctx) = context_dir {
+                                let component_base = self.config.product_dir.join(location);
+                                component_base.join(ctx)
+                            } else {
+                                self.config.product_dir.clone()
+                            }
+                        }
+                        BuildType::RustBinary { context_dir, location, .. } => {
+                            if let Some(ctx) = context_dir {
+                                let component_base = self.config.product_dir.join(location);
+                                component_base.join(ctx)
+                            } else {
+                                self.config.product_dir.clone()
+                            }
+                        }
+                        BuildType::Book { context_dir, location, .. } => {
+                            if let Some(ctx) = context_dir {
+                                let component_base = self.config.product_dir.join(location);
+                                component_base.join(ctx)
+                            } else {
+                                self.config.product_dir.clone()
+                            }
+                        }
+                        BuildType::Zola { context_dir, location, .. } => {
+                            if let Some(ctx) = context_dir {
+                                let component_base = self.config.product_dir.join(location);
+                                component_base.join(ctx)
+                            } else {
+                                self.config.product_dir.clone()
+                            }
+                        }
+                        BuildType::Script { context_dir, location, .. } => {
+                            if let Some(ctx) = context_dir {
+                                let component_base = self.config.product_dir.join(location);
+                                component_base.join(ctx)
+                            } else {
+                                self.config.product_dir.clone()
+                            }
+                        }
+                        BuildType::Ingress { context_dir, .. } => {
+                            // Ingress doesn't have a location field, so context_dir is relative to product
+                            if let Some(ctx) = context_dir {
                                 self.config.product_dir.join(ctx)
                             } else {
-                                // Use the directory containing the Dockerfile as context
-                                dockerfile_path.parent()
-                                    .map(|p| p.to_path_buf())
-                                    .unwrap_or_else(|| self.config.product_dir.clone())
+                                // Default to product directory
+                                self.config.product_dir.clone()
                             }
                         }
                         _ => self.config.product_dir.clone(),
@@ -384,12 +427,15 @@ impl BuildOrchestrator {
         debug!("Preparing Rust artifacts for {}", spec.component_name);
         
         // Copy Cargo.toml and source files
-        // Get source directory from build type
-        let source_dir = if let BuildType::RustBinary { context_dir, .. } = &spec.build_type {
+        // Get source directory from build type - context_dir is relative to component location
+        let source_dir = if let BuildType::RustBinary { context_dir, location, .. } = &spec.build_type {
+            let component_base = self.config.product_dir.join(location);
             if let Some(ctx) = context_dir {
-                self.config.product_dir.join(ctx)
+                // context_dir is relative to the component's location
+                component_base.join(ctx)
             } else {
-                self.config.product_dir.join(&spec.component_name)
+                // Default to the component's directory itself
+                component_base
             }
         } else {
             self.config.product_dir.join(&spec.component_name)
@@ -422,12 +468,15 @@ impl BuildOrchestrator {
         debug!("Preparing WASM artifacts for {}", spec.component_name);
         
         // Copy Trunk.toml and source files
-        // Get source directory from build type
-        let source_dir = if let BuildType::TrunkWasm { context_dir, .. } = &spec.build_type {
+        // Get source directory from build type - context_dir is relative to component location
+        let source_dir = if let BuildType::TrunkWasm { context_dir, location, .. } = &spec.build_type {
+            let component_base = self.config.product_dir.join(location);
             if let Some(ctx) = context_dir {
-                self.config.product_dir.join(ctx)
+                // context_dir is relative to the component's location
+                component_base.join(ctx)
             } else {
-                self.config.product_dir.join(&spec.component_name)
+                // Default to the component's directory itself
+                component_base
             }
         } else {
             self.config.product_dir.join(&spec.component_name)
@@ -716,28 +765,10 @@ impl BuildOrchestrator {
                         std::fs::write(&rush_output_path, &content)?;
                         debug!("Rendered artifact to .rush: {}", rush_output_path.display());
                         
-                        // 2. Write to component's dist directory for Docker build
-                        // Determine component directory based on build type
-                        let component_dir = match &spec.build_type {
-                            BuildType::TrunkWasm { location, .. } |
-                            BuildType::RustBinary { location, .. } |
-                            BuildType::Script { location, .. } |
-                            BuildType::Zola { location, .. } |
-                            BuildType::Book { location, .. } => {
-                                self.config.product_dir.join(location)
-                            }
-                            BuildType::Ingress { dockerfile_path, .. } => {
-                                // For Ingress, use the directory containing the Dockerfile
-                                let dockerfile_full = self.config.product_dir.join(dockerfile_path);
-                                dockerfile_full.parent()
-                                    .map(|p| p.to_path_buf())
-                                    .unwrap_or_else(|| self.config.product_dir.join(&spec.component_name))
-                            }
-                            _ => self.config.product_dir.join(&spec.component_name),
-                        };
-                        
-                        let dist_output_path = component_dir.join("dist").join(output_path);
-                        debug!("Component dir: {}", component_dir.display());
+                        // 2. Write to the Docker build context's dist directory
+                        // Use the docker_context that was passed in, which is already correctly calculated
+                        let dist_output_path = docker_context.join("dist").join(output_path);
+                        debug!("Docker context: {}", docker_context.display());
                         debug!("Dist output path: {}", dist_output_path.display());
                         
                         std::fs::create_dir_all(dist_output_path.parent().unwrap())?;
