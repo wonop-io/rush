@@ -2,6 +2,7 @@ frontend:
   ssr: false
   build_type: "TrunkWasm"
   location: "frontend/webui"
+  context_dir: ".."
   dockerfile: "frontend/Dockerfile"
   color: "purple"
   mount_point: "/"
@@ -38,17 +39,16 @@ stripe:
   color: "orange"
   persist_data: false
   env:
-    STRIPE_WEBHOOK_URL: "http://localhost:8080/api/stripe/webhook"
+    STRIPE_WEBHOOK_URL: "http://localhost:9000/api/stripe/webhook"
     # Set STRIPE_API_KEY in your .env file or secrets to avoid interactive auth
     # STRIPE_API_KEY: "sk_test_..."
-  command: "listen --forward-to http://localhost:8080/api/stripe/webhook --skip-verify"
+  command: "listen --forward-to http://localhost:9000/api/stripe/webhook --skip-verify"
 
 ingress:
   build_type: "Ingress"
   port: 9000
   target_port: 80
   location: "./ingress"
-  context_dir: ../target
   dockerfile: "./ingress/Dockerfile"
   color: "green"
   components:

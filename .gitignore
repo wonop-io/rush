@@ -47,6 +47,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.env.secrets
 
 target/
 target/**

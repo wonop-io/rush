@@ -274,57 +274,57 @@ impl BuildOrchestrator {
                     }
                     
                     // Determine the Docker build context directory
-                    // When context_dir is specified, it's relative to the component's location
-                    // When not specified, use the product directory as context (for backward compatibility)
+                    // Context is always relative to the component's location directory
+                    // When context_dir is omitted, defaults to the component's location
                     let docker_context = match &spec.build_type {
                         BuildType::TrunkWasm { context_dir, location, .. } => {
+                            let component_base = self.config.product_dir.join(location);
                             if let Some(ctx) = context_dir {
                                 // context_dir is relative to the component's location
-                                let component_base = self.config.product_dir.join(location);
                                 component_base.join(ctx)
                             } else {
-                                // Default to product directory for backward compatibility
-                                self.config.product_dir.clone()
+                                // Default to the component's directory
+                                component_base
                             }
                         }
                         BuildType::DixiousWasm { context_dir, location, .. } => {
+                            let component_base = self.config.product_dir.join(location);
                             if let Some(ctx) = context_dir {
-                                let component_base = self.config.product_dir.join(location);
                                 component_base.join(ctx)
                             } else {
-                                self.config.product_dir.clone()
+                                component_base
                             }
                         }
                         BuildType::RustBinary { context_dir, location, .. } => {
+                            let component_base = self.config.product_dir.join(location);
                             if let Some(ctx) = context_dir {
-                                let component_base = self.config.product_dir.join(location);
                                 component_base.join(ctx)
                             } else {
-                                self.config.product_dir.clone()
+                                component_base
                             }
                         }
                         BuildType::Book { context_dir, location, .. } => {
+                            let component_base = self.config.product_dir.join(location);
                             if let Some(ctx) = context_dir {
-                                let component_base = self.config.product_dir.join(location);
                                 component_base.join(ctx)
                             } else {
-                                self.config.product_dir.clone()
+                                component_base
                             }
                         }
                         BuildType::Zola { context_dir, location, .. } => {
+                            let component_base = self.config.product_dir.join(location);
                             if let Some(ctx) = context_dir {
-                                let component_base = self.config.product_dir.join(location);
                                 component_base.join(ctx)
                             } else {
-                                self.config.product_dir.clone()
+                                component_base
                             }
                         }
                         BuildType::Script { context_dir, location, .. } => {
+                            let component_base = self.config.product_dir.join(location);
                             if let Some(ctx) = context_dir {
-                                let component_base = self.config.product_dir.join(location);
                                 component_base.join(ctx)
                             } else {
-                                self.config.product_dir.clone()
+                                component_base
                             }
                         }
                         BuildType::Ingress { context_dir, .. } => {
