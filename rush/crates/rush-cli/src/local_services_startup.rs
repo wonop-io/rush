@@ -161,6 +161,13 @@ fn register_local_service(
         // Parse service type
         let service_type_enum = parse_service_type(service_type);
         
+        // Create default volumes for services that need persistence
+        let volumes = if *persist_data {
+            create_default_volumes(&service_type_enum, &data_dir, &spec.component_name)
+        } else {
+            vec![]
+        };
+        
         // Create configuration for Docker-based service
         let config = LocalServiceConfig {
             name: spec.component_name.clone(),
@@ -169,7 +176,7 @@ fn register_local_service(
             persist_data: *persist_data,
             env: env.clone().unwrap_or_default(),
             ports: vec![], // TODO: Extract from spec
-            volumes: vec![], // TODO: Extract from spec
+            volumes,
             docker_args: vec![],
             health_check: health_check.clone(),
             init_scripts: init_scripts.clone().unwrap_or_default(),
@@ -233,5 +240,91 @@ fn parse_service_type(service_type: &str) -> LocalServiceType {
         "stripe-cli" | "stripe" => LocalServiceType::StripeCLI,
         "mailhog" => LocalServiceType::MailHog,
         custom => LocalServiceType::Custom(custom.to_string()),
+    }
+}
+
+/// Create default volume mappings for services that need data persistence
+fn create_default_volumes(
+    service_type: &LocalServiceType,
+    data_dir: &PathBuf,
+    component_name: &str,
+) -> Vec<rush_local_services::VolumeMapping> {
+    use rush_local_services::VolumeMapping;
+    
+    match service_type {
+        LocalServiceType::PostgreSQL => {
+            // Create PostgreSQL data directory
+            let postgres_data = data_dir.join(component_name).join("postgres.db");
+            std::fs::create_dir_all(&postgres_data).ok();
+            
+            vec![VolumeMapping::new(
+                postgres_data.to_string_lossy().to_string(),
+                "/var/lib/postgresql/data".to_string(),
+                false, // Not read-only
+            )]
+        }
+        LocalServiceType::MySQL => {
+            // Create MySQL data directory
+            let mysql_data = data_dir.join(component_name).join("mysql.db");
+            std::fs::create_dir_all(&mysql_data).ok();
+            
+            vec![VolumeMapping::new(
+                mysql_data.to_string_lossy().to_string(),
+                "/var/lib/mysql".to_string(),
+                false,
+            )]
+        }
+        LocalServiceType::MongoDB => {
+            // Create MongoDB data directory
+            let mongo_data = data_dir.join(component_name).join("mongo.db");
+            std::fs::create_dir_all(&mongo_data).ok();
+            
+            vec![VolumeMapping::new(
+                mongo_data.to_string_lossy().to_string(),
+                "/data/db".to_string(),
+                false,
+            )]
+        }
+        LocalServiceType::Redis => {
+            // Create Redis data directory
+            let redis_data = data_dir.join(component_name).join("redis.data");
+            std::fs::create_dir_all(&redis_data).ok();
+            
+            vec![VolumeMapping::new(
+                redis_data.to_string_lossy().to_string(),
+                "/data".to_string(),
+                false,
+            )]
+        }
+        LocalServiceType::MinIO => {
+            // Create MinIO data directory
+            let minio_data = data_dir.join(component_name).join("minio.data");
+            std::fs::create_dir_all(&minio_data).ok();
+            
+            vec![VolumeMapping::new(
+                minio_data.to_string_lossy().to_string(),
+                "/data".to_string(),
+                false,
+            )]
+        }
+        LocalServiceType::LocalStack => {
+            // LocalStack needs Docker socket and optional data persistence
+            let localstack_data = data_dir.join(component_name).join("localstack.data");
+            std::fs::create_dir_all(&localstack_data).ok();
+            
+            vec![
+                VolumeMapping::new(
+                    "/var/run/docker.sock".to_string(),
+                    "/var/run/docker.sock".to_string(),
+                    false,
+                ),
+                VolumeMapping::new(
+                    localstack_data.to_string_lossy().to_string(),
+                    "/tmp/localstack".to_string(),
+                    false,
+                ),
+            ]
+        }
+        _ => vec![], // No default volumes for other services
     }
 }
