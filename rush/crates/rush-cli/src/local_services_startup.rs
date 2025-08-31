@@ -255,7 +255,9 @@ fn create_default_volumes(
         LocalServiceType::PostgreSQL => {
             // Create PostgreSQL data directory
             let postgres_data = data_dir.join(component_name).join("postgres.db");
-            std::fs::create_dir_all(&postgres_data).ok();
+            if let Err(e) = std::fs::create_dir_all(&postgres_data) {
+                eprintln!("Warning: Failed to create PostgreSQL data directory at {:?}: {}", postgres_data, e);
+            }
             
             vec![VolumeMapping::new(
                 postgres_data.to_string_lossy().to_string(),
@@ -266,7 +268,9 @@ fn create_default_volumes(
         LocalServiceType::MySQL => {
             // Create MySQL data directory
             let mysql_data = data_dir.join(component_name).join("mysql.db");
-            std::fs::create_dir_all(&mysql_data).ok();
+            if let Err(e) = std::fs::create_dir_all(&mysql_data) {
+                eprintln!("Warning: Failed to create MySQL data directory at {:?}: {}", mysql_data, e);
+            }
             
             vec![VolumeMapping::new(
                 mysql_data.to_string_lossy().to_string(),
@@ -277,7 +281,9 @@ fn create_default_volumes(
         LocalServiceType::MongoDB => {
             // Create MongoDB data directory
             let mongo_data = data_dir.join(component_name).join("mongo.db");
-            std::fs::create_dir_all(&mongo_data).ok();
+            if let Err(e) = std::fs::create_dir_all(&mongo_data) {
+                eprintln!("Warning: Failed to create MongoDB data directory at {:?}: {}", mongo_data, e);
+            }
             
             vec![VolumeMapping::new(
                 mongo_data.to_string_lossy().to_string(),
@@ -288,7 +294,9 @@ fn create_default_volumes(
         LocalServiceType::Redis => {
             // Create Redis data directory
             let redis_data = data_dir.join(component_name).join("redis.data");
-            std::fs::create_dir_all(&redis_data).ok();
+            if let Err(e) = std::fs::create_dir_all(&redis_data) {
+                eprintln!("Warning: Failed to create Redis data directory at {:?}: {}", redis_data, e);
+            }
             
             vec![VolumeMapping::new(
                 redis_data.to_string_lossy().to_string(),
@@ -299,7 +307,9 @@ fn create_default_volumes(
         LocalServiceType::MinIO => {
             // Create MinIO data directory
             let minio_data = data_dir.join(component_name).join("minio.data");
-            std::fs::create_dir_all(&minio_data).ok();
+            if let Err(e) = std::fs::create_dir_all(&minio_data) {
+                eprintln!("Warning: Failed to create MinIO data directory at {:?}: {}", minio_data, e);
+            }
             
             vec![VolumeMapping::new(
                 minio_data.to_string_lossy().to_string(),
@@ -308,9 +318,15 @@ fn create_default_volumes(
             )]
         }
         LocalServiceType::LocalStack => {
-            // LocalStack needs Docker socket and optional data persistence
+            // LocalStack needs Docker socket and data persistence
             let localstack_data = data_dir.join(component_name).join("localstack.data");
-            std::fs::create_dir_all(&localstack_data).ok();
+            
+            // Ensure the directory exists - log error if creation fails
+            if let Err(e) = std::fs::create_dir_all(&localstack_data) {
+                eprintln!("Warning: Failed to create LocalStack data directory at {:?}: {}", localstack_data, e);
+            } else {
+                println!("Created LocalStack data directory at: {:?}", localstack_data);
+            }
             
             vec![
                 VolumeMapping::new(
@@ -320,7 +336,7 @@ fn create_default_volumes(
                 ),
                 VolumeMapping::new(
                     localstack_data.to_string_lossy().to_string(),
-                    "/tmp/localstack".to_string(),
+                    "/var/lib/localstack".to_string(),  // Correct LocalStack data directory
                     false,
                 ),
             ]

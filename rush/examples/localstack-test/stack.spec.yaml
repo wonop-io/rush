@@ -1,0 +1,40 @@
+# LocalStack Test Configuration
+# This example demonstrates using LocalStack for AWS services emulation
+
+aws_local:
+  build_type: "LocalService"
+  service_type: "localstack"
+  version: "3.0"
+  persist_data: true
+  env:
+    # Configure which AWS services to enable
+    SERVICES: "s3,dynamodb,sqs,sns,lambda,secretsmanager"
+    
+    # AWS configuration
+    DEFAULT_REGION: "us-east-1"
+    AWS_ACCESS_KEY_ID: "test"
+    AWS_SECRET_ACCESS_KEY: "test"
+    
+    # LocalStack configuration
+    DEBUG: "0"
+    DATA_DIR: "/var/lib/localstack"
+    DOCKER_HOST: "unix:///var/run/docker.sock"
+    
+    # Persistence configuration
+    PERSISTENCE: "1"
+    SNAPSHOT_SAVE_STRATEGY: "ON_SHUTDOWN"
+    SNAPSHOT_LOAD_STRATEGY: "ON_STARTUP"
+    
+  health_check: "curl -f http://localhost:4566/_localstack/health || exit 1"
+
+# Example application that uses LocalStack
+test_app:
+  build_type: "RustBinary"
+  location: "app"
+  dockerfile: "app/Dockerfile"
+  env:
+    # These will be injected by LocalStack service
+    AWS_ENDPOINT_URL: "will be injected"
+    AWS_DEFAULT_REGION: "us-east-1"
+    AWS_ACCESS_KEY_ID: "test"
+    AWS_SECRET_ACCESS_KEY: "test"
