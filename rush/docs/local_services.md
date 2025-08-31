@@ -53,6 +53,8 @@ When you run `rush <product> dev`, Rush will:
   health_check: "<command>"         # Optional: Custom health check command
   init_scripts:                     # Optional: Initialization scripts
     - "SQL or shell commands"
+  post_startup_tasks:               # Optional: Commands to run after service is healthy
+    - "Commands to run in container"
   command: "<custom_command>"       # Optional: Override default container command
   depends_on:                       # Optional: Dependencies on other services
     - other_service
@@ -222,6 +224,14 @@ aws_local:
     AWS_SECRET_ACCESS_KEY: "test"
     DOCKER_HOST: "unix:///var/run/docker.sock"
   health_check: "curl -f http://localhost:4566/_localstack/health"
+  post_startup_tasks:
+    # Create S3 buckets
+    - "awslocal s3 mb s3://my-bucket --region us-east-1 || true"
+    - "awslocal s3 mb s3://uploads --region us-east-1 || true"
+    # Create SQS queues
+    - "awslocal sqs create-queue --queue-name my-queue --region us-east-1 || true"
+    # Create DynamoDB tables
+    - "awslocal dynamodb create-table --table-name users --attribute-definitions AttributeName=id,AttributeType=S --key-schema AttributeName=id,KeyType=HASH --billing-mode PAY_PER_REQUEST --region us-east-1 || true"
 ```
 
 **Injected Environment Variables:**
@@ -230,6 +240,8 @@ aws_local:
 - `AWS_DEFAULT_REGION`: `us-east-1`
 
 **Data Location:** `./target/local-services/aws_local/localstack.data/`
+
+**Note:** LocalStack includes a default post-startup task to create a `local-bucket` S3 bucket. You can override or extend this with your own `post_startup_tasks`.
 
 ### Stripe CLI
 
@@ -357,6 +369,103 @@ r = redis.from_url(os.environ['REDIS_URL'])
 # S3/MinIO
 s3 = boto3.client('s3', endpoint_url=os.environ['S3_ENDPOINT'])
 ```
+
+## Post-Startup Tasks
+
+Post-startup tasks are commands that run inside the container after the service is healthy. This is useful for creating initial resources, setting up data structures, or configuring the service.
+
+### How It Works
+
+1. Service container starts
+2. Rush waits for the service to be healthy
+3. Post-startup tasks execute in order
+4. Each task runs via `docker exec` with `sh -c`
+5. Task failures are logged but don't stop the process
+
+### Examples
+
+#### Creating AWS Resources in LocalStack
+
+```yaml
+localstack:
+  build_type: "LocalService"
+  service_type: "localstack"
+  post_startup_tasks:
+    # Create S3 buckets
+    - "awslocal s3 mb s3://data-bucket || true"
+    - "awslocal s3api put-bucket-cors --bucket data-bucket --cors-configuration file:///tmp/cors.json || true"
+    
+    # Create SQS queues with attributes
+    - "awslocal sqs create-queue --queue-name events --attributes VisibilityTimeout=60 || true"
+    
+    # Create DynamoDB tables
+    - |
+      awslocal dynamodb create-table \
+        --table-name sessions \
+        --attribute-definitions \
+          AttributeName=session_id,AttributeType=S \
+          AttributeName=user_id,AttributeType=S \
+        --key-schema \
+          AttributeName=session_id,KeyType=HASH \
+        --global-secondary-indexes \
+          'IndexName=UserIndex,Keys=[{AttributeName=user_id,KeyType=HASH}],Projection={ProjectionType=ALL}' \
+        --billing-mode PAY_PER_REQUEST || true
+```
+
+#### Setting up MinIO Buckets and Policies
+
+```yaml
+minio:
+  build_type: "LocalService"
+  service_type: "minio"
+  post_startup_tasks:
+    # Configure mc (MinIO client)
+    - "mc alias set local http://localhost:9000 minioadmin minioadmin123"
+    
+    # Create buckets
+    - "mc mb local/uploads || true"
+    - "mc mb local/backups || true"
+    
+    # Set bucket policies
+    - "mc anonymous set download local/uploads || true"
+    
+    # Create initial directory structure
+    - "mc cp /dev/null local/uploads/images/.keep || true"
+    - "mc cp /dev/null local/uploads/documents/.keep || true"
+```
+
+#### Initializing Redis Data Structures
+
+```yaml
+redis:
+  build_type: "LocalService"
+  service_type: "redis"
+  post_startup_tasks:
+    # Set initial configuration
+    - "redis-cli CONFIG SET maxmemory 256mb"
+    - "redis-cli CONFIG SET maxmemory-policy allkeys-lru"
+    
+    # Create initial data structures
+    - "redis-cli SADD feature:flags 'new-ui' 'beta-api' || true"
+    - "redis-cli HSET config:app version 1.0.0 environment development || true"
+```
+
+### Best Practices
+
+1. **Use `|| true`**: Add `|| true` to commands to prevent failures from stopping the process
+2. **Idempotent Commands**: Make tasks idempotent so they can run multiple times safely
+3. **Check Before Create**: Use conditionals or ignore errors for resources that might already exist
+4. **Keep It Simple**: Complex setup should be in init scripts or application code
+5. **Log Output**: Commands that produce output will have it logged for debugging
+
+### Difference from Init Scripts
+
+| Feature | Init Scripts | Post-Startup Tasks |
+|---------|--------------|-------------------|
+| **When** | During container startup | After service is healthy |
+| **Purpose** | Initialize the service itself | Create resources in the service |
+| **Examples** | Database schema, config files | S3 buckets, queues, tables |
+| **Failure Behavior** | May prevent startup | Logged but continues |
 
 ## Health Checks
 

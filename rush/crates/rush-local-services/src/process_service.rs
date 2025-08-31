@@ -341,6 +341,12 @@ impl LocalService for ProcessLocalService {
         }
     }
 
+    async fn run_post_startup_tasks(&mut self) -> Result<()> {
+        // Process services typically don't have post-startup tasks
+        // This is mainly for container-based services
+        Ok(())
+    }
+    
     async fn generated_env_vars(&self) -> Result<HashMap<String, String>> {
         // Most process services don't generate regular env vars
         Ok(HashMap::new())

@@ -123,6 +123,8 @@ pub enum BuildType {
         health_check: Option<String>,
         /// Initialization scripts or commands
         init_scripts: Option<Vec<String>>,
+        /// Post-startup tasks to run after service is healthy
+        post_startup_tasks: Option<Vec<String>>,
         /// Dependencies on other local services
         depends_on: Option<Vec<String>>,
         /// Command override

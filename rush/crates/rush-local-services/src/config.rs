@@ -40,6 +40,10 @@ pub struct LocalServiceConfig {
 
     /// Initialization scripts or commands
     pub init_scripts: Vec<String>,
+    
+    /// Post-startup tasks to run after the service is healthy
+    /// These are commands that will be executed inside the container
+    pub post_startup_tasks: Vec<String>,
 
     /// Dependencies on other local services
     pub depends_on: Vec<String>,
@@ -67,6 +71,7 @@ impl LocalServiceConfig {
             persist_data: true,
             health_check: None,
             init_scripts: Vec::new(),
+            post_startup_tasks: Vec::new(),
             depends_on: Vec::new(),
             command: None,
             container_name: None,
@@ -195,6 +200,11 @@ impl ServiceDefaults {
             "/var/run/docker.sock".to_string(),
             false,
         ));
+        // Add default post-startup task to create a local bucket
+        // This can be overridden in the stack.spec.yaml
+        config.post_startup_tasks.push(
+            "awslocal s3 mb s3://local-bucket --region us-east-1 || true".to_string()
+        );
         config.with_defaults()
     }
 

@@ -612,6 +612,7 @@ impl ComponentBuildSpec {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
             init_scripts: Self::parse_string_sequence(yaml_section, "init_scripts"),
+            post_startup_tasks: Self::parse_string_sequence(yaml_section, "post_startup_tasks"),
             depends_on: Self::parse_string_sequence(yaml_section, "depends_on"),
             command: yaml_section
                 .get("command")
@@ -812,6 +813,7 @@ mod tests {
                 env,
                 health_check,
                 init_scripts,
+                post_startup_tasks,
                 depends_on,
                 command,
             } => {
@@ -868,6 +870,7 @@ mod tests {
                 env,
                 health_check,
                 init_scripts,
+                post_startup_tasks,
                 depends_on,
                 command,
             } => {

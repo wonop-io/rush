@@ -146,6 +146,7 @@ fn register_local_service(
         env,
         health_check,
         init_scripts,
+        post_startup_tasks,
         command,
         ..
     } = &spec.build_type
@@ -180,6 +181,7 @@ fn register_local_service(
             docker_args: vec![],
             health_check: health_check.clone(),
             init_scripts: init_scripts.clone().unwrap_or_default(),
+            post_startup_tasks: post_startup_tasks.clone().unwrap_or_default(),
             depends_on: vec![], // TODO: Extract dependencies
             command: command.clone(),
             network_mode: Some(network_name.clone()),

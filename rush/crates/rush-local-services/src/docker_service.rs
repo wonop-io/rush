@@ -395,6 +395,52 @@ impl LocalService for DockerLocalService {
         self.check_container_health().await
     }
     
+    async fn run_post_startup_tasks(&mut self) -> Result<()> {
+        if self.config.post_startup_tasks.is_empty() {
+            return Ok(());
+        }
+        
+        let container_id = match &self.container_id {
+            Some(id) => id.clone(),
+            None => {
+                return Err(Error::Docker(format!(
+                    "Cannot run post-startup tasks for {}: container not running",
+                    self.name
+                )));
+            }
+        };
+        
+        self.output.info(format!("Running post-startup tasks for {}", self.name)).await;
+        
+        for task in &self.config.post_startup_tasks.clone() {
+            self.output.info(format!("⏺ Executing: {}", task)).await;
+            
+            // Split the command into parts for execution
+            // Use shell -c to handle complex commands with pipes, redirects, etc.
+            let command = vec!["sh", "-c", task];
+            
+            match self.docker_client.exec_in_container(&container_id, &command).await {
+                Ok(output) => {
+                    // Log the output if any
+                    if !output.is_empty() {
+                        for line in output.lines() {
+                            self.output.info(format!("  ⎿  {}", line)).await;
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Check if the error is because the resource already exists
+                    // For S3 buckets, we use "|| true" in the command to ignore errors
+                    // But log as info for other types of errors (they may be expected)
+                    self.output.info(format!("  ⎿  Task failed (may be expected): {}", e)).await;
+                }
+            }
+        }
+        
+        self.output.info(format!("Post-startup tasks completed for {}", self.name)).await;
+        Ok(())
+    }
+    
     async fn generated_env_vars(&self) -> Result<HashMap<String, String>> {
         let mut vars = HashMap::new();
         

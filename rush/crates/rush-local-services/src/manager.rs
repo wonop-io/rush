@@ -187,7 +187,21 @@ impl LocalServiceManager {
         
         self.output.info("All services are healthy").await;
         
+        // Run post-startup tasks for each service after they're all healthy
+        self.output.info("Running post-startup tasks for services").await;
+        for service in &mut self.services {
+            if let Err(e) = service.run_post_startup_tasks().await {
+                self.output.error(format!(
+                    "Failed to run post-startup tasks for {}: {}",
+                    service.name(),
+                    e
+                )).await;
+                // Continue with other services even if one fails
+            }
+        }
+        
         // Collect environment variables and secrets after all services are healthy
+        // and post-startup tasks have been completed
         // This ensures services like Stripe have had time to generate their secrets
         self.collect_env_vars().await?;
         
