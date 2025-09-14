@@ -219,6 +219,24 @@ impl DockerLocalService {
                     .unwrap_or(9000);
                 Some(format!("http://{}:{}", self.get_container_name(), port))
             }
+            LocalServiceType::Prometheus => {
+                let port = self.config.ports.first()
+                    .map(|p| p.host_port)
+                    .unwrap_or(9090);
+                Some(format!("http://{}:{}", self.get_container_name(), port))
+            }
+            LocalServiceType::Grafana => {
+                let port = self.config.ports.first()
+                    .map(|p| p.host_port)
+                    .unwrap_or(3000);
+                Some(format!("http://{}:{}", self.get_container_name(), port))
+            }
+            LocalServiceType::Tempo => {
+                let port = self.config.ports.first()
+                    .map(|p| p.host_port)
+                    .unwrap_or(3200);
+                Some(format!("http://{}:{}", self.get_container_name(), port))
+            }
             _ => None,
         }
     }
@@ -468,6 +486,35 @@ impl LocalService for DockerLocalService {
                         secret_key.clone()
                     );
                 }
+            }
+            LocalServiceType::Prometheus => {
+                if let Some(url) = self.generate_connection_string() {
+                    vars.insert("PROMETHEUS_ENDPOINT".to_string(), url);
+                }
+            }
+            LocalServiceType::Grafana => {
+                // Grafana admin credentials
+                if let Some(user) = self.config.env.get("GF_SECURITY_ADMIN_USER") {
+                    vars.insert("GRAFANA_ADMIN_USER".to_string(), user.clone());
+                }
+                if let Some(pass) = self.config.env.get("GF_SECURITY_ADMIN_PASSWORD") {
+                    vars.insert("GRAFANA_ADMIN_PASSWORD".to_string(), pass.clone());
+                }
+            }
+            LocalServiceType::Tempo => {
+                if let Some(url) = self.generate_connection_string() {
+                    vars.insert("TEMPO_ENDPOINT".to_string(), url.clone());
+                }
+
+                // OTLP endpoints for tracing
+                vars.insert(
+                    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT".to_string(),
+                    format!("http://{}:4318/v1/traces", self.get_container_name())
+                );
+                vars.insert(
+                    "OTEL_EXPORTER_OTLP_ENDPOINT".to_string(),
+                    format!("http://{}:4317", self.get_container_name())
+                );
             }
             _ => {}
         }

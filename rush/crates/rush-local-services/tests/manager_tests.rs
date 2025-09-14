@@ -46,7 +46,11 @@ impl LocalService for MockLocalService {
     async fn generated_env_secrets(&self) -> rush_core::error::Result<HashMap<String, String>> {
         Ok(HashMap::new())
     }
-    
+
+    async fn run_post_startup_tasks(&mut self) -> rush_core::error::Result<()> {
+        Ok(())
+    }
+
     fn name(&self) -> &str {
         &self.name
     }

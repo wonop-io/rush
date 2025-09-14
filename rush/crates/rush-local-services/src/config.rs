@@ -169,6 +169,77 @@ impl LocalServiceConfig {
                     self.command = Some("server /data --console-address \":9001\"".to_string());
                 }
             }
+            LocalServiceType::Prometheus => {
+                // Default command with basic configuration
+                if self.command.is_none() {
+                    self.command = Some(concat!(
+                        "--config.file=/etc/prometheus/prometheus.yml ",
+                        "--storage.tsdb.path=/prometheus ",
+                        "--web.console.libraries=/usr/share/prometheus/console_libraries ",
+                        "--web.console.templates=/usr/share/prometheus/consoles ",
+                        "--storage.tsdb.retention.time=15d ",
+                        "--web.enable-lifecycle"
+                    ).to_string());
+                }
+
+                // Default volumes for configuration and data
+                if self.persist_data && self.volumes.is_empty() {
+                    self.volumes.push(VolumeMapping::new(
+                        "./data/prometheus".to_string(),
+                        "/prometheus".to_string(),
+                        false
+                    ));
+                }
+            }
+            LocalServiceType::Grafana => {
+                // Default environment variables
+                self.env.entry("GF_SECURITY_ADMIN_USER".to_string())
+                    .or_insert("admin".to_string());
+                self.env.entry("GF_SECURITY_ADMIN_PASSWORD".to_string())
+                    .or_insert("admin".to_string());
+                self.env.entry("GF_USERS_ALLOW_SIGN_UP".to_string())
+                    .or_insert("false".to_string());
+                self.env.entry("GF_LOG_LEVEL".to_string())
+                    .or_insert("info".to_string());
+
+                // Default volumes for data persistence
+                if self.persist_data && self.volumes.is_empty() {
+                    self.volumes.push(VolumeMapping::new(
+                        "./data/grafana".to_string(),
+                        "/var/lib/grafana".to_string(),
+                        false
+                    ));
+                }
+            }
+            LocalServiceType::Tempo => {
+                // Default command with basic configuration
+                if self.command.is_none() {
+                    self.command = Some("-config.file=/etc/tempo/tempo.yaml".to_string());
+                }
+
+                // Default volumes for configuration and data
+                if self.persist_data && self.volumes.is_empty() {
+                    self.volumes.push(VolumeMapping::new(
+                        "./data/tempo".to_string(),
+                        "/var/tempo".to_string(),
+                        false
+                    ));
+                }
+
+                // Additional ports for different protocols
+                if !self.ports.iter().any(|p| p.container_port == 14268) {
+                    self.ports.push(PortMapping::new(14268, 14268)); // Jaeger ingest
+                }
+                if !self.ports.iter().any(|p| p.container_port == 9411) {
+                    self.ports.push(PortMapping::new(9411, 9411)); // Zipkin
+                }
+                if !self.ports.iter().any(|p| p.container_port == 4317) {
+                    self.ports.push(PortMapping::new(4317, 4317)); // OTLP gRPC
+                }
+                if !self.ports.iter().any(|p| p.container_port == 4318) {
+                    self.ports.push(PortMapping::new(4318, 4318)); // OTLP HTTP
+                }
+            }
             _ => {}
         }
 
@@ -213,5 +284,30 @@ impl ServiceDefaults {
         config.command = Some(format!("listen --forward-to {webhook_url}"));
         config.network_mode = Some("host".to_string());
         config
+    }
+
+    pub fn prometheus(name: String) -> LocalServiceConfig {
+        LocalServiceConfig::new(name, LocalServiceType::Prometheus).with_defaults()
+    }
+
+    pub fn grafana(name: String) -> LocalServiceConfig {
+        LocalServiceConfig::new(name, LocalServiceType::Grafana).with_defaults()
+    }
+
+    pub fn tempo(name: String) -> LocalServiceConfig {
+        LocalServiceConfig::new(name, LocalServiceType::Tempo).with_defaults()
+    }
+
+    /// Complete observability stack with proper dependencies
+    pub fn observability_stack() -> Vec<LocalServiceConfig> {
+        vec![
+            Self::prometheus("prometheus".to_string()),
+            Self::tempo("tempo".to_string()),
+            {
+                let mut grafana = Self::grafana("grafana".to_string());
+                grafana.depends_on = vec!["prometheus".to_string(), "tempo".to_string()];
+                grafana
+            }
+        ]
     }
 }

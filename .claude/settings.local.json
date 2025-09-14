@@ -53,13 +53,17 @@
       "Bash(docker exec:*)",
       "Bash(/tmp/test_complete_injection.sh:*)",
       "Bash(/tmp/test_secrets_quick.sh:*)",
-      "Bash(/tmp/test_final_verification.sh:*)"
+      "Bash(/tmp/test_final_verification.sh:*)",
+      "WebSearch"
     ],
     "deny": [],
     "additionalDirectories": [
       "/private/tmp"
     ]
   },
+  "disabledMcpjsonServers": [
+    "rush"
+  ],
   "mcpServers": {
     "rush": {
       "command": "/Users/tfr/Documents/Projects/rush/rush/target/release/rush",
@@ -73,8 +77,5 @@
         "RUST_LOG": "info"
       }
     }
-  },
-  "disabledMcpjsonServers": [
-    "rush"
-  ]
+  }
 }

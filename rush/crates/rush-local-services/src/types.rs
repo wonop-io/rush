@@ -18,6 +18,11 @@ pub enum LocalServiceType {
     StripeCLI,
     MailHog, // Email testing
 
+    // Observability Services
+    Prometheus, // Metrics collection
+    Grafana,    // Metrics and traces visualization
+    Tempo,      // Distributed tracing
+
     // Custom
     Custom(String),
 }
@@ -35,6 +40,9 @@ impl LocalServiceType {
             Self::ElasticMQ => "softwaremill/elasticmq:latest".to_string(),
             Self::StripeCLI => "stripe/stripe-cli:latest".to_string(),
             Self::MailHog => "mailhog/mailhog:latest".to_string(),
+            Self::Prometheus => "prom/prometheus:latest".to_string(),
+            Self::Grafana => "grafana/grafana:latest".to_string(),
+            Self::Tempo => "grafana/tempo:latest".to_string(),
             Self::Custom(image) => image.clone(),
         }
     }
@@ -48,6 +56,9 @@ impl LocalServiceType {
             Self::Redis => "REDIS",
             Self::MinIO => "S3",
             Self::LocalStack => "AWS",
+            Self::Prometheus => "PROMETHEUS",
+            Self::Grafana => "GRAFANA",
+            Self::Tempo => "TEMPO",
             _ => "SERVICE",
         }
     }
@@ -64,6 +75,9 @@ impl LocalServiceType {
             Self::ElasticMQ => Some(9324),
             Self::StripeCLI => None,
             Self::MailHog => Some(1025), // SMTP port
+            Self::Prometheus => Some(9090),
+            Self::Grafana => Some(3000),
+            Self::Tempo => Some(3200),
             Self::Custom(_) => None,
         }
     }
@@ -82,6 +96,9 @@ impl LocalServiceType {
             Self::ElasticMQ => Some("curl -f http://localhost:9324/".to_string()),
             Self::StripeCLI => None,
             Self::MailHog => Some("curl -f http://localhost:8025/api/v2/messages".to_string()),
+            Self::Prometheus => Some("curl -f http://localhost:9090/-/healthy".to_string()),
+            Self::Grafana => Some("curl -f http://localhost:3000/api/health".to_string()),
+            Self::Tempo => Some("curl -f http://localhost:3200/ready".to_string()),
             Self::Custom(_) => None,
         }
     }
@@ -98,6 +115,9 @@ impl LocalServiceType {
             "elasticmq" | "sqs" => Self::ElasticMQ,
             "stripe" | "stripe-cli" => Self::StripeCLI,
             "mailhog" | "mail" => Self::MailHog,
+            "prometheus" | "prom" => Self::Prometheus,
+            "grafana" => Self::Grafana,
+            "tempo" => Self::Tempo,
             _ => Self::Custom(s.to_string()),
         }
     }
