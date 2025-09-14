@@ -54,7 +54,20 @@
       "Bash(/tmp/test_complete_injection.sh:*)",
       "Bash(/tmp/test_secrets_quick.sh:*)",
       "Bash(/tmp/test_final_verification.sh:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(./test_rollout.sh:*)",
+      "Bash(./test_k8s_gen.sh:*)",
+      "Bash(RUST_LOG=debug ./rush/target/release/rush:*)",
+      "Bash(git init:*)",
+      "Bash(git config:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(export INFRASTRUCTURE_REPOSITORY=\"file:///tmp/test-infra\")",
+      "Bash(RUST_LOG=info ./rush/target/release/rush --env local io.wonop.helloworld rollout)",
+      "Bash(export RUST_LOG=debug)",
+      "Bash(./verify_fixes.sh)",
+      "Bash(./test_rollout_fix.sh)",
+      "Bash(export RUST_LOG=info)"
     ],
     "deny": [],
     "additionalDirectories": [

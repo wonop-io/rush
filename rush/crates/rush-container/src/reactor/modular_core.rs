@@ -25,6 +25,7 @@ use std::time::Duration;
 use std::collections::HashMap;
 use tokio::sync::broadcast;
 use log::{info, debug, error, warn};
+use tera;
 
 /// Docker registry configuration
 #[derive(Debug, Clone)]
@@ -941,44 +942,77 @@ impl Reactor {
         ).await?;
         
         self.built_images = built_images;
-        
-        // Transition back to idle after building
-        {
-            let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::Idle)?;
-        }
-        
+
+        // No state transition needed - stay in Building state
+        // The caller can decide what state to transition to next
+
         info!("All components built successfully");
         Ok(())
     }
     
-    /// Roll out containers (stop, build, start)
+    /// Roll out to production using GitOps workflow
     pub async fn rollout(&mut self) -> Result<()> {
-        info!("Rolling out containers...");
-        
-        // Stop existing containers
-        let services_to_stop = {
-            let state_guard = self.state.read().await;
-            let services = state_guard.running_services();
-            services.to_vec() // Clone the services to avoid borrowing issues
-        };
-        
-        if !services_to_stop.is_empty() {
-            self.lifecycle_manager.stop_services(&services_to_stop).await?;
-        }
-        
-        // Build all components
-        self.build().await?;
-        
-        // Start services
-        self.lifecycle_manager.start_services(
-            self.services.clone(),
-            &self.component_specs,
-            &self.built_images,
-        ).await?;
-        
-        info!("Rollout completed successfully");
+        info!("Starting GitOps rollout...");
+
+        // Step 1: Build and push images to registry
+        self.build_and_push().await?;
+
+        // Step 2: Build Kubernetes manifests with secrets
+        // Note: build_manifests() already handles:
+        // - Fetching secrets from vault for each component
+        // - Encoding secrets with the configured encoder (Base64 or Noop)
+        // - Generating manifests with secrets injected
+        // - Optionally applying SealedSecrets with kubeseal
+        self.build_manifests().await?;
+
+        // Step 3: Initialize infrastructure repository
+        let infra_repo = self.create_infrastructure_repo()?;
+
+        // Step 4: Checkout/clone infrastructure repository
+        infra_repo.checkout().await?;
+
+        // Step 5: Copy manifests to infrastructure repository
+        let source_directory = self.k8s_manifest_dir
+            .as_ref()
+            .ok_or_else(|| Error::Internal("Manifests not built".to_string()))?;
+        infra_repo.copy_manifests(source_directory).await?;
+
+        // Step 6: Commit and push to trigger GitOps deployment
+        let commit_message = format!(
+            "Deploying {} for {}",
+            self.config.base.environment,
+            self.config.base.product_name
+        );
+        infra_repo.commit_and_push(&commit_message).await?;
+
+        info!("GitOps rollout completed successfully");
         Ok(())
+    }
+
+    /// Create infrastructure repository for GitOps
+    fn create_infrastructure_repo(&self) -> Result<rush_k8s::infrastructure::InfrastructureRepo> {
+        // Load the full config to get infrastructure_repository
+        let root_dir = std::env::var("RUSHD_ROOT")
+            .map_err(|_| Error::Config("RUSHD_ROOT not set".to_string()))?;
+        let config_loader = rush_config::ConfigLoader::new(std::path::PathBuf::from(&root_dir));
+        let config = config_loader.load_config(
+            &self.config.base.product_name,
+            &self.config.base.environment,
+            &self.config.base.docker_registry,
+            8129, // Default port, not used for rollout
+        ).map_err(|e| Error::Config(e.to_string()))?;
+
+        let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
+
+        let local_path = self.config.base.product_dir.join(".infra");
+
+        Ok(rush_k8s::infrastructure::InfrastructureRepo::new(
+            config.infrastructure_repository().to_string(),
+            local_path,
+            self.config.base.environment.clone(),
+            self.config.base.product_name.clone(),
+            toolchain,
+        ))
     }
     
     /// Perform Docker login if credentials are configured
@@ -1055,6 +1089,10 @@ impl Reactor {
     /// Get the full image tag including registry URL if configured
     fn get_registry_tag(&self, image_name: &str) -> String {
         if let Some(url) = &self.config.registry.url {
+            // Skip empty URLs (for local environment)
+            if url.is_empty() {
+                return image_name.to_string();
+            }
             if let Some(namespace) = &self.config.registry.namespace {
                 format!("{}/{}/{}", url, namespace, image_name)
             } else {
@@ -1067,22 +1105,47 @@ impl Reactor {
         }
     }
 
-    /// Build and push Docker images for all components
+    /// Build and push Docker images for deployable components
     pub async fn build_and_push(&mut self) -> Result<()> {
-        info!("Building and pushing Docker images...");
-        
-        // Build all components first
-        self.build().await?;
-        
+        info!("Building and pushing Docker images for deployment...");
+
+        // Filter components that produce pushable images
+        let pushable_components: Vec<ComponentBuildSpec> = self.component_specs
+            .iter()
+            .filter(|spec| Self::produces_pushable_image(&spec.build_type))
+            .cloned()
+            .collect();
+
+        if pushable_components.is_empty() {
+            info!("No components with pushable images found");
+            return Ok(());
+        }
+
+        info!("Found {} components with pushable images", pushable_components.len());
+
+        // Build only pushable components
+        let built_images = self.build_orchestrator.build_components(
+            pushable_components,
+            false, // force_rebuild
+        ).await?;
+
+        self.built_images = built_images;
+
+        // Skip pushing for local environment (no registry configured)
+        if self.config.registry.url.is_none() {
+            info!("Skipping Docker push for local environment");
+            return Ok(());
+        }
+
         // Login to registry if needed
         self.docker_login().await?;
-        
+
         // Push images to registry
         for (component_name, image_name) in &self.built_images {
             // Get the full registry tag
             let registry_tag = self.get_registry_tag(image_name);
             info!("Pushing image: {} -> {}", component_name, registry_tag);
-            
+
             // Tag the image for the registry if needed
             if registry_tag != *image_name {
                 // Tag the local image with the registry URL
@@ -1091,25 +1154,40 @@ impl Reactor {
                     .output()
                     .await
                     .map_err(|e| Error::Docker(format!("Failed to tag image: {}", e)))?;
-                    
+
                 if !tag_output.status.success() {
                     let stderr = String::from_utf8_lossy(&tag_output.stderr);
                     return Err(Error::Docker(format!("Failed to tag image: {}", stderr)));
                 }
             }
-            
+
             // Use the Docker client to push the image
             if let Err(e) = self.docker_integration.client().push_image(&registry_tag).await {
-                error!("Failed to push image {} for component {}: {}", 
+                error!("Failed to push image {} for component {}: {}",
                        registry_tag, component_name, e);
                 return Err(e);
             }
-            
+
             info!("Successfully pushed image: {}", registry_tag);
         }
-        
+
         info!("Build and push completed successfully");
         Ok(())
+    }
+
+    /// Determines if a build type produces a pushable Docker image
+    fn produces_pushable_image(build_type: &BuildType) -> bool {
+        matches!(
+            build_type,
+            BuildType::RustBinary { .. } |
+            BuildType::TrunkWasm { .. } |
+            BuildType::DixiousWasm { .. } |
+            BuildType::Script { .. } |
+            BuildType::Zola { .. } |
+            BuildType::Book { .. } |
+            BuildType::Ingress { .. } |
+            BuildType::PureDockerImage { .. }
+        )
     }
     
     /// Select Kubernetes context for deployment
@@ -1387,96 +1465,159 @@ impl Reactor {
     /// Build Kubernetes manifests
     pub async fn build_manifests(&mut self) -> Result<()> {
         info!("Building Kubernetes manifests...");
-        
+
         // Create output directory for manifests
         let output_dir = std::path::PathBuf::from(".rush/k8s");
-        
+
+        // Clear existing manifests
+        if output_dir.exists() {
+            std::fs::remove_dir_all(&output_dir)
+                .map_err(|e| Error::Filesystem(format!("Failed to remove k8s directory: {}", e)))?;
+        }
+        std::fs::create_dir_all(&output_dir)
+            .map_err(|e| Error::Filesystem(format!("Failed to create k8s directory: {}", e)))?;
+
         // Determine namespace from environment or use default
         let namespace = std::env::var("K8S_NAMESPACE")
-            .unwrap_or_else(|_| format!("{}-{}", 
-                self.config.build.product_name, 
-                std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string())
+            .unwrap_or_else(|_| format!("{}-{}",
+                self.config.base.product_name,
+                self.config.base.environment
             ));
-        
-        // Create manifest generator
-        let generator = rush_k8s::ManifestGenerator::new(
-            output_dir.clone(),
-            namespace.clone(),
-            std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string()),
-        ).with_registry(
-            self.config.registry.url.clone(),
-            self.config.registry.namespace.clone(),
-        );
-        
-        // Load secrets from vault if available
-        let secrets = if let Some(vault) = &self.vault {
-            let mut all_secrets = std::collections::BTreeMap::new();
-            let environment = std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string());
-            
-            // Load secrets for each component
-            for spec in &self.component_specs {
+
+        let environment = self.config.base.environment.clone();
+        let docker_registry = self.config.base.docker_registry.clone();
+
+        // Process each component that has k8s manifests
+        for spec in &self.component_specs {
+            // Skip components without K8s manifests
+            let k8s_path = match &spec.k8s {
+                Some(path) => path,
+                None => continue,
+            };
+
+            info!("Building manifests for component: {}", spec.component_name);
+
+            // Create component-specific output directory with priority
+            let component_dir_name = format!("{}_{}", spec.priority, spec.component_name);
+            let component_output_dir = output_dir.join(&component_dir_name);
+            std::fs::create_dir_all(&component_output_dir)
+                .map_err(|e| Error::Filesystem(format!("Failed to create component k8s directory: {}", e)))?;
+
+            // Find the template directory
+            let template_dir = std::path::PathBuf::from(&self.config.base.product_dir)
+                .join(k8s_path);
+
+            if !template_dir.exists() {
+                warn!("K8s template directory not found for {}: {}",
+                      spec.component_name, template_dir.display());
+                continue;
+            }
+
+            // Get component-specific secrets from vault
+            let component_secrets = if let Some(vault) = &self.vault {
                 match vault.lock().unwrap().get(
                     &spec.product_name,
                     &spec.component_name,
                     &environment
                 ).await {
-                    Ok(component_secrets) => {
-                        // Prefix secrets with component name to avoid conflicts
-                        for (key, value) in component_secrets {
-                            let prefixed_key = format!("{}_{}", 
-                                spec.component_name.to_uppercase().replace('-', "_"), 
-                                key
-                            );
-                            all_secrets.insert(prefixed_key, value);
+                    Ok(secrets) => {
+                        // Apply base64 encoding if we have a secrets encoder
+                        if let Some(encoder) = &self.secrets_encoder {
+                            encoder.encode_secrets(secrets)
+                        } else {
+                            secrets
                         }
                     }
                     Err(e) => {
                         debug!("No secrets found for component {}: {}", spec.component_name, e);
+                        HashMap::new()
                     }
                 }
-            }
-            
-            if all_secrets.is_empty() {
-                None
             } else {
-                Some(all_secrets)
+                HashMap::new()
+            };
+
+            // Create build context for this component
+            let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
+            let build_context = spec.generate_build_context(Some(toolchain), component_secrets);
+
+            // Add additional context variables
+            let mut tera_context = tera::Context::from_serialize(&build_context)
+                .map_err(|e| Error::Template(format!("Failed to create context: {}", e)))?;
+            tera_context.insert("namespace", &namespace);
+            tera_context.insert("environment", &environment);
+            tera_context.insert("docker_registry", &docker_registry);
+            tera_context.insert("component", &spec.component_name);
+            tera_context.insert("product_uri", &spec.product_name.replace('.', "-"));
+
+            // Find the built image name for this component
+            if let Some(image_tag) = self.built_images.get(&spec.component_name) {
+                tera_context.insert("image_name", image_tag);
             }
-        } else {
-            None
-        };
-        
-        // Generate manifests with secrets
-        let manifests = generator.generate_manifests(&self.component_specs, secrets.clone()).await?;
-        
-        info!("Generated {} Kubernetes manifests in {}", 
-              manifests.len(), 
-              output_dir.display());
-        
-        // Apply SealedSecrets encoder if configured
-        if secrets.is_some() {
-            // Check if we should use kubeseal
-            let use_sealed_secrets = std::env::var("K8S_USE_SEALED_SECRETS")
-                .unwrap_or_else(|_| "false".to_string()) == "true";
-            
-            if use_sealed_secrets {
-                info!("Applying SealedSecrets encoder to secret manifests");
-                let encoder = rush_k8s::encoder::create_encoder("kubeseal");
-                
-                // Find and encode secret manifest files
-                let secrets_path = output_dir.join("secrets.yaml");
-                if secrets_path.exists() {
-                    if let Err(e) = encoder.encode_file(secrets_path.to_str().unwrap()) {
-                        warn!("Failed to encode secrets with kubeseal: {}. Secrets will remain unencrypted.", e);
-                    } else {
-                        info!("Successfully encoded secrets with kubeseal");
+
+            // Process each template file in the directory
+            let template_files = std::fs::read_dir(&template_dir)
+                .map_err(|e| Error::Filesystem(format!("Failed to read template directory: {}", e)))?;
+
+            for entry in template_files {
+                let entry = entry.map_err(|e| Error::Filesystem(format!("Failed to read directory entry: {}", e)))?;
+                let path = entry.path();
+
+                // Skip non-yaml files
+                if !path.extension().map_or(false, |ext| ext == "yaml" || ext == "yml") {
+                    continue;
+                }
+
+                let file_name = path.file_name().unwrap().to_str().unwrap();
+                debug!("Processing template: {}", file_name);
+
+                // Read template content
+                let template_content = std::fs::read_to_string(&path)
+                    .map_err(|e| Error::Filesystem(format!("Failed to read template {}: {}", file_name, e)))?;
+
+                // Render template with Tera
+                let mut tera = tera::Tera::default();
+                tera.add_raw_template(file_name, &template_content)
+                    .map_err(|e| Error::Template(format!("Failed to add template: {}", e)))?;
+
+                let rendered = tera.render(file_name, &tera_context)
+                    .map_err(|e| Error::Template(format!("Failed to render template {}: {}", file_name, e)))?;
+
+                // Write rendered manifest to output directory
+                let output_path = component_output_dir.join(file_name);
+                std::fs::write(&output_path, rendered)
+                    .map_err(|e| Error::Filesystem(format!("Failed to write manifest: {}", e)))?;
+
+                // Apply SealedSecrets encoder if this is a secrets file
+                if file_name.contains("secret") {
+                    let use_sealed_secrets = std::env::var("K8S_USE_SEALED_SECRETS")
+                        .unwrap_or_else(|_| "false".to_string()) == "true";
+
+                    if use_sealed_secrets {
+                        debug!("Applying SealedSecrets encoder to {}", file_name);
+                        let encoder = rush_k8s::encoder::create_encoder("kubeseal");
+                        if let Err(e) = encoder.encode_file(output_path.to_str().unwrap()) {
+                            warn!("Failed to encode secrets with kubeseal: {}. Secrets will remain unencrypted.", e);
+                        }
                     }
                 }
             }
+
+            info!("Generated manifests for {} in {}", spec.component_name, component_output_dir.display());
         }
-        
+
+        // Count total manifests generated
+        let manifest_count = std::fs::read_dir(&output_dir)
+            .map(|entries| entries.count())
+            .unwrap_or(0);
+
+        info!("Generated Kubernetes manifests for {} components in {}",
+              manifest_count,
+              output_dir.display());
+
         // Store the output directory for later use in apply()
         self.k8s_manifest_dir = Some(output_dir);
-        
+
         Ok(())
     }
     
@@ -1667,7 +1808,13 @@ impl Reactor {
         modular_config.lifecycle.auto_restart = true;
         
         // Configure Docker registry from config
-        modular_config.registry.url = Some(config.docker_registry().to_string());
+        // Only set URL if it's not empty (for local environments)
+        let registry = config.docker_registry();
+        modular_config.registry.url = if registry.is_empty() {
+            None
+        } else {
+            Some(registry.to_string())
+        };
         modular_config.registry.namespace = config.docker_registry_namespace().map(|s| s.to_string());
         modular_config.registry.username = config.docker_registry_username().map(|s| s.to_string());
         modular_config.registry.password = config.docker_registry_password().map(|s| s.to_string());
