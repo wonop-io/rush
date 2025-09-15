@@ -130,17 +130,29 @@ impl Reactor {
         docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<Self> {
+        // Use default toolchain
+        let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
+        Self::with_toolchain(config, docker_client, component_specs, toolchain).await
+    }
+
+    /// Create a new modular reactor with custom toolchain
+    pub async fn with_toolchain(
+        config: ModularReactorConfig,
+        docker_client: Arc<dyn DockerClient>,
+        component_specs: Vec<ComponentBuildSpec>,
+        toolchain: Arc<rush_toolchain::ToolchainContext>,
+    ) -> Result<Self> {
         info!("Initializing modular container reactor");
-        
+
         // Create event bus for component communication
         let event_bus = EventBus::new();
-        
+
         // Create shared state
         let state = SharedReactorState::new();
-        
+
         // Set up shutdown coordination
         let (shutdown_sender, shutdown_receiver) = broadcast::channel(1);
-        
+
         // Create Docker integration with all enhancements
         let docker_integration = DockerIntegrationBuilder::new()
             .with_config(config.docker.clone())
@@ -148,14 +160,14 @@ impl Reactor {
             .with_event_bus(event_bus.clone())
             .with_state(state.clone())
             .build()?;
-        
+
         // Create lifecycle manager with a mock vault for now
-        let vault: Arc<std::sync::Mutex<dyn rush_security::Vault + Send>> = 
+        let vault: Arc<std::sync::Mutex<dyn rush_security::Vault + Send>> =
             Arc::new(std::sync::Mutex::new(rush_security::FileVault::new(
                 std::path::PathBuf::from(".rush/vault"),
                 None
             )));
-        
+
         let lifecycle_manager = LifecycleManager::new(
             config.lifecycle.clone(),
             docker_integration.client(),
@@ -163,14 +175,15 @@ impl Reactor {
             event_bus.clone(),
             state.clone(),
         );
-        
-        // Create build orchestrator
+
+        // Create build orchestrator with the provided toolchain
         let build_orchestrator = Arc::new(
-            BuildOrchestrator::new(
+            BuildOrchestrator::with_toolchain(
                 config.build.clone(),
                 docker_integration.client(),
                 event_bus.clone(),
                 state.clone(),
+                toolchain,
             )
         );
         
@@ -1704,36 +1717,15 @@ impl Reactor {
     ) -> Result<Self> {
         use std::collections::HashSet;
         use std::fs;
-        use std::process::Command;
-        use rush_core::constants::DOCKER_TAG_LATEST;
         use rush_build::{ComponentBuildSpec, BuildType};
-        
-        // Get the git hash for tagging
-        let git_hash = {
-            let hash_output = Command::new("git")
-                .args(["log", "-n", "1", "--format=%H", "--", &config.product_path().display().to_string()])
-                .output()
-                .ok();
-            
-            if let Some(output) = hash_output {
-                if output.status.success() {
-                    if let Ok(hash) = String::from_utf8(output.stdout) {
-                        let hash = hash.trim();
-                        if !hash.is_empty() {
-                            hash[..8.min(hash.len())].to_string()
-                        } else {
-                            DOCKER_TAG_LATEST.to_string()
-                        }
-                    } else {
-                        DOCKER_TAG_LATEST.to_string()
-                    }
-                } else {
-                    DOCKER_TAG_LATEST.to_string()
-                }
-            } else {
-                DOCKER_TAG_LATEST.to_string()
-            }
-        };
+        use crate::tagging::ImageTagGenerator;
+
+        // Create toolchain and tag generator
+        let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
+        let tag_generator = Arc::new(ImageTagGenerator::new(
+            toolchain.clone(),
+            config.product_path().to_path_buf(),
+        ));
         
         let product_path = config.product_path();
         let docker_client = Arc::new(crate::docker::DockerCliClient::new("docker".to_string()));
@@ -1782,9 +1774,13 @@ impl Reactor {
                         rush_build::Variables::empty(),
                         &component_config_with_name
                     );
-                    
-                    // Override the tagged image name for the git hash
-                    spec.tagged_image_name = Some(format!("{}:{}", name_str, git_hash));
+                    // Compute deterministic tag for this component
+                    let tag = tag_generator.compute_tag(&spec)
+                        .unwrap_or_else(|e| {
+                            warn!("Failed to compute tag for {}: {}, using 'latest'", name_str, e);
+                            "latest".to_string()
+                        });
+                    spec.tagged_image_name = Some(format!("{}:{}", name_str, tag));
             
                     // Add the spec to our list
                     component_specs.push(spec);
@@ -1800,7 +1796,8 @@ impl Reactor {
         modular_config.base.product_name = config.product_name().to_string();
         modular_config.base.product_dir = config.product_path().to_path_buf();
         modular_config.base.environment = config.environment().to_string();
-        modular_config.base.git_hash = git_hash.clone();
+        // Git hash no longer needed at config level since tags are per-component
+        modular_config.base.git_hash = String::new();
         modular_config.base.redirected_components = redirected_components;
         modular_config.base.start_port = config.start_port();
         modular_config.docker.use_enhanced_client = true;

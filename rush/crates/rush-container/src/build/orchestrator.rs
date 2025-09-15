@@ -9,10 +9,12 @@ use crate::{
     events::{Event, EventBus, ContainerEvent},
     reactor::state::SharedReactorState,
     simple_output,
+    tagging::ImageTagGenerator,
 };
 use rush_build::{BuildType, ComponentBuildSpec};
 use rush_core::error::Result;
 use rush_output::simple::Sink;
+use rush_toolchain::ToolchainContext;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -73,6 +75,7 @@ pub struct BuildOrchestrator {
     state: SharedReactorState,
     cache: Arc<Mutex<BuildCache>>,
     build_processor: Arc<BuildProcessor>,
+    tag_generator: Arc<ImageTagGenerator>,
     /// Output sink for build logs
     output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
 }
@@ -87,7 +90,14 @@ impl BuildOrchestrator {
     ) -> Self {
         let cache = Arc::new(Mutex::new(BuildCache::new(&config.cache_dir, &config.product_dir)));
         let build_processor = Arc::new(BuildProcessor::new(false));
-        
+
+        // Create toolchain and tag generator
+        let toolchain = Arc::new(ToolchainContext::default());
+        let tag_generator = Arc::new(ImageTagGenerator::new(
+            toolchain,
+            config.product_dir.clone(),
+        ));
+
         Self {
             config,
             docker_client,
@@ -95,6 +105,36 @@ impl BuildOrchestrator {
             state,
             cache,
             build_processor,
+            tag_generator,
+            output_sink: Arc::new(tokio::sync::RwLock::new(None)),
+        }
+    }
+
+    /// Create a new build orchestrator with custom toolchain
+    pub fn with_toolchain(
+        config: BuildOrchestratorConfig,
+        docker_client: Arc<dyn DockerClient>,
+        event_bus: EventBus,
+        state: SharedReactorState,
+        toolchain: Arc<ToolchainContext>,
+    ) -> Self {
+        let cache = Arc::new(Mutex::new(BuildCache::new(&config.cache_dir, &config.product_dir)));
+        let build_processor = Arc::new(BuildProcessor::new(false));
+
+        // Create tag generator with provided toolchain
+        let tag_generator = Arc::new(ImageTagGenerator::new(
+            toolchain,
+            config.product_dir.clone(),
+        ));
+
+        Self {
+            config,
+            docker_client,
+            event_bus,
+            state,
+            cache,
+            build_processor,
+            tag_generator,
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
@@ -536,11 +576,16 @@ impl BuildOrchestrator {
     }
 
     /// Generate a tag for the image
-    fn generate_tag(&self, _spec: &ComponentBuildSpec) -> String {
-        // For now, use a timestamp-based tag
-        // TODO: Use git commit hash or version from Cargo.toml
-        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-        format!("{}", timestamp)
+    fn generate_tag(&self, spec: &ComponentBuildSpec) -> String {
+        // Use the centralized tag generator
+        self.tag_generator.compute_tag(spec)
+            .unwrap_or_else(|e| {
+                warn!("Failed to compute git-based tag for {}: {}, using timestamp",
+                    spec.component_name, e);
+                // Fall back to timestamp if git tag generation fails
+                let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+                format!("{}", timestamp)
+            })
     }
 
     /// Get build statistics

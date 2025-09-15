@@ -1,9 +1,11 @@
 use crate::commands;
 use crate::context::CliContext;
+use crate::args::DescribeCommand;
 use clap::ArgMatches;
 use log::{error, trace};
 use rush_core::error::Result;
 use std::process;
+use std::sync::Arc;
 
 /// Execute the appropriate command based on command line arguments
 pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
@@ -23,10 +25,92 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         trace!("Executing validate command");
         // TODO: Implement validate with context
         Ok(())
-    } else if let Some(_describe_matches) = matches.subcommand_matches("describe") {
+    } else if let Some(describe_matches) = matches.subcommand_matches("describe") {
         trace!("Executing describe command");
-        // TODO: Implement describe with context
-        Ok(())
+
+        // Parse the describe subcommand
+        let describe_cmd = if describe_matches.subcommand_matches("toolchain").is_some() {
+            DescribeCommand::Toolchain
+        } else if describe_matches.subcommand_matches("images").is_some() {
+            DescribeCommand::Images
+        } else if describe_matches.subcommand_matches("services").is_some() {
+            DescribeCommand::Services
+        } else if let Some(build_script_matches) = describe_matches.subcommand_matches("build-script") {
+            let component_name = build_script_matches
+                .get_one::<String>("component")
+                .unwrap_or(&String::new())
+                .clone();
+            DescribeCommand::BuildScript { component_name }
+        } else if let Some(build_context_matches) = describe_matches.subcommand_matches("build-context") {
+            let component_name = build_context_matches
+                .get_one::<String>("component")
+                .unwrap_or(&String::new())
+                .clone();
+            DescribeCommand::BuildContext { component_name }
+        } else if let Some(artefacts_matches) = describe_matches.subcommand_matches("artefacts") {
+            let component_name = artefacts_matches
+                .get_one::<String>("component")
+                .unwrap_or(&String::new())
+                .clone();
+            DescribeCommand::Artefacts { component_name }
+        } else if describe_matches.subcommand_matches("k8s").is_some() {
+            DescribeCommand::K8s
+        } else {
+            // Default to images if no subcommand
+            DescribeCommand::Images
+        };
+
+        // For describe commands, we can use a dummy secrets provider since
+        // most describe commands don't actually use secrets (and those that do
+        // just fetch them but don't use them).
+        // TODO: Refactor describe to not require SecretsProvider for all commands
+        #[derive(Debug)]
+        struct DummySecretsProvider;
+
+        use rush_security::secrets::{SecretError, Environment};
+
+        #[async_trait::async_trait]
+        impl rush_security::SecretsProvider for DummySecretsProvider {
+            async fn get_secrets(
+                &self,
+                _product_name: &str,
+                _component_name: &str,
+                _environment: &Environment,
+            ) -> std::result::Result<std::collections::HashMap<String, String>, SecretError> {
+                Ok(std::collections::HashMap::new())
+            }
+
+            async fn set_secrets(
+                &mut self,
+                _product_name: &str,
+                _component_name: &str,
+                _environment: &Environment,
+                _secrets: std::collections::HashMap<String, String>,
+            ) -> std::result::Result<(), SecretError> {
+                Ok(())
+            }
+
+            async fn delete_all_secrets(
+                &mut self,
+                _product_name: &str,
+                _component_name: &str,
+                _environment: &Environment,
+            ) -> std::result::Result<(), SecretError> {
+                Ok(())
+            }
+        }
+
+        let dummy_provider: Arc<dyn rush_security::SecretsProvider> = Arc::new(DummySecretsProvider);
+
+        // Execute the describe command
+        // Most describe commands don't actually need services or secrets
+        commands::describe::execute(
+            describe_cmd,
+            &ctx.config,
+            &[], // Empty services array - describe doesn't need running services
+            &ctx.toolchain,
+            &dummy_provider,
+        ).await
     } else if let Some(vault_matches) = matches.subcommand_matches("vault") {
         trace!("Executing vault command");
         commands::vault::execute(vault_matches, ctx).await

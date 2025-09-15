@@ -1,4 +1,5 @@
 use crate::docker::{DockerClient, DockerService, DockerServiceConfig};
+use crate::tagging::ImageTagGenerator;
 use log::warn;
 use rush_build::ComponentBuildSpec;
 use rush_build::{BuildContext, BuildType};
@@ -57,6 +58,8 @@ pub struct ImageBuilder {
     build_config: BuildConfig,
     /// Toolchain for building
     toolchain: Option<Arc<ToolchainContext>>,
+    /// Tag generator for consistent tag computation
+    tag_generator: Option<Arc<ImageTagGenerator>>,
     /// Vault for secrets
     vault: Option<Arc<Mutex<dyn Vault + Send>>>,
     /// Whether the image should be rebuilt
@@ -88,6 +91,7 @@ impl ImageBuilder {
             product_name,
             build_config: BuildConfig::default(),
             toolchain: None,
+            tag_generator: None,
             vault: None,
             should_rebuild: true,
             was_recently_rebuilt: false,
@@ -100,7 +104,9 @@ impl ImageBuilder {
 
     /// Sets the toolchain for this image builder
     pub fn with_toolchain(mut self, toolchain: Arc<ToolchainContext>) -> Self {
-        self.toolchain = Some(toolchain);
+        // Create tag generator when toolchain is set
+        // We'll need to set the base directory later when the spec is available
+        self.toolchain = Some(toolchain.clone());
         self
     }
 
@@ -218,108 +224,38 @@ impl ImageBuilder {
     pub fn compute_git_tag(&mut self) -> Result<String> {
         log::debug!("Computing git tag for component: {}", self.component_name);
 
-        let toolchain = self
-            .toolchain
-            .as_ref()
-            .ok_or_else(|| Error::Setup("No toolchain available for computing git tag".into()))?;
+        // Check if we have a spec to use with the tag generator
+        if let Some(ref spec_arc) = self.spec {
+            if let Ok(spec) = spec_arc.lock() {
+                // Create tag generator if not already created
+                if self.tag_generator.is_none() {
+                    let toolchain = self.toolchain.as_ref()
+                        .ok_or_else(|| Error::Setup("No toolchain available for computing git tag".into()))?;
 
-        // Get the context directory for this component
-        // First try to use location, then fall back to context_dir from build_config
-        let context_dir = match &self.build_config.build_type {
-            BuildType::TrunkWasm {
-                location,
-                context_dir,
-                ..
-            } => {
-                if !location.is_empty() {
-                    location.clone()
-                } else {
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
+                    // Determine base directory from the spec's config if available
+                    let base_dir = spec.config.product_path().to_path_buf();
+
+                    self.tag_generator = Some(Arc::new(ImageTagGenerator::new(
+                        toolchain.clone(),
+                        base_dir,
+                    )));
+                }
+
+                // Use the centralized tag generator
+                if let Some(ref tag_gen) = self.tag_generator {
+                    let tag = tag_gen.compute_tag(&spec)?;
+                    self.git_tag = Some(tag.clone());
+                    return Ok(tag);
                 }
             }
-            BuildType::DixiousWasm {
-                location,
-                context_dir,
-                ..
-            }
-            | BuildType::RustBinary {
-                location,
-                context_dir,
-                ..
-            }
-            | BuildType::Zola {
-                location,
-                context_dir,
-                ..
-            }
-            | BuildType::Book {
-                location,
-                context_dir,
-                ..
-            }
-            | BuildType::Script {
-                location,
-                context_dir,
-                ..
-            } => {
-                if !location.is_empty() {
-                    location.clone()
-                } else {
-                    context_dir.clone().unwrap_or_else(|| ".".to_string())
-                }
-            }
-            BuildType::Ingress { context_dir, .. } => {
-                // For Ingress build type, just use the context_dir as-is
-                // since it's already defined in the YAML relative to the product directory
-                context_dir.clone().unwrap_or_else(|| ".".to_string())
-            }
-            _ => {
-                // Fall back to build_config's context_dir if available
-                self.build_config
-                    .context_dir
-                    .clone()
-                    .unwrap_or_else(|| ".".to_string())
-            }
-        };
-
-        log::debug!(
-            "Using context directory '{}' for git hash computation",
-            context_dir
-        );
-
-        // Get the git hash for the context directory
-        let git_hash = toolchain
-            .get_git_folder_hash(&context_dir)
-            .map_err(|e| Error::Setup(format!("Failed to get git hash: {e}")))?;
-
-        log::debug!("Got git hash: {}", git_hash);
-
-        if git_hash.is_empty() || git_hash == "precommit" {
-            // No git history, use a default tag
-            warn!(
-                "No git history found for context '{}', using '{}' tag. This will prevent caching!",
-                context_dir, DOCKER_TAG_LATEST
-            );
-            self.git_tag = Some(DOCKER_TAG_LATEST.to_string());
-            return Ok(DOCKER_TAG_LATEST.to_string());
         }
 
-        // Use first 8 characters of the hash
-        let short_hash = if git_hash.len() >= 8 {
-            &git_hash[..8]
-        } else {
-            &git_hash
-        };
-
-        // Check for uncommitted changes (WIP)
-        let wip_suffix = toolchain
-            .get_git_wip(&context_dir)
-            .unwrap_or_else(|_| String::new());
-
-        let tag = format!("{short_hash}{wip_suffix}");
-        self.git_tag = Some(tag.clone());
-
-        Ok(tag)
+        // Fallback: If no spec available, use the old implementation for compatibility
+        // This should rarely happen in practice
+        warn!("No spec available for tag generation, using fallback timestamp");
+        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S").to_string();
+        self.git_tag = Some(timestamp.clone());
+        Ok(timestamp)
     }
 
     /// Checks if the image exists in the local Docker cache with the correct platform

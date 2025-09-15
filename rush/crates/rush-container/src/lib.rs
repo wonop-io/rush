@@ -17,6 +17,7 @@ pub mod service;
 pub mod simple_output;
 pub mod status;
 pub mod stripe_handler;
+pub mod tagging;
 pub mod watcher;
 
 // TODO: Re-enable when test utils are updated to match current interfaces

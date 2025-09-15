@@ -9,6 +9,7 @@ pub mod file;
 pub mod onepassword;
 pub mod vault_trait;
 
+pub use adapter::VaultAdapter;
 pub use dotenv::DotenvVault;
 pub use file::FileVault;
 pub use onepassword::OnePassword;
