@@ -80,4 +80,7 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
     
     /// Push a Docker image to a registry
     async fn push_image(&self, image: &str) -> Result<()>;
+
+    /// Check if a Docker image exists locally
+    async fn image_exists(&self, image: &str) -> Result<bool>;
 }

@@ -398,7 +398,7 @@ impl LifecycleManager {
         
         // Create Docker service config
         let docker_config = DockerServiceConfig {
-            name: format!("{}-{}", self.config.product_name, service.name),
+            name: rush_core::naming::NamingConvention::container_name(&self.config.product_name, &service.name),
             image: image_name,
             network: self.config.network_name.clone(),
             env_vars,

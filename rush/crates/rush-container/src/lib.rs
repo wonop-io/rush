@@ -27,6 +27,9 @@ pub mod watcher;
 #[cfg(test)]
 pub mod tests;
 
+#[cfg(test)]
+mod naming_test;
+
 pub use dev_environment::DevEnvironment;
 pub use docker::{DockerCliClient, DockerClient, DockerImage, DockerService};
 pub use image_builder::{BuildConfig, ImageBuilder};

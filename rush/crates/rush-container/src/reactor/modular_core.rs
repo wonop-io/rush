@@ -271,10 +271,10 @@ impl Reactor {
         // Start lifecycle manager
         self.lifecycle_manager.start().await?;
         
-        // Start file watching if configured
-        if let Some(watcher) = &mut self.watcher_coordinator {
-            watcher.watch_directory(&self.config.base.product_dir)
-                .map_err(|e| Error::Internal(format!("Failed to start file watcher: {}", e)))?;
+        // Setup and start file watching with watch patterns
+        if let Err(e) = self.setup_watchers().await {
+            warn!("Failed to setup file watchers: {}", e);
+            // Continue anyway - file watching is optional
         }
         
         // Transition to running phase
@@ -313,7 +313,15 @@ impl Reactor {
                     info!("Internal shutdown signal received");
                     break;
                 }
-                
+
+                // Periodic tag-based rebuild check (every 30 seconds)
+                _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                    debug!("Performing periodic tag-based rebuild check");
+                    if let Err(e) = self.trigger_tag_based_rebuild().await {
+                        warn!("Periodic rebuild check failed: {}", e);
+                    }
+                }
+
                 // Handle file changes if watcher is configured
                 watch_result = async {
                     match &mut self.watcher_coordinator {
@@ -933,6 +941,156 @@ impl Reactor {
         // File watching is handled by WatcherCoordinator
         let product_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         Arc::new(crate::watcher::ChangeProcessor::new(&product_dir, 500))
+    }
+
+    /// Setup file watchers for components with watch patterns
+    pub async fn setup_watchers(&mut self) -> Result<()> {
+        info!("Setting up file watchers for components with watch patterns");
+
+        // Collect all unique directories to watch based on expanded patterns
+        let mut watch_dirs = std::collections::HashSet::new();
+
+        for spec in &self.component_specs {
+            if let Some(watch) = &spec.watch {
+                // Expand patterns to get actual files/directories to watch
+                match watch.expand_patterns_from(&self.config.base.product_dir) {
+                    Ok(paths) => {
+                        for path in paths {
+                            // Add the parent directory of each matched file
+                            if let Some(parent) = path.parent() {
+                                watch_dirs.insert(parent.to_path_buf());
+                            }
+                        }
+                        info!("Component '{}' will watch {} directories based on patterns",
+                            spec.component_name, watch_dirs.len());
+                    }
+                    Err(e) => {
+                        warn!("Failed to expand watch patterns for component '{}': {}",
+                            spec.component_name, e);
+                    }
+                }
+            }
+        }
+
+        // If we have directories to watch, ensure the watcher is active
+        if !watch_dirs.is_empty() {
+            if let Some(watcher) = &mut self.watcher_coordinator {
+                // The watcher is already initialized with component specs
+                // Just ensure it's watching the product directory (recursive)
+                if let Err(e) = watcher.watch_directory(&self.config.base.product_dir) {
+                    warn!("Failed to start file watcher: {}", e);
+                }
+                info!("File watcher active, monitoring {} unique directories", watch_dirs.len());
+            }
+        } else {
+            info!("No watch patterns defined, file watching disabled");
+        }
+
+        Ok(())
+    }
+
+    /// Check if any components need rebuilding based on tag changes
+    pub async fn check_for_tag_changes(&self) -> Vec<String> {
+        let mut changed_components = Vec::new();
+
+        for spec in &self.component_specs {
+            // Skip if no watch patterns defined
+            if spec.watch.is_none() {
+                continue;
+            }
+
+            // Check if rebuild is needed based on tag comparison
+            match self.needs_rebuild(spec).await {
+                Ok(true) => {
+                    debug!("Component '{}' needs rebuild (tag changed)", spec.component_name);
+                    changed_components.push(spec.component_name.clone());
+                }
+                Ok(false) => {
+                    // No rebuild needed
+                }
+                Err(e) => {
+                    warn!("Failed to check rebuild status for '{}': {}",
+                        spec.component_name, e);
+                }
+            }
+        }
+
+        if !changed_components.is_empty() {
+            info!("Tag changes detected for {} components: {:?}",
+                changed_components.len(), changed_components);
+        }
+
+        changed_components
+    }
+
+    /// Trigger rebuild for components with changed tags
+    pub async fn trigger_tag_based_rebuild(&mut self) -> Result<()> {
+        let changed_components = self.check_for_tag_changes().await;
+
+        if !changed_components.is_empty() {
+            // Create a change batch for the rebuild
+            let mut batch = crate::watcher::handler::ChangeBatch::new();
+            batch.affected_components = changed_components.into_iter().collect();
+
+            info!("Triggering rebuild for {} components due to tag changes",
+                batch.affected_components.len());
+
+            self.handle_rebuild(batch).await
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Check if a component needs rebuild based on tag change
+    pub async fn needs_rebuild(&self, spec: &ComponentBuildSpec) -> Result<bool> {
+        // Get current tag
+        let current_tag = self.build_orchestrator.tag_generator.compute_tag(spec)?;
+
+        // Get deployed tag (from running container or cache)
+        let deployed_tag = self.get_deployed_tag(&spec.component_name).await?;
+
+        // Simple comparison
+        debug!("Component '{}': current_tag={}, deployed_tag={}",
+            spec.component_name, current_tag, deployed_tag);
+        Ok(current_tag != deployed_tag)
+    }
+
+    /// Get the tag of the currently deployed container or cached image
+    pub async fn get_deployed_tag(&self, component_name: &str) -> Result<String> {
+        // First check if there's a running container
+        let container_name = rush_core::naming::NamingConvention::container_name(&self.config.base.product_name, component_name);
+
+        // Try to get container ID by name and check its status
+        if let Ok(container_id) = self.docker_client().get_container_by_name(&container_name).await {
+            // Container exists, try to get its image tag
+            // We'll just use the container ID as a proxy for now
+            debug!("Found running container for '{}': {}", component_name, container_id);
+            // In a real implementation, we'd need to inspect the container to get its image tag
+            // For now, we'll skip this and check other sources
+        }
+
+        // Check if we have a built image in memory
+        if let Some(image_name) = self.built_images.get(component_name) {
+            if let Some(tag_pos) = image_name.rfind(':') {
+                let tag = &image_name[tag_pos + 1..];
+                debug!("Found built image for '{}' with tag: {}", component_name, tag);
+                return Ok(tag.to_string());
+            }
+        }
+
+        // Check the build cache
+        let cache_guard = self.build_orchestrator.cache.lock().await;
+        if let Some(cached_entry) = cache_guard.get_raw_entry(component_name).await {
+            if let Some(tag_pos) = cached_entry.image_name.rfind(':') {
+                let tag = &cached_entry.image_name[tag_pos + 1..];
+                debug!("Found cached image for '{}' with tag: {}", component_name, tag);
+                return Ok(tag.to_string());
+            }
+        }
+
+        // No existing deployment or cached image
+        debug!("No deployed or cached image found for '{}'", component_name);
+        Ok(String::new())
     }
     
     /// Build all components
@@ -1920,8 +2078,13 @@ mod tests {
             docker_stats: None,
             metrics_report: None,
         };
-        
+
         assert_eq!(status.phase, ReactorPhase::Idle);
         assert_eq!(status.components, 0);
     }
+
+    // Note: Full integration tests for needs_rebuild are complex due to the need for
+    // proper ComponentBuildSpec setup with Config and Variables. The functionality
+    // is tested through integration tests elsewhere.
+
 }

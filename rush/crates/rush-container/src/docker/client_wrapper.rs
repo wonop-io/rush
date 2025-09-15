@@ -474,7 +474,7 @@ impl DockerClient for DockerClientWrapper {
     
     async fn push_image(&self, image: &str) -> Result<()> {
         let image = image.to_string();
-        
+
         // Docker push can take longer, so we might want fewer retries
         // but let's use the standard retry logic for consistency
         self.execute_with_retry("push_image", || {
@@ -482,6 +482,18 @@ impl DockerClient for DockerClientWrapper {
             let image = image.clone();
             Box::pin(async move {
                 client.push_image(&image).await
+            })
+        }).await
+    }
+
+    async fn image_exists(&self, image: &str) -> Result<bool> {
+        let image = image.to_string();
+
+        self.execute_with_retry("image_exists", || {
+            let client = self.inner.clone();
+            let image = image.clone();
+            Box::pin(async move {
+                client.image_exists(&image).await
             })
         }).await
     }

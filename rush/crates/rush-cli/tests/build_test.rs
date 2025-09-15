@@ -25,11 +25,12 @@ fn test_image_name_generation_without_registry() {
     // Test image name without registry
     let component_name = "frontend";
     let image_name = if config.docker_registry.is_empty() {
-        format!("{}-{}", config.product_name, component_name)
+        rush_core::naming::NamingConvention::image_name(&config.product_name, component_name)
     } else {
         format!(
-            "{}/{}-{}",
-            config.docker_registry, config.product_name, component_name
+            "{}/{}",
+            config.docker_registry,
+            rush_core::naming::NamingConvention::image_name(&config.product_name, component_name)
         )
     };
 
@@ -58,11 +59,12 @@ fn test_image_name_generation_with_registry() {
     // Test image name with registry
     let component_name = "backend";
     let image_name = if config.docker_registry.is_empty() {
-        format!("{}-{}", config.product_name, component_name)
+        rush_core::naming::NamingConvention::image_name(&config.product_name, component_name)
     } else {
         format!(
-            "{}/{}-{}",
-            config.docker_registry, config.product_name, component_name
+            "{}/{}",
+            config.docker_registry,
+            rush_core::naming::NamingConvention::image_name(&config.product_name, component_name)
         )
     };
 

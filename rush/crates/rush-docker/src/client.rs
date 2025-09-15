@@ -381,15 +381,40 @@ impl DockerClient for DockerExecutor {
     async fn push_image(&self, image: &str) -> Result<()> {
         info!("Pushing Docker image: {}", image);
         let args = vec!["push".to_string(), image.to_string()];
-        
+
         // Docker push can take a while, especially for large images
         // The output will show progress
         let output = self.execute(args).await?;
-        
+
         // Log the output for debugging
         debug!("Docker push output: {}", output);
-        
+
         info!("Successfully pushed Docker image: {}", image);
         Ok(())
+    }
+
+    async fn image_exists(&self, image: &str) -> Result<bool> {
+        let args = vec![
+            "image".to_string(),
+            "inspect".to_string(),
+            image.to_string(),
+        ];
+
+        match self.execute(args).await {
+            Ok(_) => {
+                debug!("Image {} exists", image);
+                Ok(true)
+            }
+            Err(e) => {
+                // Check if the error is because the image doesn't exist
+                if e.to_string().contains("Image not found") {
+                    debug!("Image {} does not exist", image);
+                    Ok(false)
+                } else {
+                    // Some other error occurred
+                    Err(e)
+                }
+            }
+        }
     }
 }

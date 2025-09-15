@@ -67,7 +67,10 @@
       "Bash(export RUST_LOG=debug)",
       "Bash(./verify_fixes.sh)",
       "Bash(./test_rollout_fix.sh)",
-      "Bash(export RUST_LOG=info)"
+      "Bash(export RUST_LOG=info)",
+      "Bash(RUST_LOG=error ./target/release/rush io.wonop.helloworld describe images)",
+      "Bash(RUST_LOG=trace ./target/release/rush io.wonop.helloworld describe images)",
+      "Bash(/Users/tfr/Documents/Projects/rush/rush/target/release/rush io.wonop.helloworld describe images)"
     ],
     "deny": [],
     "additionalDirectories": [

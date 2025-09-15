@@ -362,12 +362,20 @@ impl DockerClient for MockDockerClient {
     
     async fn push_image(&self, image: &str) -> Result<()> {
         self.record_call(format!("push_image({image})")).await;
-        
+
         let responses = self.responses.lock().await;
         if responses.should_fail_image_push {
             return Err(Error::Docker(format!("Failed to push image: {image}")));
         }
-        
+
         Ok(())
+    }
+
+    async fn image_exists(&self, image: &str) -> Result<bool> {
+        self.record_call(format!("image_exists({image})")).await;
+
+        let state = self.state.lock().await;
+        // Check if image exists in built_images
+        Ok(state.built_images.contains(image))
     }
 }

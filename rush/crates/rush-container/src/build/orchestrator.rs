@@ -73,9 +73,9 @@ pub struct BuildOrchestrator {
     docker_client: Arc<dyn DockerClient>,
     event_bus: EventBus,
     state: SharedReactorState,
-    cache: Arc<Mutex<BuildCache>>,
+    pub(crate) cache: Arc<Mutex<BuildCache>>,
     build_processor: Arc<BuildProcessor>,
-    tag_generator: Arc<ImageTagGenerator>,
+    pub(crate) tag_generator: Arc<ImageTagGenerator>,
     /// Output sink for build logs
     output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
 }
@@ -173,34 +173,54 @@ impl BuildOrchestrator {
         // Build each component
         for spec in &component_specs {
             info!("[BUILD DECISION] Component '{}': Evaluating build requirement", spec.component_name);
-            
-            // Check cache if enabled
-            if self.config.enable_cache && !force_rebuild {
-                info!("[BUILD DECISION] Component '{}': Cache enabled, checking for cached image", spec.component_name);
-                let cache_guard = self.cache.lock().await;
-                if let Some(cached_image) = cache_guard.get(&spec.component_name, &spec).await {
-                    if !cache_guard.is_expired(&spec.component_name).await {
-                        info!("[BUILD DECISION] Component '{}': ✓ Using cached image '{}' (not expired)", 
-                            spec.component_name, cached_image);
-                        built_images.insert(spec.component_name.clone(), cached_image.clone());
-                        
+
+            // Compute current tag
+            let current_tag = self.tag_generator.compute_tag(&spec)
+                .unwrap_or_else(|e| {
+                    warn!("Failed to compute tag for {}: {}, using timestamp",
+                        spec.component_name, e);
+                    let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+                    format!("{}", timestamp)
+                });
+
+            let image_name = format!(
+                "{}/{}",
+                self.config.product_name,
+                spec.component_name
+            );
+            let full_image_name = format!("{}:{}", image_name, current_tag);
+
+            // Check if image already exists with this tag (unless force rebuild)
+            if !force_rebuild {
+                info!("[BUILD DECISION] Component '{}': Checking if image '{}' exists",
+                    spec.component_name, full_image_name);
+
+                // Try to check if Docker image exists locally
+                if let Ok(exists) = self.docker_client.image_exists(&full_image_name).await {
+                    if exists {
+                        info!("[BUILD DECISION] Component '{}': ✓ Image '{}' already exists, skipping build",
+                            spec.component_name, full_image_name);
+                        built_images.insert(spec.component_name.clone(), full_image_name.clone());
+
                         // Update state
                         {
                             let mut state = self.state.write().await;
-                            state.mark_component_built(&spec.component_name, cached_image);
+                            state.mark_component_built(&spec.component_name, full_image_name);
                         }
-                        
+
                         continue;
                     } else {
-                        info!("[BUILD DECISION] Component '{}': Cache expired, will rebuild", spec.component_name);
+                        info!("[BUILD DECISION] Component '{}': Image '{}' not found locally, will build",
+                            spec.component_name, full_image_name);
                     }
                 } else {
-                    info!("[BUILD DECISION] Component '{}': No cached image found, will build", spec.component_name);
+                    // If we can't check, assume we need to build
+                    info!("[BUILD DECISION] Component '{}': Unable to check image existence, will build",
+                        spec.component_name);
                 }
-            } else if force_rebuild {
-                info!("[BUILD DECISION] Component '{}': Force rebuild requested, ignoring cache", spec.component_name);
             } else {
-                info!("[BUILD DECISION] Component '{}': Cache disabled, will build", spec.component_name);
+                info!("[BUILD DECISION] Component '{}': Force rebuild requested, ignoring existing images",
+                    spec.component_name);
             }
             
             // Build the component
@@ -281,17 +301,23 @@ impl BuildOrchestrator {
     pub async fn build_single(&self, spec: ComponentBuildSpec, all_specs: &[ComponentBuildSpec]) -> Result<String> {
         debug!("Building component: {}", spec.component_name);
         let start_time = Instant::now();
-        
+
         // Prepare build artifacts
         let artifacts_dir = self.prepare_artifacts(&spec).await?;
-        
+
         // Determine image name and tag
         let image_name = format!(
             "{}/{}",
             self.config.product_name,
             spec.component_name
         );
-        let tag = self.generate_tag(&spec);
+        let tag = self.tag_generator.compute_tag(&spec)
+            .unwrap_or_else(|e| {
+                warn!("Failed to compute tag for {}: {}, using timestamp",
+                    spec.component_name, e);
+                let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+                format!("{}", timestamp)
+            });
         let full_image_name = format!("{}:{}", image_name, tag);
         
         // Build based on type
@@ -575,18 +601,6 @@ impl BuildOrchestrator {
         })
     }
 
-    /// Generate a tag for the image
-    fn generate_tag(&self, spec: &ComponentBuildSpec) -> String {
-        // Use the centralized tag generator
-        self.tag_generator.compute_tag(spec)
-            .unwrap_or_else(|e| {
-                warn!("Failed to compute git-based tag for {}: {}, using timestamp",
-                    spec.component_name, e);
-                // Fall back to timestamp if git tag generation fails
-                let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-                format!("{}", timestamp)
-            })
-    }
 
     /// Get build statistics
     pub async fn get_stats(&self) -> CacheStats {
@@ -645,7 +659,7 @@ impl BuildOrchestrator {
             product_uri: format!("{}.local", spec.product_name),
             component: spec.component_name.clone(),
             docker_registry: String::new(),
-            image_name: format!("{}-{}", spec.product_name, spec.component_name),
+            image_name: rush_core::naming::NamingConvention::image_name(&spec.product_name, &spec.component_name),
             domains: Default::default(),
             env: {
                 // Merge dotenv and dotenv_secrets for build context
@@ -741,12 +755,12 @@ impl BuildOrchestrator {
                 if let Some(component_spec) = component_spec {
                     let service_spec = rush_build::ServiceSpec {
                         name: component_name.clone(),
-                        host: format!("{}-{}", spec.product_name, component_name),
+                        host: rush_core::naming::NamingConvention::container_name(&spec.product_name, &component_name),
                         port: component_spec.port.unwrap_or(8080),
                         target_port: component_spec.target_port.unwrap_or(80),
                         mount_point: component_spec.mount_point.clone(),
                         domain: component_spec.domain.clone(),
-                        docker_host: format!("{}-{}", spec.product_name, component_name),
+                        docker_host: rush_core::naming::NamingConvention::container_name(&spec.product_name, &component_name),
                     };
                     services_map.entry(component_spec.domain.clone())
                         .or_insert_with(Vec::new)
@@ -774,7 +788,7 @@ impl BuildOrchestrator {
             product_uri: format!("{}.local", spec.product_name),
             component: spec.component_name.clone(),
             docker_registry: String::new(),
-            image_name: format!("{}-{}", spec.product_name, spec.component_name),
+            image_name: rush_core::naming::NamingConvention::image_name(&spec.product_name, &spec.component_name),
             domains: Default::default(),
             env: {
                 // Merge dotenv and dotenv_secrets for build context

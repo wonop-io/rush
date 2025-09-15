@@ -291,7 +291,7 @@ impl ShutdownManager {
             }
             
             // Build container name
-            let container_name = format!("{}-{}", product_name, spec.component_name);
+            let container_name = rush_core::naming::NamingConvention::container_name(product_name, &spec.component_name);
             
             // Check if container exists
             match self.docker_client.container_exists(&container_name).await {

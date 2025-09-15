@@ -239,6 +239,11 @@ impl BuildCache {
         }
     }
 
+    /// Get the raw cache entry for a component
+    pub async fn get_raw_entry(&self, component: &str) -> Option<&CacheEntry> {
+        self.entries.get(component)
+    }
+
     /// Put an image in the cache
     pub async fn put(&mut self, component: String, entry: CacheEntry) {
         debug!("Caching image for {}: {}", component, entry.image_name);

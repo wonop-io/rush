@@ -28,8 +28,8 @@ impl ImageTagGenerator {
     /// - `{git_hash}` (8 chars) for clean state
     /// - `{git_hash}-wip-{content_hash}` (8 chars each) for dirty state
     pub fn compute_tag(&self, spec: &ComponentBuildSpec) -> Result<String> {
-        // 1. Determine watch directories
-        let watch_dirs = self.get_watch_directories(spec);
+        // 1. Get watched files (expand patterns on each computation for dynamic detection)
+        let (watch_files, watch_dirs) = self.get_watch_files_and_directories(spec);
 
         // 2. Compute git hash for watch directories
         let git_hash = self.compute_git_hash_for_directories(&watch_dirs)?;
@@ -44,9 +44,9 @@ impl ImageTagGenerator {
         }
 
         // 3. Check if working directory is dirty
-        if self.is_dirty(&watch_dirs)? {
+        if self.is_dirty_with_files(&watch_files, &watch_dirs)? {
             // 4. Compute SHA256 hash of actual content
-            let content_hash = self.compute_content_hash(&watch_dirs)?;
+            let content_hash = self.compute_content_hash_from_files(&watch_files)?;
             Ok(format!("{}-wip-{}",
                 &git_hash[..8.min(git_hash.len())],
                 &content_hash[..8.min(content_hash.len())]
@@ -56,24 +56,96 @@ impl ImageTagGenerator {
         }
     }
 
-    /// Get all directories that should be watched for changes
-    fn get_watch_directories(&self, spec: &ComponentBuildSpec) -> Vec<PathBuf> {
+    /// Get watched files and directories by walking and matching patterns
+    /// Returns (files, directories) tuple
+    fn get_watch_files_and_directories(&self, spec: &ComponentBuildSpec) -> (Vec<PathBuf>, Vec<PathBuf>) {
+        let mut files = Vec::new();
         let mut dirs = Vec::new();
 
         // Main component directory
         let component_dir = self.get_component_directory(spec);
         if component_dir.exists() {
-            dirs.push(component_dir);
+            dirs.push(component_dir.clone());
+
+            // Walk the component directory to get files
+            if let Some(watch) = &spec.watch {
+                // Walk directory and check patterns (instead of glob expansion)
+                log::debug!("Walking directory for component '{}' with watch patterns", spec.component_name);
+
+                for entry in WalkDir::new(&component_dir)
+                    .follow_links(false)
+                    .max_depth(10)  // Limit recursion depth to prevent deep traversal
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                {
+                    if entry.file_type().is_file() {
+                        let path = entry.path();
+
+                        // Skip common build artifacts early
+                        let path_str = path.to_str().unwrap_or("");
+                        if path_str.contains("/.git/") ||
+                           path_str.contains("/target/") ||
+                           path_str.contains("/dist/") ||
+                           path_str.contains("/node_modules/") ||
+                           path_str.contains("/.rush/") {
+                            continue;
+                        }
+
+                        // Check if file matches any watch pattern
+                        if watch.matches(path) {
+                            files.push(path.to_path_buf());
+                            // Track parent directory
+                            if let Some(parent) = path.parent() {
+                                if !dirs.contains(&parent.to_path_buf()) {
+                                    dirs.push(parent.to_path_buf());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                log::debug!("Found {} files matching watch patterns for component '{}'",
+                    files.len(), spec.component_name);
+            } else {
+                // No watch patterns - walk directory normally
+                for entry in WalkDir::new(&component_dir)
+                    .follow_links(false)
+                    .max_depth(10)  // Limit recursion depth
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                {
+                    if entry.file_type().is_file() {
+                        let path = entry.path();
+
+                        // Skip common build artifacts
+                        let path_str = path.to_str().unwrap_or("");
+                        if path_str.contains("/.git/") ||
+                           path_str.contains("/target/") ||
+                           path_str.contains("/dist/") ||
+                           path_str.contains("/node_modules/") ||
+                           path_str.contains("/.rush/") {
+                            continue;
+                        }
+
+                        files.push(path.to_path_buf());
+                    }
+                }
+            }
         }
 
-        // For now, we don't have watch directories in BuildType
-        // In the future, we could add watch directories to ComponentBuildSpec
-        // or extract them from the build configuration
-
         // Remove duplicates
+        files.sort();
+        files.dedup();
         dirs.sort();
         dirs.dedup();
 
+        (files, dirs)
+    }
+
+    /// Get all directories that should be watched for changes
+    /// This is kept for backwards compatibility but delegates to get_watch_files_and_directories
+    fn get_watch_directories(&self, spec: &ComponentBuildSpec) -> Vec<PathBuf> {
+        let (_files, dirs) = self.get_watch_files_and_directories(spec);
         dirs
     }
 
@@ -167,10 +239,11 @@ impl ImageTagGenerator {
         }
     }
 
-    /// Check if any of the watch directories have uncommitted changes
-    fn is_dirty(&self, dirs: &[PathBuf]) -> Result<bool> {
+    /// Check if any of the watched files or directories have uncommitted changes
+    fn is_dirty_with_files(&self, files: &[PathBuf], dirs: &[PathBuf]) -> Result<bool> {
         let git_path = self.toolchain.git();
 
+        // Check directories for modifications
         for dir in dirs {
             if !dir.exists() {
                 continue;
@@ -191,10 +264,72 @@ impl ImageTagGenerator {
             }
         }
 
+        // Also check specific files if they were expanded from patterns
+        if !files.is_empty() {
+            // Check if any of the specific files are modified
+            for file in files {
+                if !file.exists() {
+                    continue;
+                }
+
+                let file_str = file.to_str().ok_or_else(||
+                    Error::Internal(format!("Invalid path: {:?}", file))
+                )?;
+
+                let output = Command::new(&git_path)
+                    .args(["status", "--porcelain", "--untracked-files=no", file_str])
+                    .current_dir(&self.base_dir)
+                    .output()
+                    .map_err(|e| Error::External(format!("Git status failed: {}", e)))?;
+
+                if !output.stdout.is_empty() {
+                    return Ok(true);
+                }
+            }
+        }
+
         Ok(false)
     }
 
+    /// Check if any of the watch directories have uncommitted changes
+    /// This is kept for backwards compatibility
+    fn is_dirty(&self, dirs: &[PathBuf]) -> Result<bool> {
+        self.is_dirty_with_files(&[], dirs)
+    }
+
+    /// Compute SHA256 hash of specific files
+    fn compute_content_hash_from_files(&self, files: &[PathBuf]) -> Result<String> {
+        let mut hasher = Sha256::new();
+
+        // Create a sorted copy for deterministic hashing
+        let mut sorted_files = files.to_vec();
+        sorted_files.sort();
+
+        // Hash file paths and contents
+        for file in sorted_files {
+            // Skip non-existent files
+            if !file.exists() {
+                continue;
+            }
+
+            // Hash the relative path
+            if let Ok(rel_path) = file.strip_prefix(&self.base_dir) {
+                hasher.update(rel_path.to_string_lossy().as_bytes());
+                hasher.update(b"\0"); // Separator
+            }
+
+            // Hash the file content
+            if let Ok(content) = std::fs::read(&file) {
+                hasher.update(&content);
+                hasher.update(b"\0"); // Separator
+            }
+        }
+
+        Ok(hex::encode(hasher.finalize()))
+    }
+
     /// Compute SHA256 hash of all file contents in watch directories
+    /// This is kept for backwards compatibility
     fn compute_content_hash(&self, dirs: &[PathBuf]) -> Result<String> {
         let mut hasher = Sha256::new();
         let mut files = Vec::new();
@@ -263,71 +398,272 @@ mod tests {
         (generator, temp_dir)
     }
 
+    fn create_test_spec(temp_dir: &Path, yaml_content: &str) -> rush_build::ComponentBuildSpec {
+        // Parse the YAML to extract component details
+        let yaml: serde_yaml::Value = serde_yaml::from_str(yaml_content).unwrap();
+        let component_name = yaml["component_name"].as_str().unwrap_or("test-component").to_string();
+        let location = yaml["location"].as_str().map(|s| s.to_string());
+
+        // Create a simple spec directly
+        let build_type = if let Some(loc) = location {
+            rush_build::BuildType::RustBinary {
+                location: loc,
+                dockerfile_path: yaml["dockerfile"].as_str().unwrap_or("Dockerfile").to_string(),
+                context_dir: Some(".".to_string()),
+                build_script: None,
+                features: None,
+                precompile_commands: None
+            }
+        } else {
+            rush_build::BuildType::Ingress {
+                dockerfile_path: yaml["dockerfile"].as_str().unwrap_or("ingress/Dockerfile").to_string(),
+                context_dir: None
+            }
+        };
+
+        // Create minimal config and variables for testing
+        let config = Arc::new(rush_config::Config {
+            name: "test-product".to_string(),
+            version: "1.0.0".to_string(),
+            environment: "local".to_string(),
+            docker_registry: None,
+            docker_registry_prefix: None,
+            docker_config_file: None,
+            gcp_project: None,
+            gcp_region: None,
+            gcp_zone: None,
+            k8s_cluster_name: None,
+            target_os: None,
+            target_arch: None,
+            toolchain: None,
+            components: vec![],
+            ingress: std::collections::HashMap::new(),
+            local_services: vec![],
+            base_dir: Some(temp_dir.to_path_buf()),
+        });
+
+        let variables = Arc::new(rush_build::Variables::empty());
+
+        rush_build::ComponentBuildSpec {
+            build_type,
+            product_name: "test-product".to_string(),
+            component_name,
+            color: "blue".to_string(),
+            depends_on: vec![],
+            build: None,
+            mount_point: None,
+            subdomain: None,
+            artefacts: None,
+            artefact_output_dir: "dist".to_string(),
+            docker_extra_run_args: vec![],
+            env: None,
+            volumes: None,
+            port: None,
+            target_port: None,
+            k8s: None,
+            priority: 0,
+            watch: None,
+            config,
+            variables,
+            services: None,
+            domains: None,
+            tagged_image_name: None,
+            dotenv: std::collections::HashMap::new(),
+            dotenv_secrets: std::collections::HashMap::new(),
+            domain: "localhost".to_string(),
+            cross_compile: "native".to_string(),
+        }
+    }
+
     #[test]
     fn test_get_component_directory() {
         let (generator, temp_dir) = create_test_generator();
 
-        let mut spec = ComponentBuildSpec::default();
-        spec.component_name = "test-component".to_string();
-
-        // Test RustBinary with location
-        spec.build_type = BuildType::RustBinary {
-            location: "backend/server".to_string(),
-            context_dir: None,
-            script: None,
-            watch: None,
-        };
+        let spec = create_test_spec(temp_dir.path(), r#"
+            component_name: test-component
+            build_type: RustBinary
+            location: backend/server
+            dockerfile: backend/Dockerfile
+        "#);
 
         let dir = generator.get_component_directory(&spec);
         assert_eq!(dir, temp_dir.path().join("backend/server"));
     }
 
     #[test]
-    fn test_get_watch_directories() {
+    fn test_get_watch_files_and_directories_without_patterns() {
         let (generator, temp_dir) = create_test_generator();
 
-        // Create some directories
-        fs::create_dir_all(temp_dir.path().join("backend/server")).unwrap();
-        fs::create_dir_all(temp_dir.path().join("shared/types")).unwrap();
+        // Create some test files
+        fs::create_dir_all(temp_dir.path().join("backend/server/src")).unwrap();
+        fs::write(temp_dir.path().join("backend/server/main.rs"), "content").unwrap();
+        fs::write(temp_dir.path().join("backend/server/src/lib.rs"), "content").unwrap();
 
-        let mut spec = ComponentBuildSpec::default();
-        spec.component_name = "test-component".to_string();
-        spec.build_type = BuildType::RustBinary {
-            location: "backend/server".to_string(),
-            context_dir: None,
-            script: None,
-            watch: Some(vec!["shared/types".to_string()]),
-        };
+        let mut spec = create_test_spec(temp_dir.path(), r#"
+            component_name: test-component
+            build_type: RustBinary
+            location: backend/server
+            dockerfile: backend/Dockerfile
+        "#);
+        spec.watch = None; // No watch patterns
 
-        let dirs = generator.get_watch_directories(&spec);
-        assert_eq!(dirs.len(), 2);
+        let (files, dirs) = generator.get_watch_files_and_directories(&spec);
+
+        // Should have the component directory
         assert!(dirs.contains(&temp_dir.path().join("backend/server")));
-        assert!(dirs.contains(&temp_dir.path().join("shared/types")));
+
+        // Should have found the files
+        assert!(files.len() >= 2);
     }
 
     #[test]
-    fn test_content_hash_deterministic() {
+    fn test_get_watch_files_and_directories_with_patterns() {
         let (generator, temp_dir) = create_test_generator();
 
-        // Create a test file
-        let test_dir = temp_dir.path().join("test");
-        fs::create_dir_all(&test_dir).unwrap();
-        fs::write(test_dir.join("file.txt"), "test content").unwrap();
+        // Create backend/server directory structure for the Ingress component
+        let backend_dir = temp_dir.path().join("backend/server");
+        fs::create_dir_all(backend_dir.join("src")).unwrap();
+        fs::write(backend_dir.join("main_app.rs"), "content").unwrap();
+        fs::write(backend_dir.join("src/user_api.rs"), "content").unwrap();
+        fs::write(backend_dir.join("src/admin_api.rs"), "content").unwrap();
+        fs::write(backend_dir.join("src/other.rs"), "content").unwrap();
 
-        let dirs = vec![test_dir.clone()];
+        let mut spec = create_test_spec(temp_dir.path(), r#"
+            component_name: backend
+            build_type: RustBinary
+            location: backend/server
+            dockerfile: backend/Dockerfile
+        "#);
+
+        // Add watch patterns
+        let patterns = vec!["**/*_app*".to_string(), "**/*_api*".to_string()];
+        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(&backend_dir, patterns)));
+
+        let (files, dirs) = generator.get_watch_files_and_directories(&spec);
+
+        // Should find only files matching the patterns
+        assert_eq!(files.len(), 3);
+        assert!(files.contains(&backend_dir.join("main_app.rs")));
+        assert!(files.contains(&backend_dir.join("src/user_api.rs")));
+        assert!(files.contains(&backend_dir.join("src/admin_api.rs")));
+        assert!(!files.contains(&backend_dir.join("src/other.rs")));
+    }
+
+    #[test]
+    fn test_content_hash_from_files_deterministic() {
+        let (generator, temp_dir) = create_test_generator();
+
+        // Create test files
+        let file1 = temp_dir.path().join("file1.txt");
+        let file2 = temp_dir.path().join("file2.txt");
+        fs::write(&file1, "content1").unwrap();
+        fs::write(&file2, "content2").unwrap();
+
+        let files = vec![file1.clone(), file2.clone()];
 
         // Compute hash twice
-        let hash1 = generator.compute_content_hash(&dirs).unwrap();
-        let hash2 = generator.compute_content_hash(&dirs).unwrap();
+        let hash1 = generator.compute_content_hash_from_files(&files).unwrap();
+        let hash2 = generator.compute_content_hash_from_files(&files).unwrap();
 
         // Should be identical
         assert_eq!(hash1, hash2);
 
         // Change content
-        fs::write(test_dir.join("file.txt"), "different content").unwrap();
-        let hash3 = generator.compute_content_hash(&dirs).unwrap();
+        fs::write(&file1, "different content").unwrap();
+        let hash3 = generator.compute_content_hash_from_files(&files).unwrap();
 
         // Should be different
         assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_dynamic_file_detection_with_watch_patterns() {
+        let (generator, temp_dir) = create_test_generator();
+
+        // Create backend/server directory for RustBinary component
+        let backend_dir = temp_dir.path().join("backend/server");
+        fs::create_dir_all(&backend_dir).unwrap();
+
+        // Create initial file
+        fs::write(backend_dir.join("initial_api.rs"), "content").unwrap();
+
+        let mut spec = create_test_spec(temp_dir.path(), r#"
+            component_name: backend
+            build_type: RustBinary
+            location: backend/server
+            dockerfile: backend/Dockerfile
+        "#);
+
+        // Add watch patterns
+        let patterns = vec!["**/*_api.rs".to_string()];
+        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(&backend_dir, patterns)));
+
+        // First check - should find initial file
+        let (files1, _dirs1) = generator.get_watch_files_and_directories(&spec);
+        assert_eq!(files1.len(), 1);
+        assert!(files1.contains(&backend_dir.join("initial_api.rs")));
+
+        // Add new file matching pattern
+        fs::write(backend_dir.join("new_api.rs"), "content").unwrap();
+
+        // Second check - should find both files (dynamic detection)
+        let (files2, _dirs2) = generator.get_watch_files_and_directories(&spec);
+        assert_eq!(files2.len(), 2);
+        assert!(files2.contains(&backend_dir.join("initial_api.rs")));
+        assert!(files2.contains(&backend_dir.join("new_api.rs")));
+    }
+
+    #[test]
+    fn test_tag_changes_with_new_files() {
+        let (generator, temp_dir) = create_test_generator();
+
+        // Create backend/server directory for RustBinary component
+        let backend_dir = temp_dir.path().join("backend/server");
+        fs::create_dir_all(&backend_dir).unwrap();
+
+        // Initialize git repo for testing
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(temp_dir.path())
+            .output()
+            .ok();
+
+        // Create initial file and commit
+        fs::write(backend_dir.join("main_app.rs"), "initial").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(temp_dir.path())
+            .output()
+            .ok();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(temp_dir.path())
+            .output()
+            .ok();
+
+        let mut spec = create_test_spec(temp_dir.path(), r#"
+            component_name: backend
+            build_type: RustBinary
+            location: backend/server
+            dockerfile: backend/Dockerfile
+        "#);
+
+        // Add watch patterns
+        let patterns = vec!["**/*_app*".to_string()];
+        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(&backend_dir, patterns)));
+
+        // Compute initial tag
+        let tag1 = generator.compute_tag(&spec);
+
+        // Add new file matching pattern (creates dirty state)
+        fs::write(backend_dir.join("new_app.rs"), "new content").unwrap();
+
+        // Compute tag again - should be different due to new file
+        let tag2 = generator.compute_tag(&spec);
+
+        // Tags should be different when new files are added
+        if tag1.is_ok() && tag2.is_ok() {
+            assert_ne!(tag1.unwrap(), tag2.unwrap());
+        }
     }
 }

@@ -166,6 +166,10 @@ mod tests {
             self.record_operation(&format!("push_image:{}", image));
             Ok(())
         }
+
+        async fn image_exists(&self, _image: &str) -> Result<bool> {
+            Ok(false)
+        }
     }
 
     fn create_test_component_specs() -> Vec<ComponentBuildSpec> {

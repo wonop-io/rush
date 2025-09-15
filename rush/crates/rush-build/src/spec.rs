@@ -127,7 +127,7 @@ pub struct ServiceSpec {
 impl ComponentBuildSpec {
     /// Gets the Docker local name for this component
     pub fn docker_local_name(&self) -> String {
-        format!("{}-{}", self.product_name, self.component_name)
+        rush_core::naming::NamingConvention::container_name(&self.product_name, &self.component_name)
     }
 
     /// Sets the service specification

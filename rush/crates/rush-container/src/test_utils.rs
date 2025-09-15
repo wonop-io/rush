@@ -252,6 +252,12 @@ pub mod mocks {
         async fn push_image(&self, _image: &str) -> Result<()> {
             Ok(())
         }
+
+        async fn image_exists(&self, image: &str) -> Result<bool> {
+            // Check if image exists in our simulated state
+            let state = self.state.lock().await;
+            Ok(state.built_images.contains_key(image))
+        }
     }
 }
 

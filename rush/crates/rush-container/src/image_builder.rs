@@ -190,7 +190,7 @@ impl ImageBuilder {
 
     /// Gets the untagged image name (without a tag)
     pub fn untagged_image_name(&self) -> String {
-        format!("{}-{}", self.product_name, self.component_name)
+        rush_core::naming::NamingConvention::image_name(&self.product_name, &self.component_name)
     }
 
     /// Gets the tagged image name (with a tag if available)
@@ -504,7 +504,7 @@ impl ImageBuilder {
 
         let service_config = DockerServiceConfig {
             name: spec_guard.docker_local_name(),
-            image: format!("{}-{}", spec_guard.product_name, spec_guard.component_name),
+            image: rush_core::naming::NamingConvention::image_name(&spec_guard.product_name, &spec_guard.component_name),
             network: spec_guard.config.network_name().to_string(),
             env_vars: {
                 // Merge dotenv and dotenv_secrets for image building

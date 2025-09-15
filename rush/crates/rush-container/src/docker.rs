@@ -698,6 +698,35 @@ impl DockerClient for DockerCliClient {
         debug!("Successfully pushed Docker image: {}", image);
         Ok(())
     }
+
+    async fn image_exists(&self, image: &str) -> Result<bool> {
+        trace!("Checking if Docker image exists: {}", image);
+
+        let output = Command::new(&self.docker_path)
+            .args(["image", "inspect", image])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to inspect image: {e}")))?;
+
+        // If the command succeeds, the image exists
+        if output.status.success() {
+            debug!("Image {} exists", image);
+            Ok(true)
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Check if the error is because the image doesn't exist
+            if stderr.contains("No such image") || stderr.contains("not found") {
+                debug!("Image {} does not exist", image);
+                Ok(false)
+            } else {
+                // Some other error occurred
+                error!("Failed to check image existence: {}", stderr);
+                Err(Error::Docker(format!("Image inspection failed: {stderr}")))
+            }
+        }
+    }
 }
 
 impl DockerCliClient {
@@ -1030,6 +1059,10 @@ mod tests {
             async fn push_image(&self, _image: &str) -> Result<()> {
                 unimplemented!()
             }
+
+            async fn image_exists(&self, _image: &str) -> Result<bool> {
+                Ok(false)
+            }
         }
 
         let mock = Arc::new(MockDockerClient {
@@ -1160,6 +1193,10 @@ mod tests {
             
             async fn push_image(&self, _image: &str) -> Result<()> {
                 unimplemented!()
+            }
+
+            async fn image_exists(&self, _image: &str) -> Result<bool> {
+                Ok(false)
             }
         }
 

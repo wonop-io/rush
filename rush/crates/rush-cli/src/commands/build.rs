@@ -78,7 +78,7 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
             product_uri: product.uri().to_string(),
             component: component_name.clone(),
             docker_registry: config.docker_registry().to_string(),
-            image_name: format!("{product_name}-{component_name}"),
+            image_name: rush_core::naming::NamingConvention::image_name(product_name, component_name),
             secrets: HashMap::new(), // Would be populated from a vault in a full implementation
             domains: HashMap::new(), // Empty domains map, would be populated from product
             env: HashMap::new(),     // Default to empty environment variables
@@ -387,7 +387,7 @@ async fn build_docker_image(
         _ => ".".to_string(),
     };
 
-    let image_tag = format!("{}-{}", context.product_name, context.component);
+    let image_tag = rush_core::naming::NamingConvention::image_name(&context.product_name, &context.component);
 
     debug!(
         "Building Docker image: {} from {}",
