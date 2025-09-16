@@ -70,7 +70,13 @@
       "Bash(export RUST_LOG=info)",
       "Bash(RUST_LOG=error ./target/release/rush io.wonop.helloworld describe images)",
       "Bash(RUST_LOG=trace ./target/release/rush io.wonop.helloworld describe images)",
-      "Bash(/Users/tfr/Documents/Projects/rush/rush/target/release/rush io.wonop.helloworld describe images)"
+      "Bash(/Users/tfr/Documents/Projects/rush/rush/target/release/rush io.wonop.helloworld describe images)",
+      "Bash(xargs:*)",
+      "Bash(/dev/null docker ps -a)",
+      "Read(//Users/tfr/Documents/Projects/wonop-ng/products/**)",
+      "Bash(./test_hash_fix.sh:*)",
+      "Bash(/Users/tfr/Documents/Projects/rush/test_hash_fix.sh)",
+      "Bash(/Users/tfr/Documents/Projects/rush/test_hash_changes.sh)"
     ],
     "deny": [],
     "additionalDirectories": [

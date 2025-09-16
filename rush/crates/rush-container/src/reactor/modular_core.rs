@@ -369,7 +369,7 @@ impl Reactor {
     }
     
     /// Handle rebuild request for specific components
-    async fn handle_rebuild(&mut self, batch: crate::watcher::handler::ChangeBatch) -> Result<()> {
+    async fn handle_rebuild(&mut self, mut batch: crate::watcher::handler::ChangeBatch) -> Result<()> {
         debug!("Handling rebuild for components: {:?}", batch.affected_components);
         
         // Transition to rebuilding phase
@@ -403,15 +403,30 @@ impl Reactor {
                 warn!("Failed to invalidate cache: {}", e);
                 // Continue with rebuild even if cache invalidation fails
             }
+
+            // If no affected components identified by watcher but cache invalidation found some,
+            // use cache invalidation results as fallback
+            if batch.affected_components.is_empty() {
+                // Get invalidated components from cache
+                let cache_guard = self.build_orchestrator.cache.lock().await;
+                let invalidated_components = cache_guard.get_invalidated_components();
+                drop(cache_guard);
+
+                if !invalidated_components.is_empty() {
+                    info!("No components identified by watcher, using cache invalidation results: {} components",
+                        invalidated_components.len());
+                    batch.affected_components = invalidated_components.into_iter().collect();
+                }
+            }
         }
-        
+
         // Stop affected containers before rebuilding
         for component_name in &batch.affected_components {
             if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
                 warn!("Failed to stop component {}: {}", component_name, e);
             }
         }
-        
+
         // Get component specs for affected components
         let component_specs = {
             let state = self.state.read().await;
@@ -462,6 +477,12 @@ impl Reactor {
                     info!("Started {} rebuilt containers", running_services.len());
                 }
                 
+                // Clear invalidated components after successful build
+                {
+                    let mut cache_guard = self.build_orchestrator.cache.lock().await;
+                    cache_guard.clear_invalidated_components();
+                }
+
                 // Transition back to running from rebuilding
                 {
                     let mut state = self.state.write().await;
@@ -469,7 +490,7 @@ impl Reactor {
                         state.transition_to(ReactorPhase::Running)?;
                     }
                 }
-                
+
                 // Publish build success event
                 let _ = self.event_bus.publish(Event::new(
                     "reactor",

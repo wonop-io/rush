@@ -1,32 +1,32 @@
 {
-  "backend": {
-    "image_name": "helloworld.wonop.io/backend:20250828-120341",
-    "spec_hash": "5ef8e17ea126d575",
-    "built_at": "2025-08-28T12:03:44.653746Z",
-    "source_hash": "d1fba762150c532c"
+  "ingress": {
+    "image_name": "io.wonop.helloworld/ingress:f8d34187-wip-e3b0c442",
+    "spec_hash": "22a652f73b610e45",
+    "built_at": "2025-09-15T13:14:50.265027Z",
+    "source_hash": "4b6282628f90150"
   },
   "database": {
     "image_name": "",
-    "spec_hash": "6a971d5bd0ca4eef",
-    "built_at": "2025-08-28T12:03:44.654567Z",
+    "spec_hash": "560259af1c55753",
+    "built_at": "2025-09-15T13:14:50.329016Z",
     "source_hash": "d1fba762150c532c"
   },
-  "frontend": {
-    "image_name": "helloworld.wonop.io/frontend:20250828-120347",
-    "spec_hash": "46aa6550e7f2ce5f",
-    "built_at": "2025-08-28T12:03:49.059195Z",
+  "backend": {
+    "image_name": "io.wonop.helloworld/backend:f8d34187-wip-e71f3c7d",
+    "spec_hash": "5ef8e17ea126d575",
+    "built_at": "2025-09-15T13:15:03.659403Z",
     "source_hash": "d1fba762150c532c"
   },
   "stripe": {
     "image_name": "",
-    "spec_hash": "c0c4d8291c331e9",
-    "built_at": "2025-08-28T12:03:44.654358Z",
+    "spec_hash": "2bd336e3addbca39",
+    "built_at": "2025-09-15T13:14:50.398612Z",
     "source_hash": "d1fba762150c532c"
   },
-  "ingress": {
-    "image_name": "helloworld.wonop.io/ingress:20250828-120344",
-    "spec_hash": "944aa4efa16a5da",
-    "built_at": "2025-08-28T12:03:47.001372Z",
-    "source_hash": "4b6282628f90150"
+  "frontend": {
+    "image_name": "io.wonop.helloworld/frontend:d943afb2",
+    "spec_hash": "a24b7dbe9ce65725",
+    "built_at": "2025-09-15T13:14:50.629867Z",
+    "source_hash": "d1fba762150c532c"
   }
 }

@@ -67,21 +67,57 @@ impl ImageTagGenerator {
         if component_dir.exists() {
             dirs.push(component_dir.clone());
 
-            // Walk the component directory to get files
-            if let Some(watch) = &spec.watch {
-                // Walk directory and check patterns (instead of glob expansion)
-                log::debug!("Walking directory for component '{}' with watch patterns", spec.component_name);
+            // ALWAYS walk the component directory to get all component files
+            log::debug!("Walking component directory for '{}'", spec.component_name);
 
-                for entry in WalkDir::new(&component_dir)
+            for entry in WalkDir::new(&component_dir)
+                .follow_links(false)
+                .max_depth(10)  // Limit recursion depth
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                if entry.file_type().is_file() {
+                    let path = entry.path();
+
+                    // Skip common build artifacts
+                    let path_str = path.to_str().unwrap_or("");
+                    if path_str.contains("/.git/") ||
+                       path_str.contains("/target/") ||
+                       path_str.contains("/dist/") ||
+                       path_str.contains("/node_modules/") ||
+                       path_str.contains("/.rush/") {
+                        continue;
+                    }
+
+                    files.push(path.to_path_buf());
+                }
+            }
+
+            let component_file_count = files.len();
+            log::debug!("Found {} component files for '{}'",
+                component_file_count, spec.component_name);
+
+            // ADDITIONALLY check watch patterns for extra files outside component dir
+            if let Some(watch) = &spec.watch {
+                log::debug!("Checking watch patterns for additional files for '{}'",
+                    spec.component_name);
+
+                // Walk from base directory for watch patterns that might be outside component
+                for entry in WalkDir::new(&self.base_dir)
                     .follow_links(false)
-                    .max_depth(10)  // Limit recursion depth to prevent deep traversal
+                    .max_depth(10)
                     .into_iter()
                     .filter_map(|e| e.ok())
                 {
                     if entry.file_type().is_file() {
                         let path = entry.path();
 
-                        // Skip common build artifacts early
+                        // Skip if already included from component directory
+                        if path.starts_with(&component_dir) {
+                            continue;
+                        }
+
+                        // Skip common build artifacts
                         let path_str = path.to_str().unwrap_or("");
                         if path_str.contains("/.git/") ||
                            path_str.contains("/target/") ||
@@ -104,32 +140,9 @@ impl ImageTagGenerator {
                     }
                 }
 
-                log::debug!("Found {} files matching watch patterns for component '{}'",
-                    files.len(), spec.component_name);
-            } else {
-                // No watch patterns - walk directory normally
-                for entry in WalkDir::new(&component_dir)
-                    .follow_links(false)
-                    .max_depth(10)  // Limit recursion depth
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                {
-                    if entry.file_type().is_file() {
-                        let path = entry.path();
-
-                        // Skip common build artifacts
-                        let path_str = path.to_str().unwrap_or("");
-                        if path_str.contains("/.git/") ||
-                           path_str.contains("/target/") ||
-                           path_str.contains("/dist/") ||
-                           path_str.contains("/node_modules/") ||
-                           path_str.contains("/.rush/") {
-                            continue;
-                        }
-
-                        files.push(path.to_path_buf());
-                    }
-                }
+                let watch_file_count = files.len() - component_file_count;
+                log::debug!("Found {} additional files from watch patterns for '{}'",
+                    watch_file_count, spec.component_name);
             }
         }
 
@@ -138,6 +151,14 @@ impl ImageTagGenerator {
         files.dedup();
         dirs.sort();
         dirs.dedup();
+
+        if files.is_empty() {
+            log::warn!("No files found for component '{}' - this will result in empty hash!",
+                spec.component_name);
+        }
+
+        log::debug!("Total files for '{}': {} files in {} directories",
+            spec.component_name, files.len(), dirs.len());
 
         (files, dirs)
     }
@@ -301,14 +322,21 @@ impl ImageTagGenerator {
     fn compute_content_hash_from_files(&self, files: &[PathBuf]) -> Result<String> {
         let mut hasher = Sha256::new();
 
+        if files.is_empty() {
+            log::error!("Computing hash with empty file list - this will produce the empty string hash!");
+        }
+
         // Create a sorted copy for deterministic hashing
         let mut sorted_files = files.to_vec();
         sorted_files.sort();
+
+        let mut hashed_count = 0;
 
         // Hash file paths and contents
         for file in sorted_files {
             // Skip non-existent files
             if !file.exists() {
+                log::trace!("Skipping non-existent file: {:?}", file);
                 continue;
             }
 
@@ -322,10 +350,20 @@ impl ImageTagGenerator {
             if let Ok(content) = std::fs::read(&file) {
                 hasher.update(&content);
                 hasher.update(b"\0"); // Separator
+                hashed_count += 1;
             }
         }
 
-        Ok(hex::encode(hasher.finalize()))
+        let hash = hex::encode(hasher.finalize());
+
+        if &hash[..8.min(hash.len())] == "e3b0c442" {
+            log::error!("Generated empty string hash! No files were hashed. File list had {} entries, {} were hashed",
+                files.len(), hashed_count);
+        } else {
+            log::trace!("Hashed {} files to generate hash: {}", hashed_count, &hash[..8.min(hash.len())]);
+        }
+
+        Ok(hash)
     }
 
     /// Compute SHA256 hash of all file contents in watch directories

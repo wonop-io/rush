@@ -158,6 +158,8 @@ pub struct BuildCache {
     expiry: Duration,
     /// Last cleanup time
     last_cleanup: Instant,
+    /// Recently invalidated components (cleared on next successful build)
+    recently_invalidated: Vec<String>,
 }
 
 impl BuildCache {
@@ -170,6 +172,7 @@ impl BuildCache {
             stats: CacheStats::default(),
             expiry: Duration::from_secs(3600), // 1 hour default
             last_cleanup: Instant::now(),
+            recently_invalidated: Vec::new(),
         }
     }
 
@@ -290,6 +293,7 @@ impl BuildCache {
         for (component, entry) in &self.entries {
             // Check if any changed file affects this component
             if let Some(spec) = &entry.spec {
+                debug!("[CACHE] Checking component '{}' with spec for invalidation", component);
                 let mut should_invalidate = false;
                 
                 // Get location from build_type if available
@@ -369,7 +373,7 @@ impl BuildCache {
                     debug!("[CACHE] Component '{}' not affected by file changes", component);
                 }
             } else {
-                debug!("[CACHE] Component '{}' has no build spec", component);
+                warn!("[CACHE] Component '{}' has no build spec - cannot check for invalidation! This is a bug.", component);
             }
         }
         
@@ -377,12 +381,14 @@ impl BuildCache {
             info!("[CACHE] No components invalidated by file changes");
         } else {
             info!("[CACHE] Invalidating {} components: {:?}", invalidated.len(), invalidated);
+            // Store the invalidated components for potential use
+            self.recently_invalidated = invalidated.clone();
         }
-        
+
         for component in invalidated {
             self.entries.remove(&component);
         }
-        
+
         self.stats.total_entries = self.entries.len();
     }
 
@@ -455,6 +461,16 @@ impl BuildCache {
     /// Set cache expiry duration
     pub fn set_expiry(&mut self, expiry: Duration) {
         self.expiry = expiry;
+    }
+
+    /// Get recently invalidated components
+    pub fn get_invalidated_components(&self) -> Vec<String> {
+        self.recently_invalidated.clone()
+    }
+
+    /// Clear the recently invalidated components list
+    pub fn clear_invalidated_components(&mut self) {
+        self.recently_invalidated.clear();
     }
 
     /// Periodic maintenance (cleanup expired entries)

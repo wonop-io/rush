@@ -202,6 +202,19 @@ impl BuildOrchestrator {
                             spec.component_name, full_image_name);
                         built_images.insert(spec.component_name.clone(), full_image_name.clone());
 
+                        // CRITICAL FIX: Always update cache with spec, even when skipping build
+                        // This ensures cache invalidation can work on subsequent file changes
+                        if self.config.enable_cache {
+                            debug!("[BUILD DECISION] Component '{}': Adding to cache with spec for future invalidation",
+                                spec.component_name);
+                            let mut cache_guard = self.cache.lock().await;
+                            cache_guard.put_with_spec(
+                                spec.component_name.clone(),
+                                full_image_name.clone(),
+                                spec.clone(),
+                            ).await;
+                        }
+
                         // Update state
                         {
                             let mut state = self.state.write().await;

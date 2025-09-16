@@ -352,30 +352,90 @@ impl FileChangeHandler {
                     self.base_dir.join(loc)
                 };
 
+                // Try to canonicalize for better comparison, but fall back if it fails
+                let canonical_location = abs_location.canonicalize().unwrap_or_else(|_| abs_location.clone());
+
                 debug!(
-                    "Checking if component {} (location: {}) is affected by changes",
+                    "Checking if component {} is affected by changes (location: {}, canonical: {})",
                     spec.component_name,
-                    abs_location.display()
+                    abs_location.display(),
+                    canonical_location.display()
                 );
 
                 // Check if any changed file is in the component's location
                 for path in &batch.modified {
-                    trace!("  Checking modified path: {}", path.display());
-                    if path.starts_with(&abs_location) {
+                    // Try to canonicalize the changed path for better comparison
+                    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
+
+                    debug!("  Comparing paths for component {}:", spec.component_name);
+                    debug!("    Changed file: {} (canonical: {})", path.display(), canonical_path.display());
+                    debug!("    Component location: {} (canonical: {})", abs_location.display(), canonical_location.display());
+
+                    // Check multiple conditions for matching
+                    let is_match =
+                        // Direct path prefix match
+                        path.starts_with(&abs_location) ||
+                        canonical_path.starts_with(&canonical_location) ||
+                        // Check if the path contains the location as a component
+                        path.components().any(|c| {
+                            if let Some(loc_name) = abs_location.file_name() {
+                                c.as_os_str() == loc_name
+                            } else {
+                                false
+                            }
+                        }) ||
+                        // Check if paths share common ancestry with the location
+                        (path.to_string_lossy().contains(&loc.replace('/', std::path::MAIN_SEPARATOR_STR)));
+
+                    if is_match {
                         info!("Component {} affected by change to: {}", spec.component_name, path.display());
                         return true;
                     }
                 }
                 for path in &batch.created {
-                    trace!("  Checking created path: {}", path.display());
-                    if path.starts_with(&abs_location) {
+                    // Try to canonicalize the changed path for better comparison
+                    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
+
+                    debug!("  Comparing paths for new file in component {}:", spec.component_name);
+                    debug!("    New file: {} (canonical: {})", path.display(), canonical_path.display());
+                    debug!("    Component location: {} (canonical: {})", abs_location.display(), canonical_location.display());
+
+                    let is_match =
+                        path.starts_with(&abs_location) ||
+                        canonical_path.starts_with(&canonical_location) ||
+                        path.components().any(|c| {
+                            if let Some(loc_name) = abs_location.file_name() {
+                                c.as_os_str() == loc_name
+                            } else {
+                                false
+                            }
+                        }) ||
+                        (path.to_string_lossy().contains(&loc.replace('/', std::path::MAIN_SEPARATOR_STR)));
+
+                    if is_match {
                         info!("Component {} affected by new file: {}", spec.component_name, path.display());
                         return true;
                     }
                 }
                 for path in &batch.deleted {
-                    trace!("  Checking deleted path: {}", path.display());
-                    if path.starts_with(&abs_location) {
+                    // For deleted files, we can't canonicalize since they don't exist
+                    debug!("  Comparing paths for deleted file in component {}:", spec.component_name);
+                    debug!("    Deleted file: {}", path.display());
+                    debug!("    Component location: {} (canonical: {})", abs_location.display(), canonical_location.display());
+
+                    let is_match =
+                        path.starts_with(&abs_location) ||
+                        path.starts_with(&canonical_location) ||
+                        path.components().any(|c| {
+                            if let Some(loc_name) = abs_location.file_name() {
+                                c.as_os_str() == loc_name
+                            } else {
+                                false
+                            }
+                        }) ||
+                        (path.to_string_lossy().contains(&loc.replace('/', std::path::MAIN_SEPARATOR_STR)));
+
+                    if is_match {
                         info!("Component {} affected by deleted file: {}", spec.component_name, path.display());
                         return true;
                     }
