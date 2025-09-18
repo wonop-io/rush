@@ -13,6 +13,7 @@ chrono = { workspace = true }
 colored = { workspace = true }
 futures = { workspace = true }
 hex.workspace = true
+ignore = "0.4"
 log = { workspace = true }
 md5 = "0.7"
 notify = { workspace = true }

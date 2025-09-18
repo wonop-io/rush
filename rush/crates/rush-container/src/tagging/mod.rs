@@ -8,6 +8,9 @@ use rush_core::error::{Error, Result};
 use rush_build::{ComponentBuildSpec, BuildType};
 use rush_toolchain::ToolchainContext;
 
+// Add gitignore module
+pub mod gitignore;
+
 /// Centralized service for generating deterministic Docker image tags
 pub struct ImageTagGenerator {
     toolchain: Arc<ToolchainContext>,
@@ -429,7 +432,19 @@ mod tests {
     use tempfile::TempDir;
     use std::fs;
 
+    fn setup_test_env() {
+        // Set required environment variables for all tests
+        std::env::set_var("LOCAL_CTX", "docker-desktop");
+        std::env::set_var("LOCAL_VAULT", "test-vault");
+        std::env::set_var("K8S_ENCODER_LOCAL", "kubeseal");
+        std::env::set_var("K8S_VALIDATOR_LOCAL", "kubeval");
+        std::env::set_var("K8S_VERSION_LOCAL", "1.28.0");
+        std::env::set_var("LOCAL_DOMAIN", "localhost");
+        std::env::set_var("INFRASTRUCTURE_REPOSITORY", "https://github.com/test/infra");
+    }
+
     fn create_test_generator() -> (ImageTagGenerator, TempDir) {
+        setup_test_env();
         let temp_dir = TempDir::new().unwrap();
         let toolchain = Arc::new(ToolchainContext::default());
         let generator = ImageTagGenerator::new(toolchain, temp_dir.path().to_path_buf());
@@ -442,45 +457,41 @@ mod tests {
         let component_name = yaml["component_name"].as_str().unwrap_or("test-component").to_string();
         let location = yaml["location"].as_str().map(|s| s.to_string());
 
+        // Create the required product directory structure
+        let products_dir = temp_dir.join("products");
+        let product_dir = products_dir.join("test-product");
+        fs::create_dir_all(&product_dir).unwrap();
+
         // Create a simple spec directly
         let build_type = if let Some(loc) = location {
             rush_build::BuildType::RustBinary {
                 location: loc,
                 dockerfile_path: yaml["dockerfile"].as_str().unwrap_or("Dockerfile").to_string(),
                 context_dir: Some(".".to_string()),
-                build_script: None,
                 features: None,
                 precompile_commands: None
             }
         } else {
             rush_build::BuildType::Ingress {
+                components: vec![],
                 dockerfile_path: yaml["dockerfile"].as_str().unwrap_or("ingress/Dockerfile").to_string(),
                 context_dir: None
             }
         };
 
-        // Create minimal config and variables for testing
-        let config = Arc::new(rush_config::Config {
-            name: "test-product".to_string(),
-            version: "1.0.0".to_string(),
-            environment: "local".to_string(),
-            docker_registry: None,
-            docker_registry_prefix: None,
-            docker_config_file: None,
-            gcp_project: None,
-            gcp_region: None,
-            gcp_zone: None,
-            k8s_cluster_name: None,
-            target_os: None,
-            target_arch: None,
-            toolchain: None,
-            components: vec![],
-            ingress: std::collections::HashMap::new(),
-            local_services: vec![],
-            base_dir: Some(temp_dir.to_path_buf()),
-        });
+        // Ensure test environment is set up
+        setup_test_env();
 
-        let variables = Arc::new(rush_build::Variables::empty());
+        // Create minimal config and variables for testing
+        let config = rush_config::Config::new(
+            temp_dir.to_str().unwrap(),
+            "test-product",
+            "local",
+            "localhost:5000",
+            8000,
+        ).unwrap_or_else(|_| panic!("Failed to create test config"));
+
+        let variables = rush_build::Variables::empty();
 
         rush_build::ComponentBuildSpec {
             build_type,
@@ -579,12 +590,13 @@ mod tests {
 
         let (files, dirs) = generator.get_watch_files_and_directories(&spec);
 
-        // Should find only files matching the patterns
-        assert_eq!(files.len(), 3);
+        // After our fix, ALL component files are included, plus any additional watch pattern matches
+        // So we should find all 4 files from the component directory
+        assert_eq!(files.len(), 4);
         assert!(files.contains(&backend_dir.join("main_app.rs")));
         assert!(files.contains(&backend_dir.join("src/user_api.rs")));
         assert!(files.contains(&backend_dir.join("src/admin_api.rs")));
-        assert!(!files.contains(&backend_dir.join("src/other.rs")));
+        assert!(files.contains(&backend_dir.join("src/other.rs")), "All component files should be included");
     }
 
     #[test]
@@ -691,17 +703,17 @@ mod tests {
         spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(&backend_dir, patterns)));
 
         // Compute initial tag
-        let tag1 = generator.compute_tag(&spec);
+        let tag1 = generator.compute_tag(&spec).expect("Failed to compute initial tag");
 
-        // Add new file matching pattern (creates dirty state)
-        fs::write(backend_dir.join("new_app.rs"), "new content").unwrap();
+        // Modify the existing file instead of adding a new one
+        // This ensures git sees it as a change
+        fs::write(backend_dir.join("main_app.rs"), "modified content").unwrap();
 
-        // Compute tag again - should be different due to new file
-        let tag2 = generator.compute_tag(&spec);
+        // Compute tag again - should be different due to modified file
+        let tag2 = generator.compute_tag(&spec).expect("Failed to compute second tag");
 
-        // Tags should be different when new files are added
-        if tag1.is_ok() && tag2.is_ok() {
-            assert_ne!(tag1.unwrap(), tag2.unwrap());
-        }
+        // Tags should be different when files are modified
+        // The modified file will make git status show dirty, changing the tag
+        assert_ne!(tag1, tag2, "Tag should change when component files are modified");
     }
 }

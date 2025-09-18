@@ -374,8 +374,8 @@ impl DockerClient for MockDockerClient {
     async fn image_exists(&self, image: &str) -> Result<bool> {
         self.record_call(format!("image_exists({image})")).await;
 
-        let state = self.state.lock().await;
-        // Check if image exists in built_images
-        Ok(state.built_images.contains(image))
+        let images = self.images.lock().await;
+        // Check if image exists
+        Ok(images.contains_key(image))
     }
 }

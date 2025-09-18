@@ -1,0 +1,285 @@
+use ignore::{WalkBuilder, Walk};
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use std::path::{Path, PathBuf};
+use rush_core::error::Result;
+use log::{debug, trace, warn};
+
+/// Manages gitignore rules for file filtering during hash computation
+#[derive(Clone)]
+pub struct GitignoreManager {
+    /// Root gitignore from repository root
+    root_gitignore: Option<Gitignore>,
+
+    /// Component-specific gitignores
+    component_gitignores: Vec<Gitignore>,
+
+    /// Base directory for the repository
+    base_dir: PathBuf,
+}
+
+impl GitignoreManager {
+    /// Create a new GitignoreManager for a base directory
+    pub fn new(base_dir: &Path) -> Result<Self> {
+        let mut manager = GitignoreManager {
+            root_gitignore: None,
+            component_gitignores: Vec::new(),
+            base_dir: base_dir.to_path_buf(),
+        };
+
+        // Load root .gitignore if it exists
+        let root_gitignore_path = base_dir.join(".gitignore");
+        if root_gitignore_path.exists() {
+            debug!("Loading root .gitignore from {:?}", root_gitignore_path);
+            let mut builder = GitignoreBuilder::new(base_dir);
+
+            if let Some(e) = builder.add(&root_gitignore_path) {
+                warn!("Failed to parse root .gitignore: {}", e);
+            } else if let Ok(gitignore) = builder.build() {
+                trace!("Successfully loaded root .gitignore");
+                manager.root_gitignore = Some(gitignore);
+            }
+        } else {
+            debug!("No root .gitignore found at {:?}", root_gitignore_path);
+        }
+
+        Ok(manager)
+    }
+
+    /// Add a component-specific gitignore
+    pub fn add_component_gitignore(&mut self, component_dir: &Path) -> Result<()> {
+        let gitignore_path = component_dir.join(".gitignore");
+        if gitignore_path.exists() {
+            debug!("Loading component .gitignore from {:?}", gitignore_path);
+            let mut builder = GitignoreBuilder::new(component_dir);
+
+            if let Some(e) = builder.add(&gitignore_path) {
+                warn!("Failed to parse component .gitignore at {:?}: {}", gitignore_path, e);
+            } else if let Ok(gitignore) = builder.build() {
+                trace!("Successfully loaded component .gitignore");
+                self.component_gitignores.push(gitignore);
+            }
+        } else {
+            trace!("No component .gitignore found at {:?}", gitignore_path);
+        }
+        Ok(())
+    }
+
+    /// Check if a path should be ignored
+    pub fn should_ignore(&self, path: &Path, is_dir: bool) -> bool {
+        // Check root gitignore
+        if let Some(ref root_ignore) = self.root_gitignore {
+            let matched = root_ignore.matched(path, is_dir);
+            if matched.is_ignore() {
+                trace!("Path {:?} ignored by root .gitignore", path);
+                return true;
+            }
+        }
+
+        // Check component gitignores
+        for gitignore in &self.component_gitignores {
+            let matched = gitignore.matched(path, is_dir);
+            if matched.is_ignore() {
+                trace!("Path {:?} ignored by component .gitignore", path);
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Create a Walk iterator that respects gitignore
+    pub fn walk(&self, dir: &Path) -> Walk {
+        debug!("Creating gitignore-aware walker for {:?}", dir);
+
+        // Use the ignore crate's built-in gitignore support
+        WalkBuilder::new(dir)
+            .standard_filters(true)  // Applies .gitignore, .ignore, .git/info/exclude
+            .hidden(false)           // Don't skip hidden files by default
+            .parents(true)           // Check parent .gitignore files
+            .ignore(true)            // Enable .ignore file checking
+            .git_ignore(true)        // Enable .gitignore checking
+            .git_global(false)       // Don't check global gitignore for reproducibility
+            .git_exclude(true)       // Check .git/info/exclude
+            .max_depth(Some(10))     // Limit recursion depth
+            .build()
+    }
+
+    /// Create a Walk iterator with custom settings
+    pub fn walk_with_settings(&self, dir: &Path, respect_gitignore: bool) -> Walk {
+        debug!("Creating walker for {:?} (gitignore: {})", dir, respect_gitignore);
+
+        WalkBuilder::new(dir)
+            .standard_filters(respect_gitignore)
+            .hidden(false)
+            .parents(respect_gitignore)
+            .ignore(respect_gitignore)
+            .git_ignore(respect_gitignore)
+            .git_global(respect_gitignore)
+            .git_exclude(respect_gitignore)
+            .max_depth(Some(10))
+            .build()
+    }
+}
+
+impl Default for GitignoreManager {
+    fn default() -> Self {
+        GitignoreManager {
+            root_gitignore: None,
+            component_gitignores: Vec::new(),
+            base_dir: PathBuf::from("."),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use std::fs;
+
+    #[test]
+    fn test_gitignore_excludes_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create files
+        fs::write(base_path.join("included.rs"), "// included").unwrap();
+        fs::write(base_path.join("excluded.tmp"), "// excluded").unwrap();
+
+        // Create .gitignore
+        fs::write(base_path.join(".gitignore"), "*.tmp\n").unwrap();
+
+        let manager = GitignoreManager::new(base_path).unwrap();
+
+        assert!(!manager.should_ignore(&base_path.join("included.rs"), false),
+                "included.rs should not be ignored");
+        assert!(manager.should_ignore(&base_path.join("excluded.tmp"), false),
+                "excluded.tmp should be ignored by .gitignore");
+    }
+
+    #[test]
+    fn test_nested_gitignore() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create nested structure
+        let sub_dir = base_path.join("subdir");
+        fs::create_dir(&sub_dir).unwrap();
+
+        fs::write(sub_dir.join("file.rs"), "// source file").unwrap();
+        fs::write(sub_dir.join("ignored.log"), "log content").unwrap();
+
+        // Root .gitignore
+        fs::write(base_path.join(".gitignore"), "*.tmp\n").unwrap();
+
+        // Nested .gitignore
+        fs::write(sub_dir.join(".gitignore"), "*.log\n").unwrap();
+
+        let mut manager = GitignoreManager::new(base_path).unwrap();
+        manager.add_component_gitignore(&sub_dir).unwrap();
+
+        assert!(!manager.should_ignore(&sub_dir.join("file.rs"), false),
+                "file.rs should not be ignored");
+        assert!(manager.should_ignore(&sub_dir.join("ignored.log"), false),
+                "ignored.log should be ignored by nested .gitignore");
+    }
+
+    #[test]
+    fn test_no_gitignore_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Create files without any .gitignore
+        fs::write(base_path.join("file1.rs"), "// file 1").unwrap();
+        fs::write(base_path.join("file2.txt"), "text").unwrap();
+
+        let manager = GitignoreManager::new(base_path).unwrap();
+
+        // Nothing should be ignored when no .gitignore exists
+        assert!(!manager.should_ignore(&base_path.join("file1.rs"), false));
+        assert!(!manager.should_ignore(&base_path.join("file2.txt"), false));
+    }
+
+    #[test]
+    fn test_walk_respects_gitignore() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Initialize git repo for ignore crate to work properly
+        std::process::Command::new("git")
+            .args(&["init"])
+            .current_dir(base_path)
+            .output()
+            .unwrap();
+
+        // Create files
+        fs::write(base_path.join("included.rs"), "// included").unwrap();
+        fs::write(base_path.join("excluded.log"), "// excluded").unwrap();
+        fs::write(base_path.join(".gitignore"), "*.log\n").unwrap();
+
+        let manager = GitignoreManager::new(base_path).unwrap();
+
+        let mut files = Vec::new();
+        for entry in manager.walk(base_path) {
+            if let Ok(entry) = entry {
+                if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                    let path = entry.path();
+                    // Skip .git directory files
+                    if !path.to_str().unwrap_or("").contains("/.git/") {
+                        files.push(path.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        // Should include included.rs and .gitignore but not excluded.log
+        assert!(files.iter().any(|p| p.ends_with("included.rs")),
+                "Walk should include included.rs, found files: {:?}", files);
+        assert!(!files.iter().any(|p| p.ends_with("excluded.log")),
+                 "Walk should exclude excluded.log, found files: {:?}", files);
+    }
+
+    #[test]
+    fn test_directory_patterns() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        // Initialize git repo for ignore crate to work properly
+        std::process::Command::new("git")
+            .args(&["init"])
+            .current_dir(base_path)
+            .output()
+            .unwrap();
+
+        // Create directory structure
+        let build_dir = base_path.join("build");
+        fs::create_dir(&build_dir).unwrap();
+        fs::write(build_dir.join("output.txt"), "build output").unwrap();
+
+        fs::write(base_path.join("source.rs"), "// source").unwrap();
+        fs::write(base_path.join(".gitignore"), "build/\n").unwrap();
+
+        // Use the walk method to check if files are ignored
+        // since should_ignore is for our internal gitignore manager
+        let mut found_files = Vec::new();
+        for entry in WalkBuilder::new(base_path)
+            .standard_filters(true)
+            .git_ignore(true)
+            .build()
+        {
+            if let Ok(entry) = entry {
+                if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                    let path = entry.path();
+                    if !path.to_str().unwrap_or("").contains("/.git/") {
+                        found_files.push(path.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        assert!(found_files.iter().any(|p| p.ends_with("source.rs")),
+                "source.rs should be found");
+        assert!(!found_files.iter().any(|p| p.ends_with("output.txt")),
+                "output.txt in build/ should be ignored by gitignore");
+    }
+}
