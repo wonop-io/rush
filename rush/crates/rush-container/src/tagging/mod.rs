@@ -10,19 +10,28 @@ use rush_toolchain::ToolchainContext;
 
 // Add gitignore module
 pub mod gitignore;
+use gitignore::GitignoreManager;
 
 /// Centralized service for generating deterministic Docker image tags
 pub struct ImageTagGenerator {
     toolchain: Arc<ToolchainContext>,
     base_dir: PathBuf,
+    gitignore_manager: GitignoreManager,
 }
 
 impl ImageTagGenerator {
     /// Create a new ImageTagGenerator
     pub fn new(toolchain: Arc<ToolchainContext>, base_dir: PathBuf) -> Self {
+        let gitignore_manager = GitignoreManager::new(&base_dir)
+            .unwrap_or_else(|e| {
+                log::warn!("Failed to initialize gitignore manager: {}", e);
+                GitignoreManager::default()
+            });
+
         Self {
             toolchain,
             base_dir,
+            gitignore_manager,
         }
     }
 
@@ -61,92 +70,103 @@ impl ImageTagGenerator {
 
     /// Get watched files and directories by walking and matching patterns
     /// Returns (files, directories) tuple
-    fn get_watch_files_and_directories(&self, spec: &ComponentBuildSpec) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    pub fn get_watch_files_and_directories(&self, spec: &ComponentBuildSpec) -> (Vec<PathBuf>, Vec<PathBuf>) {
         let mut files = Vec::new();
         let mut dirs = Vec::new();
 
         // Main component directory
         let component_dir = self.get_component_directory(spec);
-        if component_dir.exists() {
-            dirs.push(component_dir.clone());
+        if !component_dir.exists() {
+            log::warn!("Component directory does not exist: {:?}", component_dir);
+            return (files, dirs);
+        }
 
-            // ALWAYS walk the component directory to get all component files
-            log::debug!("Walking component directory for '{}'", spec.component_name);
+        dirs.push(component_dir.clone());
 
-            for entry in WalkDir::new(&component_dir)
-                .follow_links(false)
-                .max_depth(10)  // Limit recursion depth
-                .into_iter()
-                .filter_map(|e| e.ok())
-            {
-                if entry.file_type().is_file() {
+        // Create a local gitignore manager for this component
+        let mut local_gitignore = self.gitignore_manager.clone();
+        local_gitignore.add_component_gitignore(&component_dir)
+            .unwrap_or_else(|e| {
+                log::debug!("No component .gitignore for {}: {}",
+                           spec.component_name, e);
+            });
+
+        // ALWAYS walk component directory with gitignore respect
+        log::debug!("Walking component directory for '{}' with gitignore rules",
+                   spec.component_name);
+
+        for entry in local_gitignore.walk(&component_dir) {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    log::debug!("Error walking directory: {}", e);
+                    continue;
+                }
+            };
+
+            if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                let path = entry.path();
+
+                // Apply additional Rush-specific exclusions
+                // (backwards compatibility for explicit exclusions)
+                let path_str = path.to_str().unwrap_or("");
+                if path_str.contains("/.rush/") {
+                    continue;  // Always exclude .rush directory
+                }
+
+                files.push(path.to_path_buf());
+            }
+        }
+
+        let component_file_count = files.len();
+        log::debug!("Found {} component files for '{}' (after gitignore filtering)",
+            component_file_count, spec.component_name);
+
+        // ADDITIONALLY check watch patterns for extra files outside component dir
+        if let Some(watch) = &spec.watch {
+            log::debug!("Checking watch patterns for additional files for '{}'",
+                spec.component_name);
+
+            // Use gitignore-aware walker for watch patterns too
+            for entry in self.gitignore_manager.walk(&self.base_dir) {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(e) => {
+                        log::debug!("Error walking base directory: {}", e);
+                        continue;
+                    }
+                };
+
+                if entry.file_type().map_or(false, |ft| ft.is_file()) {
                     let path = entry.path();
 
-                    // Skip common build artifacts
-                    let path_str = path.to_str().unwrap_or("");
-                    if path_str.contains("/.git/") ||
-                       path_str.contains("/target/") ||
-                       path_str.contains("/dist/") ||
-                       path_str.contains("/node_modules/") ||
-                       path_str.contains("/.rush/") {
+                    // Skip if already included from component directory
+                    if path.starts_with(&component_dir) {
                         continue;
                     }
 
-                    files.push(path.to_path_buf());
-                }
-            }
+                    // Apply additional Rush-specific exclusions
+                    let path_str = path.to_str().unwrap_or("");
+                    if path_str.contains("/.rush/") {
+                        continue;  // Always exclude .rush directory
+                    }
 
-            let component_file_count = files.len();
-            log::debug!("Found {} component files for '{}'",
-                component_file_count, spec.component_name);
-
-            // ADDITIONALLY check watch patterns for extra files outside component dir
-            if let Some(watch) = &spec.watch {
-                log::debug!("Checking watch patterns for additional files for '{}'",
-                    spec.component_name);
-
-                // Walk from base directory for watch patterns that might be outside component
-                for entry in WalkDir::new(&self.base_dir)
-                    .follow_links(false)
-                    .max_depth(10)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                {
-                    if entry.file_type().is_file() {
-                        let path = entry.path();
-
-                        // Skip if already included from component directory
-                        if path.starts_with(&component_dir) {
-                            continue;
-                        }
-
-                        // Skip common build artifacts
-                        let path_str = path.to_str().unwrap_or("");
-                        if path_str.contains("/.git/") ||
-                           path_str.contains("/target/") ||
-                           path_str.contains("/dist/") ||
-                           path_str.contains("/node_modules/") ||
-                           path_str.contains("/.rush/") {
-                            continue;
-                        }
-
-                        // Check if file matches any watch pattern
-                        if watch.matches(path) {
-                            files.push(path.to_path_buf());
-                            // Track parent directory
-                            if let Some(parent) = path.parent() {
-                                if !dirs.contains(&parent.to_path_buf()) {
-                                    dirs.push(parent.to_path_buf());
-                                }
+                    // Check if file matches any watch pattern
+                    if watch.matches(path) {
+                        files.push(path.to_path_buf());
+                        // Track parent directory
+                        if let Some(parent) = path.parent() {
+                            if !dirs.contains(&parent.to_path_buf()) {
+                                dirs.push(parent.to_path_buf());
                             }
                         }
                     }
                 }
-
-                let watch_file_count = files.len() - component_file_count;
-                log::debug!("Found {} additional files from watch patterns for '{}'",
-                    watch_file_count, spec.component_name);
             }
+
+            let watch_file_count = files.len() - component_file_count;
+            log::debug!("Found {} additional files from watch patterns for '{}'",
+                watch_file_count, spec.component_name);
         }
 
         // Remove duplicates
