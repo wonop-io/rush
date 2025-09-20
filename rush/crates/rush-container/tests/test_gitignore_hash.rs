@@ -87,6 +87,8 @@ fn test_hash_excludes_gitignored_files() {
         dotenv_secrets: Default::default(),
         domain: "localhost".to_string(),
         cross_compile: "native".to_string(),
+        health_check: None,
+        startup_probe: None,
     };
 
     // Get hash before
@@ -182,6 +184,8 @@ fn test_hash_respects_nested_gitignores() {
         dotenv_secrets: Default::default(),
         domain: "localhost".to_string(),
         cross_compile: "native".to_string(),
+        health_check: None,
+        startup_probe: None,
     };
 
     // Get initial hash
@@ -280,6 +284,8 @@ fn test_hash_with_target_directory() {
         dotenv_secrets: Default::default(),
         domain: "localhost".to_string(),
         cross_compile: "native".to_string(),
+        health_check: None,
+        startup_probe: None,
     };
 
     // Get initial hash

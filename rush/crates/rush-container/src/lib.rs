@@ -5,14 +5,18 @@
 //! for build orchestration, lifecycle management, file watching, and Docker integration.
 
 pub mod build;
+pub mod dependency_graph;
 pub mod dev_environment;
 pub mod docker;
 pub mod events;
+pub mod health_check_manager;
 pub mod image_builder;
 pub mod kubernetes;
 pub mod lifecycle;
+pub mod metrics;
 pub mod network;
 pub mod reactor;
+pub mod recovery;
 pub mod service;
 pub mod simple_output;
 pub mod status;

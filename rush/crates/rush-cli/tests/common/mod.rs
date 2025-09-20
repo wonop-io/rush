@@ -64,6 +64,8 @@ pub fn create_test_spec(config: Arc<Config>) -> Arc<Mutex<ComponentBuildSpec>> {
         cross_compile: "native".to_string(),
         dotenv_secrets: HashMap::new(),
         domain: "test.test.app".to_string(),
+        health_check: None,
+        startup_probe: None,
     };
 
     Arc::new(Mutex::new(spec))

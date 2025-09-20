@@ -4,8 +4,11 @@
 //! stopping, and coordinating container operations.
 
 use crate::{
+    dependency_graph::DependencyGraph,
     docker::{DockerClient, DockerService, DockerServiceConfig},
     events::{Event, EventBus, ContainerEvent},
+    health_check_manager::HealthCheckManager,
+    metrics::MetricsCollector,
     reactor::state::{SharedReactorState, ReactorPhase},
     service::ContainerService,
     simple_output,
@@ -44,6 +47,12 @@ pub struct LifecycleConfig {
     pub health_check_interval: Duration,
     /// Maximum restart attempts before giving up
     pub max_restart_attempts: u32,
+    /// Whether to collect performance metrics
+    pub collect_metrics: bool,
+    /// Whether to use exponential backoff for retries
+    pub exponential_backoff: bool,
+    /// Maximum backoff delay (in seconds)
+    pub max_backoff_delay: u64,
 }
 
 impl Default for LifecycleConfig {
@@ -60,11 +69,15 @@ impl Default for LifecycleConfig {
             enable_health_checks: true,
             health_check_interval: Duration::from_secs(30),
             max_restart_attempts: 3,
+            collect_metrics: true,
+            exponential_backoff: true,
+            max_backoff_delay: 60,
         }
     }
 }
 
 /// Manages container lifecycle operations
+#[derive(Clone)]
 pub struct LifecycleManager {
     config: LifecycleConfig,
     docker_client: Arc<dyn DockerClient>,
@@ -76,6 +89,8 @@ pub struct LifecycleManager {
     output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
     /// Track active log streams to prevent duplicates
     active_log_streams: Arc<tokio::sync::RwLock<std::collections::HashSet<String>>>,
+    /// Metrics collector
+    metrics: Arc<MetricsCollector>,
 }
 
 impl LifecycleManager {
@@ -88,7 +103,8 @@ impl LifecycleManager {
         state: SharedReactorState,
     ) -> Self {
         let (shutdown_sender, _) = broadcast::channel(8);
-        
+        let metrics = Arc::new(MetricsCollector::new(config.collect_metrics));
+
         Self {
             config,
             docker_client,
@@ -98,6 +114,7 @@ impl LifecycleManager {
             shutdown_sender,
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
             active_log_streams: Arc::new(tokio::sync::RwLock::new(std::collections::HashSet::new())),
+            metrics,
         }
     }
     
@@ -105,6 +122,16 @@ impl LifecycleManager {
     pub async fn set_output_sink(&self, sink: Arc<tokio::sync::Mutex<Box<dyn Sink>>>) {
         let mut output_sink = self.output_sink.write().await;
         *output_sink = Some(sink);
+    }
+
+    /// Get performance metrics
+    pub async fn get_metrics(&self) -> String {
+        self.metrics.export_json().await
+    }
+
+    /// Get metrics in Prometheus format
+    pub async fn get_metrics_prometheus(&self) -> String {
+        self.metrics.export_prometheus().await
     }
 
     /// Start log streaming for a container if not already active
@@ -219,7 +246,267 @@ impl LifecycleManager {
         Ok(())
     }
 
-    /// Start services
+    /// Start services with dependency-aware ordering and health checks
+    pub async fn start_services_with_dependencies(
+        &self,
+        services: Vec<ContainerService>,
+        component_specs: &[rush_build::ComponentBuildSpec],
+        built_images: &HashMap<String, String>,
+    ) -> Result<Vec<DockerService>> {
+        info!("Starting {} services with dependency-aware ordering", services.len());
+
+        // Record startup begin
+        self.metrics.record_startup_begin(services.len(), 0).await;
+
+        // Create a map of local services for dependency resolution
+        let mut local_services: HashMap<String, String> = HashMap::new();
+        for spec in component_specs {
+            if let rush_build::BuildType::LocalService { service_type, .. } = &spec.build_type {
+                local_services.insert(spec.component_name.clone(), service_type.clone());
+            }
+        }
+
+        // Filter out LocalService components as they're managed separately
+        let docker_specs: Vec<rush_build::ComponentBuildSpec> = component_specs
+            .iter()
+            .filter(|spec| !matches!(spec.build_type, rush_build::BuildType::LocalService { .. }))
+            .cloned()
+            .collect();
+
+        info!("Creating dependency graph from {} component specs (filtered from {}), with {} local services",
+              docker_specs.len(), component_specs.len(), local_services.len());
+
+        // Create dependency graph from component specs (excluding LocalServices)
+        let mut dependency_graph = DependencyGraph::from_specs_with_local_services(docker_specs, &local_services)?;
+
+        // The from_specs method already checks for cycles internally
+        // Get startup waves
+        let waves = dependency_graph.get_startup_waves()?;
+        info!("Starting components in {} waves", waves.len());
+
+        // Update metrics with actual wave count
+        self.metrics.record_startup_begin(services.len(), waves.len()).await;
+
+        // Create health check manager
+        let health_manager = HealthCheckManager::new(self.docker_client.clone());
+
+        let mut running_services = Vec::new();
+        let mut component_to_container: HashMap<String, String> = HashMap::new();
+
+        // Start components wave by wave
+        for (wave_num, components_in_wave) in waves.iter().enumerate() {
+            info!("Starting wave {} with {} components: {:?}",
+                  wave_num + 1, components_in_wave.len(), components_in_wave);
+
+            // Record wave start
+            self.metrics.record_wave_start(wave_num, components_in_wave.clone()).await;
+
+            // Start all components in this wave (sequentially for now due to vault access)
+            // TODO: Make this parallel once vault supports Send futures
+            for component_name in components_in_wave {
+                // Find the corresponding service
+                let service = match services.iter().find(|s| s.name == *component_name) {
+                    Some(s) => s,
+                    None => {
+                        debug!("Component {} not in services list (may be redirected or local)", component_name);
+                        dependency_graph.mark_healthy(component_name)?;
+                        continue;
+                    }
+                };
+
+                // Check if redirected
+                if self.config.redirected_components.contains_key(&service.name) {
+                    info!("Component {} is redirected, marking as ready", service.name);
+                    dependency_graph.mark_healthy(component_name)?;
+                    continue;
+                }
+
+                // Check if local service
+                let component_spec = component_specs
+                    .iter()
+                    .find(|spec| spec.component_name == service.name);
+
+                if let Some(spec) = component_spec {
+                    if matches!(spec.build_type, rush_build::BuildType::LocalService { .. }) {
+                        info!("Component {} is a local service, marking as ready", service.name);
+                        dependency_graph.mark_healthy(component_name)?;
+                        continue;
+                    }
+                }
+
+                // Record component start
+                let dependencies = component_specs
+                    .iter()
+                    .find(|s| s.component_name == *component_name)
+                    .map(|s| s.depends_on.clone())
+                    .unwrap_or_default();
+                self.metrics.record_component_start(component_name, wave_num, dependencies).await;
+
+                // Start the service with retry logic
+                let mut last_error = None;
+                let mut retries = 0;
+                let docker_service = loop {
+                    match self.start_service(service, component_specs, built_images).await {
+                        Ok(docker_service) => {
+                            self.metrics.record_container_created(component_name).await;
+                            break docker_service;
+                        }
+                        Err(e) if retries < self.config.max_retries => {
+                            warn!("Failed to start {} (attempt {}/{}): {}",
+                                component_name, retries + 1, self.config.max_retries, e);
+                            last_error = Some(e);
+                            retries += 1;
+
+                            // Calculate backoff delay
+                            let delay = if self.config.exponential_backoff {
+                                let exponential_delay = self.config.retry_delay * 2u32.pow(retries);
+                                std::cmp::min(
+                                    exponential_delay,
+                                    Duration::from_secs(self.config.max_backoff_delay)
+                                )
+                            } else {
+                                self.config.retry_delay
+                            };
+
+                            tokio::time::sleep(delay).await;
+                        }
+                        Err(e) => {
+                            error!("Failed to start component {} after {} retries: {}",
+                                component_name, self.config.max_retries, e);
+                            self.metrics.record_component_failed(component_name, e.to_string()).await;
+                            dependency_graph.mark_failed(component_name, e.to_string())?;
+                            return Err(e);
+                        }
+                    }
+                };
+
+                info!("Component {} started with container {}",
+                      component_name, docker_service.id());
+
+                component_to_container.insert(
+                    component_name.clone(),
+                    docker_service.id().to_string()
+                );
+
+                // Update state
+                {
+                    let mut state = self.state.write().await;
+                    state.mark_component_running(
+                        component_name,
+                        docker_service.id().to_string(),
+                    );
+                }
+
+                // Start log streaming
+                self.start_log_streaming_if_needed(
+                    &docker_service.id().to_string(),
+                    component_name
+                ).await;
+
+                running_services.push(docker_service);
+                dependency_graph.mark_starting(component_name)?;
+            }
+
+            // Now perform health checks for this wave
+            info!("Performing health checks for wave {}", wave_num + 1);
+
+            for component_name in components_in_wave {
+                // Skip if not started (redirected/local)
+                if !component_to_container.contains_key(component_name) {
+                    continue;
+                }
+
+                let container_id = &component_to_container[component_name];
+
+                // Find component spec for health check config
+                let component_spec = component_specs
+                    .iter()
+                    .find(|spec| spec.component_name == *component_name);
+
+                if let Some(spec) = component_spec {
+                    // Use startup probe first if available, otherwise health check
+                    let health_config = spec.startup_probe.as_ref()
+                        .or(spec.health_check.as_ref());
+
+                    if let Some(config) = health_config {
+                        info!("Waiting for {} to become healthy", component_name);
+                        self.metrics.record_health_check_start(component_name).await;
+                        dependency_graph.mark_waiting_for_health(component_name)?;
+
+                        // Track health check attempts for metrics
+                        let health_check_future = async {
+                            let mut attempt = 0;
+                            loop {
+                                attempt += 1;
+                                self.metrics.record_health_check_attempt(component_name).await;
+
+                                match health_manager.wait_for_healthy(
+                                    container_id,
+                                    component_name,
+                                    config,
+                                ).await {
+                                    Ok(()) => return Ok(()),
+                                    Err(e) if attempt < 3 => {
+                                        debug!("Health check attempt {} failed for {}: {}", attempt, component_name, e);
+                                        tokio::time::sleep(Duration::from_secs(2)).await;
+                                        continue;
+                                    }
+                                    Err(e) => return Err(e),
+                                }
+                            }
+                        };
+
+                        match health_check_future.await {
+                            Ok(()) => {
+                                info!("Component {} is healthy", component_name);
+                                self.metrics.record_component_healthy(component_name).await;
+                                dependency_graph.mark_healthy(component_name)?;
+                            }
+                            Err(e) => {
+                                error!("Component {} failed health check: {}", component_name, e);
+                                self.metrics.record_component_failed(component_name, e.to_string()).await;
+                                dependency_graph.mark_failed(component_name, e.to_string())?;
+                                return Err(e);
+                            }
+                        }
+                    } else {
+                        // No health check configured, mark as healthy after a brief delay
+                        info!("No health check for {}, waiting briefly", component_name);
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        self.metrics.record_component_healthy(component_name).await;
+                        dependency_graph.mark_healthy(component_name)?;
+                    }
+                } else {
+                    // No spec found, mark as healthy
+                    dependency_graph.mark_healthy(component_name)?;
+                }
+            }
+
+            // Record wave completion
+            self.metrics.record_wave_complete(wave_num).await;
+            info!("Wave {} completed successfully", wave_num + 1);
+        }
+
+        // Record overall startup completion
+        self.metrics.record_startup_complete().await;
+
+        // Update running services in state
+        {
+            let mut state = self.state.write().await;
+            state.set_running_services(running_services.clone());
+        }
+
+        // Export metrics if enabled
+        if self.config.collect_metrics {
+            let metrics_json = self.metrics.export_json().await;
+            debug!("Startup metrics: {}", metrics_json);
+        }
+
+        info!("All {} services started successfully with dependency ordering", running_services.len());
+        Ok(running_services)
+    }
+
+    /// Start services (legacy method without dependency awareness)
     pub async fn start_services(
         &self,
         services: Vec<ContainerService>,
@@ -344,15 +631,21 @@ impl LifecycleManager {
         
         // Load secrets from vault
         let secrets = {
-            let vault_guard = self.vault.lock().unwrap();
-            vault_guard
-                .get(
-                    &self.config.product_name,
-                    &service.name,
-                    &self.config.environment,
-                )
-                .await
-                .unwrap_or_default()
+            // Clone the Arc<Mutex> reference
+            let vault = self.vault.clone();
+            let product_name = self.config.product_name.clone();
+            let service_name = service.name.clone();
+            let environment = self.config.environment.clone();
+
+            // Use a separate async block to handle vault access
+            async move {
+                let vault_guard = vault.lock().unwrap();
+                vault_guard
+                    .get(&product_name, &service_name, &environment)
+                    .await
+                    .unwrap_or_default()
+            }
+            .await
         };
         
         // Get component spec

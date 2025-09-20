@@ -9,6 +9,7 @@ use crate::{
     lifecycle::{LifecycleManager, LifecycleConfig},
     build::{BuildOrchestrator, BuildOrchestratorConfig},
     watcher::{WatcherCoordinator, CoordinatorConfig, WatchResult},
+    dependency_graph::DependencyGraph,
     reactor::{
         config::ContainerReactorConfig,
         docker_integration::{DockerIntegration, DockerIntegrationConfig, DockerIntegrationBuilder},
@@ -22,7 +23,7 @@ use rush_core::shutdown;
 use rush_config::Config;
 use std::sync::Arc;
 use std::time::Duration;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
 use log::{info, debug, error, warn};
 use tera;
@@ -371,7 +372,53 @@ impl Reactor {
     /// Handle rebuild request for specific components
     async fn handle_rebuild(&mut self, mut batch: crate::watcher::handler::ChangeBatch) -> Result<()> {
         debug!("Handling rebuild for components: {:?}", batch.affected_components);
-        
+
+        // Find all downstream components that depend on the affected components
+        let downstream_components = if !batch.affected_components.is_empty() {
+            // Create a temporary dependency graph to find downstream components
+            let component_specs: Vec<rush_build::ComponentBuildSpec> = self.component_specs.clone();
+
+            // Create local services map for dependency resolution
+            let mut local_services: HashMap<String, String> = HashMap::new();
+            for spec in &component_specs {
+                if let rush_build::BuildType::LocalService { service_type, .. } = &spec.build_type {
+                    local_services.insert(spec.component_name.clone(), service_type.clone());
+                }
+            }
+
+            // Filter out LocalService components
+            let docker_specs: Vec<rush_build::ComponentBuildSpec> = component_specs
+                .iter()
+                .filter(|spec| !matches!(spec.build_type, rush_build::BuildType::LocalService { .. }))
+                .cloned()
+                .collect();
+
+            if let Ok(dep_graph) = DependencyGraph::from_specs_with_local_services(docker_specs, &local_services) {
+                let affected_set: HashSet<String> = batch.affected_components.iter().cloned().collect();
+                let downstream = dep_graph.get_all_downstream_components(&affected_set);
+
+                if !downstream.is_empty() {
+                    info!("Found {} downstream components that depend on affected components: {:?}",
+                          downstream.len(), downstream);
+                }
+
+                downstream
+            } else {
+                HashSet::new()
+            }
+        } else {
+            HashSet::new()
+        };
+
+        // Add downstream components to the rebuild batch
+        if !downstream_components.is_empty() {
+            info!("🔄 CASCADE RESTART: Including {} downstream components in rebuild", downstream_components.len());
+            for component in &downstream_components {
+                info!("  └─> {} will be restarted due to dependency", component);
+            }
+            batch.affected_components.extend(downstream_components);
+        }
+
         // Transition to rebuilding phase
         {
             let mut state = self.state.write().await;
@@ -421,6 +468,8 @@ impl Reactor {
         }
 
         // Stop affected containers before rebuilding
+        // We need to stop in reverse dependency order (dependents first)
+        info!("Stopping {} affected components before rebuild", batch.affected_components.len());
         for component_name in &batch.affected_components {
             if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
                 warn!("Failed to stop component {}: {}", component_name, e);
@@ -468,12 +517,12 @@ impl Reactor {
                     .collect();
                 
                 if !services_to_start.is_empty() {
-                    let running_services = self.lifecycle_manager.start_services(
+                    let running_services = self.lifecycle_manager.start_services_with_dependencies(
                         services_to_start,
                         &self.component_specs,
                         &self.built_images,
                     ).await?;
-                    
+
                     info!("Started {} rebuilt containers", running_services.len());
                 }
                 
@@ -592,8 +641,8 @@ impl Reactor {
                 // Recreate services from updated specs
                 self.create_services_from_specs()?;
                 
-                // Start the services
-                self.lifecycle_manager.start_services(
+                // Start the services with dependency-aware ordering
+                self.lifecycle_manager.start_services_with_dependencies(
                     self.services.clone(),
                     &self.component_specs,
                     &successful_builds,
@@ -719,8 +768,8 @@ impl Reactor {
                 // Create services from built images
                 self.create_services_from_specs()?;
                 
-                // Start the services using lifecycle manager
-                let running_services = self.lifecycle_manager.start_services(
+                // Start the services using lifecycle manager with dependency awareness
+                let running_services = self.lifecycle_manager.start_services_with_dependencies(
                     self.services.clone(),
                     &self.component_specs,
                     &self.built_images,
@@ -1130,7 +1179,7 @@ impl Reactor {
         
         let built_images = self.build_orchestrator.build_components(
             self.component_specs.clone(),
-            false, // force_rebuild
+            self.force_rebuild,
         ).await?;
         
         self.built_images = built_images;
@@ -1318,7 +1367,7 @@ impl Reactor {
         // Build only pushable components
         let built_images = self.build_orchestrator.build_components(
             pushable_components,
-            false, // force_rebuild
+            self.force_rebuild,
         ).await?;
 
         self.built_images = built_images;

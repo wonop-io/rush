@@ -168,6 +168,8 @@ mod tests {
             cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
             domain: "test1.test.app".to_string(),
+            health_check: None,
+            startup_probe: None,
         };
 
         // Create second component - depends on first component
@@ -205,6 +207,8 @@ mod tests {
             cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
             domain: "test2.test.app".to_string(),
+            health_check: None,
+            startup_probe: None,
         };
 
         let spec1 = Arc::new(Mutex::new(spec1));

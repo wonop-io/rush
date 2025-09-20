@@ -541,6 +541,8 @@ mod tests {
             dotenv_secrets: std::collections::HashMap::new(),
             domain: "localhost".to_string(),
             cross_compile: "native".to_string(),
+            health_check: None,
+            startup_probe: None,
         }
     }
 

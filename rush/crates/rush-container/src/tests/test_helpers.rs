@@ -112,6 +112,8 @@ pub fn create_test_component(name: &str, build_type: BuildType) -> ComponentBuil
         cross_compile: "native".to_string(),
         dotenv_secrets: HashMap::new(),
         domain: format!("{name}.test.app"),
+        health_check: None,
+        startup_probe: None,
     }
 }
 

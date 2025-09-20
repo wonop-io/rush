@@ -106,6 +106,8 @@ fn test_gitignore_integration_in_hash_computation() {
         dotenv_secrets: Default::default(),
         domain: "localhost".to_string(),
         cross_compile: "native".to_string(),
+        health_check: None,
+        startup_probe: None,
     };
 
     // The main purpose of this test is to verify that gitignored files are excluded

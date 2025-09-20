@@ -153,8 +153,12 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
                 process::exit(1);
             }
         }
-    } else if matches.subcommand_matches("build").is_some() {
+    } else if let Some(build_matches) = matches.subcommand_matches("build") {
         trace!("Executing build command");
+        // Check for force-rebuild flag
+        if build_matches.get_flag("force-rebuild") {
+            ctx.reactor.set_force_rebuild(true);
+        }
         commands::build::execute_with_context(ctx).await
     } else if matches.subcommand_matches("push").is_some() {
         trace!("Executing push command");

@@ -9,6 +9,7 @@ use crate::BuildContext;
 use crate::BuildScript;
 use crate::BuildType;
 use crate::Variables;
+use crate::health_check::{HealthCheckConfig, parse_health_check};
 use rush_config::Config;
 use rush_core::dotenv::load_dotenv;
 use rush_toolchain::ToolchainContext;
@@ -97,6 +98,12 @@ pub struct ComponentBuildSpec {
 
     /// Cross-compilation method for Rust builds ("native" or "cross-rs")
     pub cross_compile: String,
+
+    /// Health check configuration for verifying container readiness
+    pub health_check: Option<HealthCheckConfig>,
+
+    /// Startup probe configuration (used before health check during initial startup)
+    pub startup_probe: Option<HealthCheckConfig>,
 }
 
 /// Represents a service specification for a component
@@ -555,6 +562,12 @@ impl ComponentBuildSpec {
                 .get("cross_compile")
                 .map(|v| v.as_str().unwrap().to_string())
                 .unwrap_or_else(|| "native".to_string()),
+            health_check: yaml_section
+                .get("health_check")
+                .and_then(|v| parse_health_check(v)),
+            startup_probe: yaml_section
+                .get("startup_probe")
+                .and_then(|v| parse_health_check(v)),
         }
     }
 

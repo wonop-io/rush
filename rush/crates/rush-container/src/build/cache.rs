@@ -522,6 +522,8 @@ mod tests {
             dotenv_secrets: HashMap::new(),
             domain: "test.local".to_string(),
             cross_compile: "native".to_string(),
+            health_check: None,
+            startup_probe: None,
         }
     }
 
@@ -615,7 +617,7 @@ mod tests {
         
         // Create a spec with location
         let spec = ComponentBuildSpec {
-            build_type: rush_build::BuildType::TrunkWasm { 
+            build_type: rush_build::BuildType::TrunkWasm {
                 location: "frontend/webui".to_string(),
                 dockerfile_path: "frontend/Dockerfile".to_string(),
                 context_dir: Some("frontend".to_string()),
