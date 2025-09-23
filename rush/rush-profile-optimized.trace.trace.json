@@ -1,0 +1,548 @@
+[
+  {
+    "name": "tag_computation",
+    "cat": "watch_files",
+    "ph": "X",
+    "ts": 1276172,
+    "dur": 787,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "watch_files",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "git_hash",
+    "ph": "X",
+    "ts": 1276179,
+    "dur": 12658,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "git_hash",
+      "duration_ms": 12
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "dirty_check",
+    "ph": "X",
+    "ts": 1276181,
+    "dur": 160073,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "dirty_check",
+      "duration_ms": 160
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "total",
+    "ph": "X",
+    "ts": 1276182,
+    "dur": 173561,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 173
+    }
+  },
+  {
+    "name": "component_skip",
+    "cat": "frontend",
+    "ph": "X",
+    "ts": 1333098,
+    "dur": 230470,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "frontend",
+      "duration_ms": 230
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "watch_files",
+    "ph": "X",
+    "ts": 1380045,
+    "dur": 563,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "watch_files",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "git_hash",
+    "ph": "X",
+    "ts": 1380051,
+    "dur": 11624,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "git_hash",
+      "duration_ms": 11
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "dirty_check",
+    "ph": "X",
+    "ts": 1380053,
+    "dur": 32736,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "dirty_check",
+      "duration_ms": 32
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "total",
+    "ph": "X",
+    "ts": 1380055,
+    "dur": 44954,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 44
+    }
+  },
+  {
+    "name": "component_skip",
+    "cat": "backend",
+    "ph": "X",
+    "ts": 1437311,
+    "dur": 102204,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "backend",
+      "duration_ms": 102
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "watch_files",
+    "ph": "X",
+    "ts": 1448457,
+    "dur": 20,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "watch_files",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "git_hash",
+    "ph": "X",
+    "ts": 1448462,
+    "dur": 10851,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "git_hash",
+      "duration_ms": 10
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "dirty_check",
+    "ph": "X",
+    "ts": 1448464,
+    "dur": 0,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "dirty_check",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "total",
+    "ph": "X",
+    "ts": 1448465,
+    "dur": 10891,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 10
+    }
+  },
+  {
+    "name": "prepare_artifacts",
+    "cat": "create_dir",
+    "ph": "X",
+    "ts": 1497904,
+    "dur": 52,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "create_dir",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "prepare_artifacts",
+    "cat": "render_templates",
+    "ph": "X",
+    "ts": 1497908,
+    "dur": 0,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "render_templates",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "prepare_artifacts",
+    "cat": "total",
+    "ph": "X",
+    "ts": 1497910,
+    "dur": 65,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "build_single",
+    "cat": "prepare_artifacts",
+    "ph": "X",
+    "ts": 1497914,
+    "dur": 68,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "prepare_artifacts",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "watch_files",
+    "ph": "X",
+    "ts": 1508257,
+    "dur": 7,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "watch_files",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "git_hash",
+    "ph": "X",
+    "ts": 1508263,
+    "dur": 10319,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "git_hash",
+      "duration_ms": 10
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "dirty_check",
+    "ph": "X",
+    "ts": 1508264,
+    "dur": 0,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "dirty_check",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "total",
+    "ph": "X",
+    "ts": 1508265,
+    "dur": 10348,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 10
+    }
+  },
+  {
+    "name": "component_build",
+    "cat": "database",
+    "ph": "X",
+    "ts": 1508274,
+    "dur": 70698,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "database",
+      "duration_ms": 70
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "watch_files",
+    "ph": "X",
+    "ts": 1518245,
+    "dur": 32,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "watch_files",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "git_hash",
+    "ph": "X",
+    "ts": 1518253,
+    "dur": 9628,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "git_hash",
+      "duration_ms": 9
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "dirty_check",
+    "ph": "X",
+    "ts": 1518255,
+    "dur": 0,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "dirty_check",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "total",
+    "ph": "X",
+    "ts": 1518256,
+    "dur": 9685,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 9
+    }
+  },
+  {
+    "name": "prepare_artifacts",
+    "cat": "create_dir",
+    "ph": "X",
+    "ts": 1567885,
+    "dur": 58,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "create_dir",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "prepare_artifacts",
+    "cat": "render_templates",
+    "ph": "X",
+    "ts": 1567889,
+    "dur": 0,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "render_templates",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "prepare_artifacts",
+    "cat": "total",
+    "ph": "X",
+    "ts": 1567891,
+    "dur": 73,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "build_single",
+    "cat": "prepare_artifacts",
+    "ph": "X",
+    "ts": 1567893,
+    "dur": 75,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "prepare_artifacts",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "watch_files",
+    "ph": "X",
+    "ts": 1578210,
+    "dur": 4,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "watch_files",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "git_hash",
+    "ph": "X",
+    "ts": 1578214,
+    "dur": 10296,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "git_hash",
+      "duration_ms": 10
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "dirty_check",
+    "ph": "X",
+    "ts": 1578217,
+    "dur": 0,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "dirty_check",
+      "duration_ms": 0
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "total",
+    "ph": "X",
+    "ts": 1578218,
+    "dur": 10323,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 10
+    }
+  },
+  {
+    "name": "component_build",
+    "cat": "stripe",
+    "ph": "X",
+    "ts": 1578225,
+    "dur": 69652,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "stripe",
+      "duration_ms": 69
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "watch_files",
+    "ph": "X",
+    "ts": 2095111,
+    "dur": 2070,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "watch_files",
+      "duration_ms": 2
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "git_hash",
+    "ph": "X",
+    "ts": 2095119,
+    "dur": 10727,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "git_hash",
+      "duration_ms": 10
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "dirty_check",
+    "ph": "X",
+    "ts": 2095122,
+    "dur": 503855,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "dirty_check",
+      "duration_ms": 503
+    }
+  },
+  {
+    "name": "tag_computation",
+    "cat": "total",
+    "ph": "X",
+    "ts": 2095123,
+    "dur": 516688,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "total",
+      "duration_ms": 516
+    }
+  },
+  {
+    "name": "component_skip",
+    "cat": "ingress",
+    "ph": "X",
+    "ts": 2147647,
+    "dur": 569206,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": "ingress",
+      "duration_ms": 569
+    }
+  },
+  {
+    "name": "build_all_components",
+    "cat": "general",
+    "ph": "X",
+    "ts": 2148353,
+    "dur": 1045737,
+    "pid": 35971,
+    "tid": 1,
+    "args": {
+      "component": null,
+      "duration_ms": 1045
+    }
+  }
+]

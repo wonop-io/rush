@@ -1,8 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use walkdir::WalkDir;
+use tokio::sync::RwLock;
 
 use rush_core::error::{Error, Result};
 use rush_build::{ComponentBuildSpec, BuildType};
@@ -17,6 +20,7 @@ pub struct ImageTagGenerator {
     toolchain: Arc<ToolchainContext>,
     base_dir: PathBuf,
     gitignore_manager: GitignoreManager,
+    tag_cache: Arc<RwLock<HashMap<String, (String, Instant)>>>,
 }
 
 impl ImageTagGenerator {
@@ -32,6 +36,7 @@ impl ImageTagGenerator {
             toolchain,
             base_dir,
             gitignore_manager,
+            tag_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -41,6 +46,34 @@ impl ImageTagGenerator {
     /// - `{git_hash}-wip-{content_hash}` (8 chars each) for dirty state
     pub fn compute_tag(&self, spec: &ComponentBuildSpec) -> Result<String> {
         let tag_start = std::time::Instant::now();
+
+        // Check cache first
+        let cache_key = format!("{}:{}", spec.component_name, spec.product_name);
+
+        // Try to get from cache
+        {
+            let cache = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(self.tag_cache.read())
+            });
+
+            if let Some((cached_tag, timestamp)) = cache.get(&cache_key) {
+                // Use a 5-second TTL for cache entries
+                if timestamp.elapsed() < Duration::from_secs(5) {
+                    log::debug!("Using cached tag for '{}': {}", spec.component_name, cached_tag);
+
+                    // Record cache hit
+                    tokio::task::block_in_place(|| {
+                        tokio::runtime::Handle::current().block_on(async {
+                            crate::profiling::global_tracker()
+                                .record_with_component("tag_computation", "cache_hit", tag_start.elapsed())
+                                .await;
+                        })
+                    });
+
+                    return Ok(cached_tag.clone());
+                }
+            }
+        }
 
         // 1. Get watched files (expand patterns on each computation for dynamic detection)
         let watch_start = std::time::Instant::now();
@@ -99,6 +132,15 @@ impl ImageTagGenerator {
                 tracker.record_with_component("tag_computation", "total", tag_start.elapsed()).await;
             })
         });
+
+        // Cache the computed tag
+        {
+            let mut cache = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(self.tag_cache.write())
+            });
+            cache.insert(cache_key, (final_tag.clone(), Instant::now()));
+            log::debug!("Cached tag for '{}': {}", spec.component_name, final_tag);
+        }
 
         Ok(final_tag)
     }
@@ -322,52 +364,52 @@ impl ImageTagGenerator {
     fn is_dirty_with_files(&self, files: &[PathBuf], dirs: &[PathBuf]) -> Result<bool> {
         let git_path = self.toolchain.git();
 
-        // Check directories for modifications
+        // Collect all paths (both directories and files) for a single git status call
+        let mut all_paths = Vec::new();
+
+        // Add directories
         for dir in dirs {
-            if !dir.exists() {
-                continue;
-            }
-
-            let dir_str = dir.to_str().ok_or_else(||
-                Error::Internal(format!("Invalid path: {:?}", dir))
-            )?;
-
-            let output = Command::new(&git_path)
-                .args(["status", "--porcelain", "--untracked-files=no", dir_str])
-                .current_dir(&self.base_dir)
-                .output()
-                .map_err(|e| Error::External(format!("Git status failed: {}", e)))?;
-
-            if !output.stdout.is_empty() {
-                return Ok(true);
-            }
-        }
-
-        // Also check specific files if they were expanded from patterns
-        if !files.is_empty() {
-            // Check if any of the specific files are modified
-            for file in files {
-                if !file.exists() {
-                    continue;
-                }
-
-                let file_str = file.to_str().ok_or_else(||
-                    Error::Internal(format!("Invalid path: {:?}", file))
-                )?;
-
-                let output = Command::new(&git_path)
-                    .args(["status", "--porcelain", "--untracked-files=no", file_str])
-                    .current_dir(&self.base_dir)
-                    .output()
-                    .map_err(|e| Error::External(format!("Git status failed: {}", e)))?;
-
-                if !output.stdout.is_empty() {
-                    return Ok(true);
+            if dir.exists() {
+                if let Some(dir_str) = dir.to_str() {
+                    all_paths.push(dir_str);
                 }
             }
         }
 
-        Ok(false)
+        // Add files
+        for file in files {
+            if file.exists() {
+                if let Some(file_str) = file.to_str() {
+                    all_paths.push(file_str);
+                }
+            }
+        }
+
+        // If no paths to check, nothing is dirty
+        if all_paths.is_empty() {
+            log::debug!("No paths to check for dirty state");
+            return Ok(false);
+        }
+
+        log::debug!("Checking dirty state for {} paths with single git status call", all_paths.len());
+
+        // Single git status call for all paths
+        let mut args = vec!["status", "--porcelain", "--untracked-files=no"];
+        args.extend(&all_paths);
+
+        let output = Command::new(&git_path)
+            .args(&args)
+            .current_dir(&self.base_dir)
+            .output()
+            .map_err(|e| Error::External(format!("Git status failed: {}", e)))?;
+
+        let is_dirty = !output.stdout.is_empty();
+
+        if is_dirty {
+            log::debug!("Repository is dirty - found uncommitted changes");
+        }
+
+        Ok(is_dirty)
     }
 
     /// Check if any of the watch directories have uncommitted changes

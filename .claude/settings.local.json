@@ -89,7 +89,15 @@
       "Bash(docker stop:*)",
       "Bash(RUST_LOG=debug ./target/release/rush:*)",
       "Bash(RUST_LOG=debug cargo run -- io.wonop.helloworld build)",
-      "Bash(RUST_LOG=info ./rush/target/release/rush --force-rebuild io.wonop.helloworld build)"
+      "Bash(RUST_LOG=info ./rush/target/release/rush --force-rebuild io.wonop.helloworld build)",
+      "Bash(RUST_LOG=info ./rush/target/release/rush io.wonop.helloworld profile build)",
+      "Bash(RUST_LOG=info ./rush/target/release/rush io.wonop.helloworld profile --format chrome-trace --output rush-rebuild build --force-rebuild)",
+      "Bash(python3:*)",
+      "Bash(RUST_LOG=trace ./rush/target/release/rush:*)",
+      "Bash(RUST_LOG=info ./target/release/rush io.wonop.helloworld profile build --force-rebuild --format chrome-trace --output rush-profile-optimized.trace.json)",
+      "Bash(RUST_LOG=info ./target/release/rush --force-rebuild io.wonop.helloworld profile --format chrome-trace --output rush-profile-optimized.trace.json build)",
+      "Bash(RUST_LOG=info ./target/release/rush io.wonop.helloworld profile --format chrome-trace --output rush-profile-optimized.trace.json build --force-rebuild)",
+      "Bash(RUST_LOG=info ./target/release/rush io.wonop.helloworld profile --format chrome-trace --output rush-profile-optimized.trace.json build)"
     ],
     "deny": [],
     "additionalDirectories": [
