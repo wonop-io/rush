@@ -1,0 +1,365 @@
+# Example microservices stack with full dependency management and health checks
+# This demonstrates a real-world production setup with Rush
+
+# PostgreSQL Database - Foundation service
+postgres:
+  build_type: "PureDockerImage"
+  image_name_with_tag: "postgres:15-alpine"
+  port: 5432
+  target_port: 5432
+  priority: 0  # Highest priority - starts first
+  env:
+    POSTGRES_DB: "microservices"
+    POSTGRES_USER: "dbuser"
+    POSTGRES_PASSWORD: "dbpass123"
+    POSTGRES_MAX_CONNECTIONS: "200"
+  volumes:
+    ./data/postgres: /var/lib/postgresql/data
+  health_check:
+    type: tcp
+    port: 5432
+    initial_delay: 2
+    interval: 5
+    timeout: 3
+    success_threshold: 1
+    failure_threshold: 3
+    max_retries: 30
+
+# Redis Cache - Foundation service
+redis:
+  build_type: "PureDockerImage"
+  image_name_with_tag: "redis:7-alpine"
+  port: 6379
+  target_port: 6379
+  priority: 0  # Highest priority - starts first
+  env:
+    REDIS_MAXMEMORY: "256mb"
+    REDIS_MAXMEMORY_POLICY: "allkeys-lru"
+  health_check:
+    type: tcp
+    port: 6379
+    initial_delay: 1
+    interval: 3
+    timeout: 2
+    success_threshold: 1
+    failure_threshold: 3
+    max_retries: 20
+
+# Message Queue - RabbitMQ
+rabbitmq:
+  build_type: "PureDockerImage"
+  image_name_with_tag: "rabbitmq:3.12-management-alpine"
+  port: 5672
+  target_port: 5672
+  priority: 0  # Foundation service
+  env:
+    RABBITMQ_DEFAULT_USER: "admin"
+    RABBITMQ_DEFAULT_PASS: "admin123"
+  health_check:
+    type: tcp
+    port: 5672
+    initial_delay: 5
+    interval: 5
+    timeout: 3
+    success_threshold: 1
+    failure_threshold: 3
+    max_retries: 30
+
+# Auth Service - Depends on database
+auth-service:
+  build_type: "RustBinary"
+  location: "services/auth"
+  dockerfile: "services/auth/Dockerfile"
+  port: 8001
+  target_port: 8001
+  priority: 1
+  depends_on:
+    - postgres
+    - redis
+  env:
+    SERVICE_NAME: "auth-service"
+    DATABASE_URL: "postgresql://dbuser:dbpass123@postgres:5432/microservices"
+    REDIS_URL: "redis://redis:6379"
+    JWT_SECRET: "your-jwt-secret-here"
+    RUST_LOG: "info"
+  # Use startup probe for initial heavy initialization
+  startup_probe:
+    type: http
+    path: "/health/startup"
+    expected_status: 200
+    initial_delay: 3
+    interval: 2
+    timeout: 5
+    success_threshold: 1
+    failure_threshold: 30
+    max_retries: 30
+  health_check:
+    type: http
+    path: "/health/live"
+    expected_status: 200
+    initial_delay: 5
+    interval: 10
+    timeout: 3
+    success_threshold: 1
+    failure_threshold: 3
+    max_retries: 5
+
+# User Service - Depends on auth service
+user-service:
+  build_type: "RustBinary"
+  location: "services/user"
+  dockerfile: "services/user/Dockerfile"
+  port: 8002
+  target_port: 8002
+  priority: 2
+  depends_on:
+    - postgres
+    - redis
+    - auth-service  # Needs auth for token validation
+  env:
+    SERVICE_NAME: "user-service"
+    DATABASE_URL: "postgresql://dbuser:dbpass123@postgres:5432/microservices"
+    REDIS_URL: "redis://redis:6379"
+    AUTH_SERVICE_URL: "http://auth-service:8001"
+    RUST_LOG: "info"
+  health_check:
+    type: http
+    path: "/health"
+    expected_status: 200
+    initial_delay: 5
+    interval: 10
+    timeout: 3
+    success_threshold: 2
+    failure_threshold: 3
+
+# Product Service
+product-service:
+  build_type: "RustBinary"
+  location: "services/product"
+  dockerfile: "services/product/Dockerfile"
+  port: 8003
+  target_port: 8003
+  priority: 1
+  depends_on:
+    - postgres
+    - redis
+  env:
+    SERVICE_NAME: "product-service"
+    DATABASE_URL: "postgresql://dbuser:dbpass123@postgres:5432/microservices"
+    REDIS_URL: "redis://redis:6379"
+    RUST_LOG: "info"
+  health_check:
+    type: http
+    path: "/health"
+    expected_status: 200
+    initial_delay: 5
+    interval: 10
+    timeout: 3
+
+# Order Service - Depends on multiple services
+order-service:
+  build_type: "RustBinary"
+  location: "services/order"
+  dockerfile: "services/order/Dockerfile"
+  port: 8004
+  target_port: 8004
+  priority: 3
+  depends_on:
+    - postgres
+    - redis
+    - rabbitmq
+    - user-service
+    - product-service
+  env:
+    SERVICE_NAME: "order-service"
+    DATABASE_URL: "postgresql://dbuser:dbpass123@postgres:5432/microservices"
+    REDIS_URL: "redis://redis:6379"
+    RABBITMQ_URL: "amqp://admin:admin123@rabbitmq:5672"
+    USER_SERVICE_URL: "http://user-service:8002"
+    PRODUCT_SERVICE_URL: "http://product-service:8003"
+    RUST_LOG: "info"
+  health_check:
+    type: http
+    path: "/health"
+    expected_status: 200
+    initial_delay: 5
+    interval: 10
+    timeout: 3
+
+# Payment Service - Async worker
+payment-worker:
+  build_type: "RustBinary"
+  location: "services/payment"
+  dockerfile: "services/payment/Dockerfile"
+  priority: 3
+  depends_on:
+    - postgres
+    - rabbitmq
+    - order-service
+  env:
+    SERVICE_NAME: "payment-worker"
+    DATABASE_URL: "postgresql://dbuser:dbpass123@postgres:5432/microservices"
+    RABBITMQ_URL: "amqp://admin:admin123@rabbitmq:5672"
+    RUST_LOG: "info"
+  # Worker doesn't expose HTTP, use exec health check
+  health_check:
+    type: exec
+    command: ["./health-check.sh"]
+    initial_delay: 5
+    interval: 30
+    timeout: 5
+    success_threshold: 1
+    failure_threshold: 3
+
+# Notification Service - Async worker
+notification-worker:
+  build_type: "RustBinary"
+  location: "services/notification"
+  dockerfile: "services/notification/Dockerfile"
+  priority: 3
+  depends_on:
+    - redis
+    - rabbitmq
+  env:
+    SERVICE_NAME: "notification-worker"
+    REDIS_URL: "redis://redis:6379"
+    RABBITMQ_URL: "amqp://admin:admin123@rabbitmq:5672"
+    SMTP_HOST: "smtp.example.com"
+    SMTP_PORT: "587"
+    RUST_LOG: "info"
+  health_check:
+    type: exec
+    command: ["pgrep", "-f", "notification-worker"]
+    initial_delay: 3
+    interval: 30
+    timeout: 3
+
+# API Gateway - Depends on all API services
+api-gateway:
+  build_type: "RustBinary"
+  location: "services/gateway"
+  dockerfile: "services/gateway/Dockerfile"
+  port: 8000
+  target_port: 8000
+  priority: 4
+  mount_point: "/api"
+  depends_on:
+    - auth-service
+    - user-service
+    - product-service
+    - order-service
+  env:
+    SERVICE_NAME: "api-gateway"
+    AUTH_SERVICE_URL: "http://auth-service:8001"
+    USER_SERVICE_URL: "http://user-service:8002"
+    PRODUCT_SERVICE_URL: "http://product-service:8003"
+    ORDER_SERVICE_URL: "http://order-service:8004"
+    RUST_LOG: "info"
+  health_check:
+    type: http
+    path: "/health"
+    expected_status: 200
+    initial_delay: 5
+    interval: 10
+    timeout: 5
+    success_threshold: 2
+    failure_threshold: 3
+
+# Frontend Application
+frontend:
+  build_type: "TrunkWasm"
+  location: "frontend"
+  dockerfile: "frontend/Dockerfile"
+  port: 3000
+  target_port: 80
+  priority: 4
+  mount_point: "/"
+  depends_on:
+    - api-gateway  # Frontend needs API to be ready
+  env:
+    API_URL: "http://api-gateway:8000"
+    NODE_ENV: "production"
+  health_check:
+    type: http
+    path: "/"
+    expected_status: 200
+    initial_delay: 3
+    interval: 10
+    timeout: 5
+
+# Ingress - NGINX reverse proxy
+ingress:
+  build_type: "Ingress"
+  context_dir: "./ingress"
+  dockerfile: "./ingress/Dockerfile"
+  port: 80
+  target_port: 80
+  priority: 5  # Lowest priority - starts last
+  components:
+    - frontend
+    - api-gateway
+  depends_on:
+    - frontend
+    - api-gateway
+  # Use DNS startup probe to ensure all backends are resolvable
+  startup_probe:
+    type: dns
+    hosts:
+      - "frontend"
+      - "api-gateway"
+      - "auth-service"
+      - "user-service"
+      - "product-service"
+      - "order-service"
+    initial_delay: 1
+    interval: 2
+    timeout: 2
+    success_threshold: 1
+    failure_threshold: 10
+    max_retries: 30
+  health_check:
+    type: http
+    path: "/health"
+    expected_status: 200
+    interval: 30
+    timeout: 5
+
+# Monitoring Stack (Optional - can be disabled for development)
+prometheus:
+  build_type: "PureDockerImage"
+  image_name_with_tag: "prom/prometheus:latest"
+  port: 9090
+  target_port: 9090
+  priority: 2
+  depends_on:
+    - api-gateway
+  volumes:
+    ./monitoring/prometheus.yml: /etc/prometheus/prometheus.yml
+  health_check:
+    type: http
+    path: "/-/healthy"
+    expected_status: 200
+    initial_delay: 5
+    interval: 10
+    timeout: 3
+
+grafana:
+  build_type: "PureDockerImage"
+  image_name_with_tag: "grafana/grafana:latest"
+  port: 3001
+  target_port: 3000
+  priority: 3
+  depends_on:
+    - prometheus
+  env:
+    GF_SECURITY_ADMIN_PASSWORD: "admin"
+    GF_INSTALL_PLUGINS: "redis-datasource"
+  volumes:
+    ./monitoring/grafana/dashboards: /var/lib/grafana/dashboards
+  health_check:
+    type: http
+    path: "/api/health"
+    expected_status: 200
+    initial_delay: 10
+    interval: 10
+    timeout: 5

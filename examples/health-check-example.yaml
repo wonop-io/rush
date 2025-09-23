@@ -1,0 +1,154 @@
+# Example stack.spec.yaml with health checks and startup probes
+# This demonstrates the new health check capabilities for dependency-aware startup
+
+backend:
+  build_type: "RustBinary"
+  location: "backend/server"
+  dockerfile: "backend/Dockerfile"
+  port: 8129
+  target_port: 8080
+  mount_point: "/api"
+
+  # Health check configuration - verifies the service is ready
+  health_check:
+    type: tcp                # Check TCP port connectivity
+    port: 8080              # Port to check
+    initial_delay: 3        # Wait 3 seconds before first check
+    interval: 5             # Check every 5 seconds
+    success_threshold: 1    # Consider healthy after 1 success
+    failure_threshold: 3    # Consider unhealthy after 3 failures
+    timeout: 5              # Timeout for each check
+    max_retries: 30         # Maximum attempts before giving up
+
+  # Alternative HTTP health check example:
+  # health_check:
+  #   type: http
+  #   path: "/health"
+  #   expected_status: 200
+  #   initial_delay: 5
+  #   interval: 10
+  #   success_threshold: 2
+  #   failure_threshold: 3
+  #   timeout: 5
+  #   max_retries: 30
+
+frontend:
+  build_type: "TrunkWasm"
+  location: "frontend/webui"
+  dockerfile: "frontend/Dockerfile"
+  port: 8130
+  target_port: 80
+  mount_point: "/"
+
+  # HTTP health check for web frontend
+  health_check:
+    type: http
+    path: "/"               # Check root path
+    expected_status: 200    # Expect 200 OK
+    initial_delay: 5        # Frontend takes longer to start
+    interval: 5
+    success_threshold: 1
+    failure_threshold: 3
+    timeout: 5
+    max_retries: 30
+
+database:
+  build_type: "LocalService"
+  service_type: "postgres"
+  version: "15"
+  port: 5432
+
+  # Exec health check - run command in container
+  health_check:
+    type: exec
+    command: ["pg_isready", "-U", "postgres"]
+    initial_delay: 2
+    interval: 3
+    success_threshold: 1
+    failure_threshold: 5
+    timeout: 3
+    max_retries: 20
+
+redis:
+  build_type: "LocalService"
+  service_type: "redis"
+  version: "7"
+  port: 6379
+
+  # TCP health check for Redis
+  health_check:
+    type: tcp
+    port: 6379
+    initial_delay: 1
+    interval: 2
+    success_threshold: 1
+    failure_threshold: 3
+    timeout: 2
+    max_retries: 15
+
+ingress:
+  build_type: "Ingress"
+  context_dir: "./ingress"
+  dockerfile: "./ingress/Dockerfile"
+  port: 9000
+  target_port: 80
+  components:
+    - "backend"
+    - "frontend"
+  depends_on:
+    - "backend"
+    - "frontend"
+
+  # Startup probe - used during initial startup only
+  # This ensures all dependent services are resolvable before starting nginx
+  startup_probe:
+    type: dns
+    hosts:
+      - "backend.docker"     # Ensure backend is resolvable
+      - "frontend.docker"    # Ensure frontend is resolvable
+    initial_delay: 2         # Wait for Docker DNS to propagate
+    interval: 1              # Check frequently during startup
+    success_threshold: 1     # Consider ready after 1 success
+    failure_threshold: 5     # Allow some DNS propagation time
+    timeout: 3
+    max_retries: 60         # Give up after ~1 minute
+
+  # Regular health check after startup
+  health_check:
+    type: http
+    path: "/"
+    expected_status: 200
+    initial_delay: 0         # No delay after startup probe succeeds
+    interval: 10
+    success_threshold: 1
+    failure_threshold: 3
+    timeout: 5
+    max_retries: 10
+
+# Notes on health check types:
+#
+# 1. HTTP Health Check:
+#    - Makes HTTP GET request to specified path
+#    - Checks for expected status code (default 200)
+#    - Good for web services with health endpoints
+#
+# 2. TCP Health Check:
+#    - Checks if TCP port is open and accepting connections
+#    - Simpler than HTTP, good for non-HTTP services
+#    - Fast and lightweight
+#
+# 3. Exec Health Check:
+#    - Runs command inside container
+#    - Command must exit with 0 for success
+#    - Flexible, can check complex conditions
+#
+# 4. DNS Health Check:
+#    - Verifies hostnames can be resolved
+#    - Critical for ingress/proxy services
+#    - Ensures Docker network DNS is working
+#
+# Startup Probe vs Health Check:
+# - Startup probe runs once during initial container startup
+# - Health check runs continuously after startup
+# - Use startup probe for slow-starting containers
+# - Use DNS startup probe for services that need to resolve other containers

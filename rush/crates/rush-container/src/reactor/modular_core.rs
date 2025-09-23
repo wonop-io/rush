@@ -476,16 +476,16 @@ impl Reactor {
             }
         }
 
-        // Get component specs for affected components
-        let component_specs = {
+        // Get component specs for affected components (to check if they exist)
+        let affected_specs = {
             let state = self.state.read().await;
             batch.affected_components.iter()
                 .filter_map(|name| state.get_component(name))
                 .filter_map(|comp| comp.build_spec.as_ref().cloned())
                 .collect::<Vec<_>>()
         };
-        
-        if component_specs.is_empty() {
+
+        if affected_specs.is_empty() {
             warn!("No component specs found for rebuild, skipping build");
             // Still transition back to running state
             let mut state = self.state.write().await;
@@ -494,8 +494,10 @@ impl Reactor {
             }
             return Ok(());
         }
-        
-        let build_result = self.build_orchestrator.build_components(component_specs, false).await;
+
+        // Pass ALL component specs to build orchestrator so artifact rendering has full context
+        // The orchestrator will only build the affected components based on cache/image checks
+        let build_result = self.build_orchestrator.build_components(self.component_specs.clone(), false).await;
         
         match build_result {
             Ok(successful_builds) => {
@@ -615,19 +617,24 @@ impl Reactor {
                 warn!("Failed to stop component {}: {}", component_name, e);
             }
         }
-        
-        // Get component specs for affected components
-        let component_specs = {
+
+        // Verify that the affected components exist
+        let affected_specs = {
             let state = self.state.read().await;
             components.iter()
                 .filter_map(|name| state.get_component(name))
                 .filter_map(|comp| comp.build_spec.as_ref().cloned())
                 .collect::<Vec<_>>()
         };
-        
-        // For manual rebuilds, use cache unless force_rebuild is true
-        // This allows cache invalidation logic to work properly
-        let build_result = self.build_orchestrator.build_components(component_specs, force_rebuild).await;
+
+        if affected_specs.is_empty() {
+            warn!("No component specs found for manual rebuild");
+            return Ok(());
+        }
+
+        // Pass ALL component specs to build orchestrator so artifact rendering has full context
+        // The orchestrator will only build the affected components based on force_rebuild flag
+        let build_result = self.build_orchestrator.build_components(self.component_specs.clone(), force_rebuild).await;
         
         match build_result {
             Ok(successful_builds) => {
@@ -640,15 +647,23 @@ impl Reactor {
                 
                 // Recreate services from updated specs
                 self.create_services_from_specs()?;
-                
-                // Start the services with dependency-aware ordering
-                self.lifecycle_manager.start_services_with_dependencies(
-                    self.services.clone(),
-                    &self.component_specs,
-                    &successful_builds,
-                ).await?;
-                
-                info!("Started {} rebuilt containers", successful_builds.len());
+
+                // Start only the rebuilt components
+                let services_to_start: Vec<_> = self.services.iter()
+                    .filter(|s| successful_builds.contains_key(&s.name))
+                    .cloned()
+                    .collect();
+
+                if !services_to_start.is_empty() {
+                    // Start the services with dependency-aware ordering
+                    let running_services = self.lifecycle_manager.start_services_with_dependencies(
+                        services_to_start,
+                        &self.component_specs,
+                        &successful_builds,
+                    ).await?;
+
+                    info!("Started {} rebuilt containers", running_services.len());
+                }
                 
                 // Publish build success event
                 let _ = self.event_bus.publish(Event::new(

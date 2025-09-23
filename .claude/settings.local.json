@@ -76,7 +76,20 @@
       "Read(//Users/tfr/Documents/Projects/wonop-ng/products/**)",
       "Bash(./test_hash_fix.sh:*)",
       "Bash(/Users/tfr/Documents/Projects/rush/test_hash_fix.sh)",
-      "Bash(/Users/tfr/Documents/Projects/rush/test_hash_changes.sh)"
+      "Bash(/Users/tfr/Documents/Projects/rush/test_hash_changes.sh)",
+      "Bash(/Users/tfr/Documents/Projects/rush/test_gitignore_module.sh)",
+      "Bash(LOCAL_CTX=docker-desktop LOCAL_VAULT=test-vault K8S_ENCODER_LOCAL=kubeseal K8S_VALIDATOR_LOCAL=kubeval K8S_VERSION_LOCAL=1.28.0 LOCAL_DOMAIN=localhost LOCAL_INFRA_REPO=https://github.com/test/infra cargo test --package rush-container --lib tagging)",
+      "Bash(export LOCAL_CTX=docker-desktop LOCAL_VAULT=test-vault K8S_ENCODER_LOCAL=kubeseal K8S_VALIDATOR_LOCAL=kubeval K8S_VERSION_LOCAL=1.28.0 LOCAL_DOMAIN=localhost LOCAL_INFRA_REPO=https://github.com/test/infra)",
+      "Bash(RUST_BACKTRACE=1 cargo test --package rush-container --lib tagging::tests::test_get_component_directory)",
+      "Bash(RUST_LOG=debug cargo run -- io.wonop.helloworld describe dependencies)",
+      "Bash(RUST_LOG=debug ./target/release/rush io.wonop.helloworld dev)",
+      "Bash(RUST_LOG=info ./target/release/rush io.wonop.helloworld dev)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker stop:*)",
+      "Bash(RUST_LOG=debug ./target/release/rush:*)",
+      "Bash(RUST_LOG=debug cargo run -- io.wonop.helloworld build)",
+      "Bash(RUST_LOG=info ./rush/target/release/rush --force-rebuild io.wonop.helloworld build)"
     ],
     "deny": [],
     "additionalDirectories": [
