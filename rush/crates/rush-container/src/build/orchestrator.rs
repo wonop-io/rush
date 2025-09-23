@@ -7,6 +7,7 @@ use crate::{
     build::{BuildProcessor, BuildCache, CacheEntry, CacheStats},
     docker::DockerClient,
     events::{Event, EventBus, ContainerEvent},
+    profiling,
     reactor::state::SharedReactorState,
     simple_output,
     tagging::ImageTagGenerator,
@@ -21,6 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use log::{debug, error, info, warn};
 use tokio::sync::Mutex;
+use tracing::{instrument, info_span};
 
 /// Configuration for the build orchestrator
 #[derive(Debug, Clone)]
@@ -146,6 +148,14 @@ impl BuildOrchestrator {
     }
 
     /// Build all components
+    #[instrument(
+        level = "info",
+        skip(self, component_specs),
+        fields(
+            component_count = component_specs.len(),
+            force_rebuild = force_rebuild
+        )
+    )]
     pub async fn build_components(
         &self,
         component_specs: Vec<ComponentBuildSpec>,
@@ -153,6 +163,9 @@ impl BuildOrchestrator {
     ) -> Result<HashMap<String, String>> {
         info!("Building {} components", component_specs.len());
         let start_time = Instant::now();
+
+        // Record start in performance tracker
+        let perf_tracker = profiling::global_tracker();
         
         // Don't change state here - let the caller manage state transitions
         
@@ -172,7 +185,15 @@ impl BuildOrchestrator {
         
         // Build each component
         for spec in &component_specs {
+            let component_span = info_span!(
+                "build_component",
+                component = %spec.component_name,
+                build_type = ?spec.build_type
+            );
+            let _enter = component_span.enter();
+
             info!("[BUILD DECISION] Component '{}': Evaluating build requirement", spec.component_name);
+            let component_start = Instant::now();
 
             // Compute current tag
             let current_tag = self.tag_generator.compute_tag(&spec)
@@ -200,6 +221,15 @@ impl BuildOrchestrator {
                     if exists {
                         info!("[BUILD DECISION] Component '{}': ✓ Image '{}' already exists, skipping build",
                             spec.component_name, full_image_name);
+
+                        // Record skip in performance tracker
+                        let skip_duration = component_start.elapsed();
+                        perf_tracker.record_with_component(
+                            "component_skip",
+                            &spec.component_name,
+                            skip_duration
+                        ).await;
+
                         built_images.insert(spec.component_name.clone(), full_image_name.clone());
 
                         // CRITICAL FIX: Always update cache with spec, even when skipping build
@@ -240,8 +270,17 @@ impl BuildOrchestrator {
             info!("[BUILD DECISION] Component '{}': ⚙️  Starting build", spec.component_name);
             match self.build_single(spec.clone(), &component_specs).await {
                 Ok(image_name) => {
-                    info!("[BUILD DECISION] Component '{}': ✓ Successfully built new image '{}'", 
+                    let component_duration = component_start.elapsed();
+                    info!("[BUILD DECISION] Component '{}': ✓ Successfully built new image '{}'",
                         spec.component_name, image_name);
+
+                    // Record timing in performance tracker
+                    perf_tracker.record_with_component(
+                        "component_build",
+                        &spec.component_name,
+                        component_duration
+                    ).await;
+
                     built_images.insert(spec.component_name.clone(), image_name.clone());
                     
                     // Update cache
@@ -306,19 +345,40 @@ impl BuildOrchestrator {
             ));
         }
         
-        info!("All components built successfully in {:?}", start_time.elapsed());
+        let total_duration = start_time.elapsed();
+        info!("All components built successfully in {:?}", total_duration);
+
+        // Record total build time
+        perf_tracker.record("build_all_components", total_duration, {
+            let mut metadata = HashMap::new();
+            metadata.insert("component_count".to_string(), component_specs.len().to_string());
+            metadata.insert("force_rebuild".to_string(), force_rebuild.to_string());
+            metadata
+        }).await;
+
         Ok(built_images)
     }
 
     /// Build a single component
+    #[instrument(
+        level = "debug",
+        skip(self, all_specs),
+        fields(component = %spec.component_name)
+    )]
     pub async fn build_single(&self, spec: ComponentBuildSpec, all_specs: &[ComponentBuildSpec]) -> Result<String> {
         debug!("Building component: {}", spec.component_name);
         let start_time = Instant::now();
+        let total_build_start = std::time::Instant::now();
 
         // Prepare build artifacts
+        let artifacts_start = std::time::Instant::now();
         let artifacts_dir = self.prepare_artifacts(&spec).await?;
+        crate::profiling::global_tracker()
+            .record_with_component("build_single", "prepare_artifacts", artifacts_start.elapsed())
+            .await;
 
         // Determine image name and tag
+        let tag_start = std::time::Instant::now();
         let image_name = format!(
             "{}/{}",
             self.config.product_name,
@@ -468,17 +528,24 @@ impl BuildOrchestrator {
     /// Prepare build artifacts for a component
     pub async fn prepare_artifacts(&self, spec: &ComponentBuildSpec) -> Result<PathBuf> {
         debug!("Preparing artifacts for {}", spec.component_name);
-        
+        let artifacts_start = std::time::Instant::now();
+
         // Create artifacts directory
+        let dir_start = std::time::Instant::now();
         let artifacts_dir = self.config.product_dir
             .join(".rush")
             .join("artifacts")
             .join(&spec.component_name);
-        
+
         tokio::fs::create_dir_all(&artifacts_dir).await
             .map_err(|e| rush_core::error::Error::Io(e))?;
-        
+
+        crate::profiling::global_tracker()
+            .record_with_component("prepare_artifacts", "create_dir", dir_start.elapsed())
+            .await;
+
         // Render templates based on build type
+        let render_start = std::time::Instant::now();
         match &spec.build_type {
             BuildType::RustBinary { .. } => {
                 // Prepare Rust binary artifacts
@@ -493,7 +560,14 @@ impl BuildOrchestrator {
                 debug!("No artifacts to prepare for build type");
             }
         }
-        
+        crate::profiling::global_tracker()
+            .record_with_component("prepare_artifacts", "render_templates", render_start.elapsed())
+            .await;
+
+        crate::profiling::global_tracker()
+            .record_with_component("prepare_artifacts", "total", artifacts_start.elapsed())
+            .await;
+
         Ok(artifacts_dir)
     }
 

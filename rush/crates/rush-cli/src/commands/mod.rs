@@ -7,6 +7,7 @@ pub mod describe;
 pub mod dev;
 pub mod install;
 pub mod mcp;
+pub mod profile;
 pub mod rollout;
 pub mod secrets;
 pub mod unapply;

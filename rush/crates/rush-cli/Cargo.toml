@@ -50,7 +50,14 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tera = { workspace = true }
 tokio = { workspace = true }
+tracing = "0.1"
+tracing-flame = { version = "0.2", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "chrono"] }
 uuid = { workspace = true }
+
+[features]
+default = []
+profiling = ["tracing-flame"]
 
 [dev-dependencies]
 ctor = { workspace = true }

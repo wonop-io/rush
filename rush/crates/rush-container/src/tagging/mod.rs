@@ -40,11 +40,17 @@ impl ImageTagGenerator {
     /// - `{git_hash}` (8 chars) for clean state
     /// - `{git_hash}-wip-{content_hash}` (8 chars each) for dirty state
     pub fn compute_tag(&self, spec: &ComponentBuildSpec) -> Result<String> {
+        let tag_start = std::time::Instant::now();
+
         // 1. Get watched files (expand patterns on each computation for dynamic detection)
+        let watch_start = std::time::Instant::now();
         let (watch_files, watch_dirs) = self.get_watch_files_and_directories(spec);
+        let watch_duration = watch_start.elapsed();
 
         // 2. Compute git hash for watch directories
+        let git_hash_start = std::time::Instant::now();
         let git_hash = self.compute_git_hash_for_directories(&watch_dirs)?;
+        let git_hash_duration = git_hash_start.elapsed();
 
         // Handle case where no git hash is available
         if git_hash.is_empty() || git_hash == "precommit" {
@@ -56,16 +62,45 @@ impl ImageTagGenerator {
         }
 
         // 3. Check if working directory is dirty
-        if self.is_dirty_with_files(&watch_files, &watch_dirs)? {
+        let dirty_check_start = std::time::Instant::now();
+        let is_dirty = self.is_dirty_with_files(&watch_files, &watch_dirs)?;
+        let dirty_check_duration = dirty_check_start.elapsed();
+
+        let final_tag = if is_dirty {
             // 4. Compute SHA256 hash of actual content
+            let content_hash_start = std::time::Instant::now();
             let content_hash = self.compute_content_hash_from_files(&watch_files)?;
-            Ok(format!("{}-wip-{}",
+            let content_hash_duration = content_hash_start.elapsed();
+
+            // Record content hash timing
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    crate::profiling::global_tracker()
+                        .record_with_component("tag_computation", "content_hash", content_hash_duration)
+                        .await;
+                })
+            });
+
+            format!("{}-wip-{}",
                 &git_hash[..8.min(git_hash.len())],
                 &content_hash[..8.min(content_hash.len())]
-            ))
+            )
         } else {
-            Ok(git_hash[..8.min(git_hash.len())].to_string())
-        }
+            git_hash[..8.min(git_hash.len())].to_string()
+        };
+
+        // Record all timing metrics
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let tracker = crate::profiling::global_tracker();
+                tracker.record_with_component("tag_computation", "watch_files", watch_duration).await;
+                tracker.record_with_component("tag_computation", "git_hash", git_hash_duration).await;
+                tracker.record_with_component("tag_computation", "dirty_check", dirty_check_duration).await;
+                tracker.record_with_component("tag_computation", "total", tag_start.elapsed()).await;
+            })
+        });
+
+        Ok(final_tag)
     }
 
     /// Get watched files and directories by walking and matching patterns

@@ -24,6 +24,10 @@ pub async fn create_context(
     matches: &ArgMatches,
     output_sink: Arc<TokioMutex<Box<dyn Sink>>>,
 ) -> Result<CliContext> {
+    let total_start = std::time::Instant::now();
+
+    // Parse command line arguments
+    let args_start = std::time::Instant::now();
     let start_port = *matches.get_one::<u16>("start_port").unwrap();
     let redirected_components = parse_redirected_components(matches);
     let silence_components = parse_silence_components(matches);
@@ -38,6 +42,10 @@ pub async fn create_context(
         .ok_or("Product name is required. Usage: rush <product_name> <command>")
         .map_err(|e| rush_core::error::Error::Config(e.to_string()))?
         .clone();
+
+    rush_container::profiling::global_tracker()
+        .record_with_component("context_init", "parse_args", args_start.elapsed())
+        .await;
 
     info!("Product name: {}", product_name);
 

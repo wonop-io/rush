@@ -6,6 +6,7 @@ use rush_core::{Error, Result};
 use std::process::Stdio;
 use tokio::process::Command;
 use log::{debug, error, info, warn};
+use tracing::{instrument, span, Level};
 
 /// Docker executor that implements DockerClient using command-line interface
 #[derive(Debug, Clone)]
@@ -41,6 +42,7 @@ impl DockerExecutor {
     }
 
     /// Get container exit code (helper method, not part of trait)
+    #[instrument(level = "debug", skip(self), fields(container_id = %container_id))]
     async fn get_container_exit_code(&self, container_id: &str) -> Result<Option<i32>> {
         let args = vec![
             "inspect".to_string(),
@@ -59,7 +61,11 @@ impl DockerExecutor {
     }
 
     /// Execute a docker command with arguments
+    #[instrument(level = "debug", skip(self), fields(command = args.get(0).map(|s| s.as_str()).unwrap_or("unknown"), args_count = args.len()))]
     async fn execute(&self, args: Vec<String>) -> Result<String> {
+        let total_start = std::time::Instant::now();
+        let docker_cmd = args.get(0).map(|s| s.as_str()).unwrap_or("unknown");
+
         let program = if self.use_sudo { "sudo" } else { "docker" };
         let mut cmd = Command::new(program);
 
@@ -73,10 +79,16 @@ impl DockerExecutor {
 
         debug!("Executing: {} {}", program, args.join(" "));
 
+        let exec_start = std::time::Instant::now();
         let output = cmd
             .output()
             .await
             .map_err(|e| Error::Docker(format!("Failed to execute docker command: {e}")))?;
+
+        // Record Docker command execution time
+        // Note: We can't access rush_container from here, so we'll just log the timing
+        let duration = exec_start.elapsed();
+        debug!("Docker command '{}' took {:?}", docker_cmd, duration);
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -101,6 +113,7 @@ impl DockerExecutor {
 #[async_trait]
 impl DockerClient for DockerExecutor {
     // Network operations
+    #[instrument(level = "info", skip(self), fields(network_name = %name))]
     async fn create_network(&self, name: &str) -> Result<()> {
         let args = vec![
             "network".to_string(),
@@ -112,6 +125,7 @@ impl DockerClient for DockerExecutor {
         Ok(())
     }
 
+    #[instrument(level = "info", skip(self), fields(network_name = %name))]
     async fn delete_network(&self, name: &str) -> Result<()> {
         let args = vec!["network".to_string(), "rm".to_string(), name.to_string()];
         self.execute(args).await?;
@@ -119,6 +133,7 @@ impl DockerClient for DockerExecutor {
         Ok(())
     }
 
+    #[instrument(level = "debug", skip(self), fields(network_name = %name))]
     async fn network_exists(&self, name: &str) -> Result<bool> {
         let args = vec![
             "network".to_string(),
@@ -134,6 +149,7 @@ impl DockerClient for DockerExecutor {
     }
 
     // Image operations
+    #[instrument(level = "info", skip(self), fields(image = %image))]
     async fn pull_image(&self, image: &str) -> Result<()> {
         let args = vec!["pull".to_string(), image.to_string()];
         self.execute(args).await?;
@@ -141,6 +157,7 @@ impl DockerClient for DockerExecutor {
         Ok(())
     }
 
+    #[instrument(level = "info", skip(self), fields(tag = %tag, dockerfile = %dockerfile, context = %context))]
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         let mut args = vec!["build".to_string()];
 
@@ -167,6 +184,7 @@ impl DockerClient for DockerExecutor {
     }
 
     // Container operations
+    #[instrument(level = "info", skip(self, env_vars, ports, volumes), fields(image = %image, container_name = %name, network = %network))]
     async fn run_container(
         &self,
         image: &str,
@@ -210,6 +228,7 @@ impl DockerClient for DockerExecutor {
         Ok(container_id)
     }
 
+    #[instrument(level = "info", skip(self, env_vars, ports, volumes, command), fields(image = %image, container_name = %name, network = %network))]
     async fn run_container_with_command(
         &self,
         image: &str,
@@ -258,6 +277,7 @@ impl DockerClient for DockerExecutor {
         Ok(container_id)
     }
 
+    #[instrument(level = "info", skip(self), fields(container_id = %container_id))]
     async fn stop_container(&self, container_id: &str) -> Result<()> {
         let args = vec!["stop".to_string(), container_id.to_string()];
         self.execute(args).await?;
@@ -265,6 +285,7 @@ impl DockerClient for DockerExecutor {
         Ok(())
     }
 
+    #[instrument(level = "info", skip(self), fields(container_id = %container_id))]
     async fn remove_container(&self, container_id: &str) -> Result<()> {
         let args = vec!["rm".to_string(), "-f".to_string(), container_id.to_string()];
         self.execute(args).await?;
@@ -272,6 +293,7 @@ impl DockerClient for DockerExecutor {
         Ok(())
     }
 
+    #[instrument(level = "debug", skip(self), fields(container_id = %container_id))]
     async fn container_status(&self, container_id: &str) -> Result<ContainerStatus> {
         let args = vec![
             "inspect".to_string(),
@@ -393,6 +415,7 @@ impl DockerClient for DockerExecutor {
         Ok(())
     }
 
+    #[instrument(level = "debug", skip(self), fields(image = %image))]
     async fn image_exists(&self, image: &str) -> Result<bool> {
         let args = vec![
             "image".to_string(),

@@ -117,6 +117,9 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
     } else if let Some(secrets_matches) = matches.subcommand_matches("secrets") {
         trace!("Executing secrets command");
         commands::secrets::execute(secrets_matches, ctx).await
+    } else if let Some(profile_matches) = matches.subcommand_matches("profile") {
+        trace!("Executing profile command");
+        commands::profile::execute(profile_matches, ctx).await
     } else if let Some(dev_matches) = matches.subcommand_matches("dev") {
         trace!("Executing dev command");
 

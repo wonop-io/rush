@@ -21,6 +21,11 @@ async fn main() -> Result<(), std::io::Error> {
         context_builder::setup_logging(&matches);
     }
 
+    // Initialize tracing for profiling if enabled
+    if std::env::var("RUSH_PROFILE").is_ok() || matches.subcommand_matches("profile").is_some() {
+        rush_container::profiling::init_tracing();
+    }
+
     // Handle MCP command early (doesn't need context)
     if let Some(mcp_matches) = matches.subcommand_matches("mcp") {
         return match rush_cli::commands::mcp::execute(mcp_matches).await {

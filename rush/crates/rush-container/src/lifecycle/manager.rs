@@ -9,6 +9,7 @@ use crate::{
     events::{Event, EventBus, ContainerEvent},
     health_check_manager::HealthCheckManager,
     metrics::MetricsCollector,
+    profiling,
     reactor::state::{SharedReactorState, ReactorPhase},
     service::ContainerService,
     simple_output,
@@ -21,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use log::{debug, error, info, warn};
 use tokio::sync::broadcast;
+use tracing::{instrument, info_span};
 
 /// Configuration for the lifecycle manager
 #[derive(Debug, Clone)]
@@ -247,6 +249,11 @@ impl LifecycleManager {
     }
 
     /// Start services with dependency-aware ordering and health checks
+    #[instrument(
+        level = "info",
+        skip(self, services, component_specs, built_images),
+        fields(service_count = services.len())
+    )]
     pub async fn start_services_with_dependencies(
         &self,
         services: Vec<ContainerService>,
@@ -254,6 +261,8 @@ impl LifecycleManager {
         built_images: &HashMap<String, String>,
     ) -> Result<Vec<DockerService>> {
         info!("Starting {} services with dependency-aware ordering", services.len());
+        let start_time = Instant::now();
+        let perf_tracker = profiling::global_tracker();
 
         // Record startup begin
         self.metrics.record_startup_begin(services.len(), 0).await;
@@ -295,6 +304,10 @@ impl LifecycleManager {
 
         // Start components wave by wave
         for (wave_num, components_in_wave) in waves.iter().enumerate() {
+            let wave_span = info_span!("startup_wave", wave = wave_num + 1);
+            let _wave_enter = wave_span.enter();
+            let wave_start = Instant::now();
+
             info!("Starting wave {} with {} components: {:?}",
                   wave_num + 1, components_in_wave.len(), components_in_wave);
 
@@ -304,6 +317,10 @@ impl LifecycleManager {
             // Start all components in this wave (sequentially for now due to vault access)
             // TODO: Make this parallel once vault supports Send futures
             for component_name in components_in_wave {
+                let component_start = Instant::now();
+                let component_span = info_span!("start_component", name = %component_name);
+                let _comp_enter = component_span.enter();
+
                 // Find the corresponding service
                 let service = match services.iter().find(|s| s.name == *component_name) {
                     Some(s) => s,
@@ -382,6 +399,14 @@ impl LifecycleManager {
 
                 info!("Component {} started with container {}",
                       component_name, docker_service.id());
+
+                // Record component startup time
+                let component_duration = component_start.elapsed();
+                perf_tracker.record_with_component(
+                    "component_startup",
+                    component_name,
+                    component_duration
+                ).await;
 
                 component_to_container.insert(
                     component_name.clone(),
@@ -484,7 +509,17 @@ impl LifecycleManager {
 
             // Record wave completion
             self.metrics.record_wave_complete(wave_num).await;
-            info!("Wave {} completed successfully", wave_num + 1);
+
+            let wave_duration = wave_start.elapsed();
+            info!("Wave {} completed successfully in {:?}", wave_num + 1, wave_duration);
+
+            // Record wave timing
+            perf_tracker.record("startup_wave", wave_duration, {
+                let mut metadata = HashMap::new();
+                metadata.insert("wave_num".to_string(), (wave_num + 1).to_string());
+                metadata.insert("component_count".to_string(), components_in_wave.len().to_string());
+                metadata
+            }).await;
         }
 
         // Record overall startup completion
@@ -502,7 +537,18 @@ impl LifecycleManager {
             debug!("Startup metrics: {}", metrics_json);
         }
 
-        info!("All {} services started successfully with dependency ordering", running_services.len());
+        let total_duration = start_time.elapsed();
+        info!("All {} services started successfully with dependency ordering in {:?}",
+              running_services.len(), total_duration);
+
+        // Record total startup time
+        perf_tracker.record("total_startup", total_duration, {
+            let mut metadata = HashMap::new();
+            metadata.insert("service_count".to_string(), running_services.len().to_string());
+            metadata.insert("wave_count".to_string(), waves.len().to_string());
+            metadata
+        }).await;
+
         Ok(running_services)
     }
 

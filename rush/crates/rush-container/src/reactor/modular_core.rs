@@ -27,6 +27,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
 use log::{info, debug, error, warn};
 use tera;
+use tracing::{instrument, span, Level};
 
 /// Docker registry configuration
 #[derive(Debug, Clone)]
@@ -251,9 +252,13 @@ impl Reactor {
     }
     
     /// Start the reactor and begin processing
+    #[instrument(level = "info", skip(self))]
     pub async fn start(&mut self) -> Result<()> {
         info!("Starting modular container reactor");
-        
+
+        // Profile phase transition
+        let phase_start = std::time::Instant::now();
+
         // Transition to starting phase if not already there
         {
             let mut state = self.state.write().await;
@@ -261,28 +266,53 @@ impl Reactor {
                 state.transition_to(ReactorPhase::Starting)?;
             }
         }
+
+        // Record phase transition timing
+        crate::profiling::global_tracker()
+            .record_with_component("reactor_phase_transition", "Starting", phase_start.elapsed())
+            .await;
         
         // Propagate output sink to build orchestrator and lifecycle manager
+        let sink_start = std::time::Instant::now();
         self.build_orchestrator.set_output_sink(self.output_sink.clone()).await;
         self.lifecycle_manager.set_output_sink(self.output_sink.clone()).await;
-        
+        crate::profiling::global_tracker()
+            .record_with_component("reactor_setup", "output_sink_propagation", sink_start.elapsed())
+            .await;
+
         // Start Docker health monitoring
+        let health_start = std::time::Instant::now();
         self.docker_integration.health_check().await?;
+        crate::profiling::global_tracker()
+            .record_with_component("reactor_setup", "docker_health_check", health_start.elapsed())
+            .await;
         
         // Start lifecycle manager
+        let lifecycle_start = std::time::Instant::now();
         self.lifecycle_manager.start().await?;
-        
+        crate::profiling::global_tracker()
+            .record_with_component("reactor_setup", "lifecycle_manager_start", lifecycle_start.elapsed())
+            .await;
+
         // Setup and start file watching with watch patterns
+        let watcher_start = std::time::Instant::now();
         if let Err(e) = self.setup_watchers().await {
             warn!("Failed to setup file watchers: {}", e);
             // Continue anyway - file watching is optional
         }
+        crate::profiling::global_tracker()
+            .record_with_component("reactor_setup", "watcher_setup", watcher_start.elapsed())
+            .await;
         
         // Transition to running phase
+        let running_transition = std::time::Instant::now();
         {
             let mut state = self.state.write().await;
             state.transition_to(ReactorPhase::Running)?;
         }
+        crate::profiling::global_tracker()
+            .record_with_component("reactor_phase_transition", "Running", running_transition.elapsed())
+            .await;
         
         // Publish startup event
         let _ = self.event_bus.publish(Event::new(
@@ -370,6 +400,7 @@ impl Reactor {
     }
     
     /// Handle rebuild request for specific components
+    #[instrument(level = "debug", skip(self, batch), fields(operation = "handle_rebuild"))]
     async fn handle_rebuild(&mut self, mut batch: crate::watcher::handler::ChangeBatch) -> Result<()> {
         debug!("Handling rebuild for components: {:?}", batch.affected_components);
 
@@ -595,6 +626,7 @@ impl Reactor {
     }
     
     /// Handle manual rebuild request (not triggered by file changes)
+    #[instrument(level = "info", skip(self, components), fields(force_rebuild = %force_rebuild))]
     async fn handle_manual_rebuild(&mut self, components: std::collections::HashSet<String>, force_rebuild: bool) -> Result<()> {
         debug!("Handling manual rebuild for components: {:?}, force: {}", components, force_rebuild);
         
@@ -704,6 +736,7 @@ impl Reactor {
     }
     
     /// Trigger a manual rebuild of all components
+    #[instrument(level = "info", skip(self), fields(operation = "rebuild_all"))]
     pub async fn rebuild_all(&mut self) -> Result<()> {
         self.rebuild_all_with_force(self.force_rebuild).await
     }
@@ -1912,38 +1945,73 @@ impl Reactor {
     }
     
     /// Setup Docker network for the reactor
+    #[instrument(level = "info", skip(self))]
     pub async fn setup_network(&self) -> Result<()> {
         let network_name = &self.config.base.network_name;
-        
+        let network_start = std::time::Instant::now();
+
         // Check if network already exists
-        if !self.docker_integration.client().network_exists(network_name).await? {
+        let check_start = std::time::Instant::now();
+        let network_exists = self.docker_integration.client().network_exists(network_name).await?;
+        crate::profiling::global_tracker()
+            .record_with_component("network_setup", "check_exists", check_start.elapsed())
+            .await;
+
+        if !network_exists {
             info!("Creating Docker network: {}", network_name);
+            let create_start = std::time::Instant::now();
             self.docker_integration.client().create_network(network_name).await?;
+            crate::profiling::global_tracker()
+                .record_with_component("network_setup", "create_network", create_start.elapsed())
+                .await;
         } else {
             debug!("Network {} already exists", network_name);
         }
-        
+
+        crate::profiling::global_tracker()
+            .record_with_component("network_setup", "total", network_start.elapsed())
+            .await;
+
         Ok(())
     }
     
     /// Combined launch method that sets up network and runs the reactor
+    #[instrument(level = "info", skip(self), fields(phase = "launch"))]
     pub async fn launch(&mut self) -> Result<()> {
         info!("Starting primary reactor");
-        
+        let total_launch_start = std::time::Instant::now();
+
         // Setup Docker network first
+        let network_setup_start = std::time::Instant::now();
         self.setup_network().await?;
-        
+        crate::profiling::global_tracker()
+            .record_with_component("launch_phase", "network_setup", network_setup_start.elapsed())
+            .await;
+
         // Start the reactor lifecycle management
+        let reactor_start = std::time::Instant::now();
         self.start().await?;
-        
+        crate::profiling::global_tracker()
+            .record_with_component("launch_phase", "reactor_start", reactor_start.elapsed())
+            .await;
+
         // Build and start all containers initially
+        let initial_build_start = std::time::Instant::now();
         if let Err(e) = self.rebuild_all().await {
             error!("Initial build failed: {}", e);
             // Continue anyway - the reactor will handle file watching and rebuilds
             info!("Waiting for file changes to retry build...");
             info!("💡 Tip: Fix the build error and save a file to trigger rebuild");
         }
-        
+        crate::profiling::global_tracker()
+            .record_with_component("launch_phase", "initial_build", initial_build_start.elapsed())
+            .await;
+
+        // Record total launch time
+        crate::profiling::global_tracker()
+            .record_with_component("launch_phase", "total", total_launch_start.elapsed())
+            .await;
+
         // Run the main reactor loop
         self.run().await
     }

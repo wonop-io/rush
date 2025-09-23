@@ -180,8 +180,10 @@ impl DockerClient for DockerCliClient {
         use std::path::Path;
 
         trace!("Building Docker image: {}", tag);
+        let build_start = std::time::Instant::now();
 
         // Convert paths to PathBuf for manipulation
+        let path_calc_start = std::time::Instant::now();
         let context_path = Path::new(context);
         let dockerfile_path = Path::new(dockerfile);
 
@@ -281,6 +283,11 @@ impl DockerClient for DockerCliClient {
         }
 
         debug!("Successfully built Docker image: {}", tag);
+
+        crate::profiling::global_tracker()
+            .record_with_component("docker_build", "total", build_start.elapsed())
+            .await;
+
         Ok(())
     }
 

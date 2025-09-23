@@ -15,6 +15,7 @@ pub mod kubernetes;
 pub mod lifecycle;
 pub mod metrics;
 pub mod network;
+pub mod profiling;
 pub mod reactor;
 pub mod recovery;
 pub mod service;
