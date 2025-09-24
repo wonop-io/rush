@@ -128,8 +128,26 @@ impl Config {
         let context = Context::from_serialize(&ctx).expect("Could not create config context");
         match Tera::one_off(&self.domain_template, &context, false) {
             Ok(d) => d,
-            Err(e) => panic!("Could not render domain template: {e}"),
+            Err(e) => {
+                log::error!("Failed to render domain template: {}", e);
+                // Return a default domain as fallback
+                format!("{}.localhost", self.product_uri)
+            }
         }
+    }
+
+    /// Safe version that returns Result
+    pub fn try_domain(&self, subdomain: Option<String>) -> Result<String, String> {
+        let ctx = DomainContext {
+            product_name: self.product_name.clone(),
+            product_uri: self.product_uri.clone(),
+            subdomain,
+        };
+        let context = Context::from_serialize(&ctx)
+            .map_err(|e| format!("Could not create config context: {}", e))?;
+
+        Tera::one_off(&self.domain_template, &context, false)
+            .map_err(|e| format!("Could not render domain template: {}", e))
     }
 
     pub fn root_path(&self) -> &str {

@@ -125,7 +125,19 @@ pub enum Error {
     /// Async task error
     #[error("Async error: {0}")]
     Async(String),
-    
+
+    /// Timeout error
+    #[error("Timeout: {0}")]
+    Timeout(String),
+
+    /// Service unavailable error (for circuit breaker)
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailable(String),
+
+    /// Container not found error
+    #[error("Container not found: {0}")]
+    ContainerNotFound(String),
+
     /// Generic error for other cases
     #[error("Error: {0}")]
     Other(String),
@@ -186,6 +198,9 @@ impl PartialEq for Error {
             (Error::Serialization(a), Error::Serialization(b)) => a == b,
             (Error::Configuration(a), Error::Configuration(b)) => a == b,
             (Error::Async(a), Error::Async(b)) => a == b,
+            (Error::Timeout(a), Error::Timeout(b)) => a == b,
+            (Error::ServiceUnavailable(a), Error::ServiceUnavailable(b)) => a == b,
+            (Error::ContainerNotFound(a), Error::ContainerNotFound(b)) => a == b,
             (Error::Other(a), Error::Other(b)) => a == b,
             // IO errors and Anyhow errors cannot be reliably compared
             _ => false,

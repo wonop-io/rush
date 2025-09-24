@@ -24,6 +24,11 @@ pub mod status;
 pub mod stripe_handler;
 pub mod tagging;
 pub mod watcher;
+pub mod git_ops;
+
+// Testing modules
+#[cfg(test)]
+pub mod testing;
 
 // TODO: Re-enable when test utils are updated to match current interfaces
 // #[cfg(test)]

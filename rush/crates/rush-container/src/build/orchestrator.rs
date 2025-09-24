@@ -4,7 +4,7 @@
 //! handling dependencies and parallel builds where possible.
 
 use crate::{
-    build::{BuildProcessor, BuildCache, CacheEntry, CacheStats},
+    build::{BuildProcessor, BuildCache, CacheEntry, CacheStats, ParallelBuildExecutor},
     docker::DockerClient,
     events::{Event, EventBus, ContainerEvent},
     profiling,
@@ -147,7 +147,36 @@ impl BuildOrchestrator {
         *output_sink = Some(sink);
     }
 
-    /// Build all components
+    /// Get the product name
+    pub fn product_name(&self) -> &str {
+        &self.config.product_name
+    }
+
+    /// Get the docker client
+    pub fn docker_client(&self) -> &Arc<dyn DockerClient> {
+        &self.docker_client
+    }
+
+    /// Build all components with parallel execution if enabled
+    pub async fn build_components_parallel(
+        self: Arc<Self>,
+        component_specs: Vec<ComponentBuildSpec>,
+        force_rebuild: bool,
+    ) -> Result<HashMap<String, String>> {
+        if self.config.parallel_builds {
+            info!("Using parallel build execution");
+            let executor = ParallelBuildExecutor::new(
+                Arc::clone(&self),
+                self.config.max_parallel,
+            );
+            executor.build_optimized(component_specs, force_rebuild).await
+        } else {
+            // Fall back to sequential build
+            self.build_components(component_specs, force_rebuild).await
+        }
+    }
+
+    /// Build all components (sequential)
     #[instrument(
         level = "info",
         skip(self, component_specs),

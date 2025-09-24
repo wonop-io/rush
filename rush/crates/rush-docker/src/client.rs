@@ -4,7 +4,9 @@ use crate::{ContainerStatus, DockerClient};
 use async_trait::async_trait;
 use rush_core::{Error, Result};
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::process::Command;
+use tokio::time::timeout;
 use log::{debug, error, info, warn};
 use tracing::{instrument, span, Level};
 
@@ -96,7 +98,7 @@ impl DockerExecutor {
 
             // Check for common errors
             if stderr.contains("No such container") || stdout.contains("No such container") {
-                return Err(Error::Docker("Container not found".to_string()));
+                return Err(Error::ContainerNotFound("Container not found".to_string()));
             }
             if stderr.contains("No such image") || stdout.contains("No such image") {
                 return Err(Error::Docker("Image not found".to_string()));

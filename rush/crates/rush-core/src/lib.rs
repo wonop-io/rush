@@ -11,6 +11,7 @@ pub mod error;
 pub mod error_context;
 pub mod events;
 pub mod naming;
+pub mod reliability;
 pub mod service_constants;
 pub mod shutdown;
 pub mod types;
