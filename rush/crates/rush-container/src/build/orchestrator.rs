@@ -858,6 +858,7 @@ impl BuildOrchestrator {
     }
 
     /// Copy directory recursively
+    #[allow(clippy::only_used_in_recursion)]
     fn copy_dir_recursive<'a>(
         &'a self,
         src: &'a Path,

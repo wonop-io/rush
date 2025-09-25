@@ -5,7 +5,7 @@
 //! included in the generated .env files.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -262,7 +262,7 @@ fn parse_service_type(service_type: &str) -> LocalServiceType {
 /// Create default volume mappings for services that need data persistence
 fn create_default_volumes(
     service_type: &LocalServiceType,
-    data_dir: &PathBuf,
+    data_dir: &Path,
     component_name: &str,
 ) -> Vec<rush_local_services::VolumeMapping> {
     use rush_local_services::VolumeMapping;

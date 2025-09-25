@@ -45,20 +45,18 @@ pub struct RunOptions {
 impl RunOptions {
     /// Convert options to docker command arguments
     pub fn to_args(&self) -> Vec<String> {
-        let mut args = Vec::new();
-
-        // Use -d (detached) and -t (allocate pseudo-TTY) for proper terminal emulation
-        // This provides TTY without requiring stdin to be a TTY
-        args.push("-d".to_string());
-        args.push("-t".to_string());
-
-        // Add platform for consistency
-        args.push("--platform".to_string());
-        args.push("linux/amd64".to_string());
-
-        // Container name
-        args.push("--name".to_string());
-        args.push(self.name.clone());
+        let mut args = vec![
+            // Use -d (detached) and -t (allocate pseudo-TTY) for proper terminal emulation
+            // This provides TTY without requiring stdin to be a TTY
+            "-d".to_string(),
+            "-t".to_string(),
+            // Add platform for consistency
+            "--platform".to_string(),
+            "linux/amd64".to_string(),
+            // Container name
+            "--name".to_string(),
+            self.name.clone(),
+        ];
 
         // Network
         if let Some(network) = &self.network {

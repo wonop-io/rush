@@ -464,6 +464,7 @@ fn create_toolchain(target_os: &str, target_arch: &str) -> Arc<ToolchainContext>
     toolchain
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_reactor(
     config: Arc<Config>,
     _toolchain: Arc<ToolchainContext>,

@@ -158,10 +158,11 @@ impl Event {
         let level = match &payload {
             ContainerEvent::Error { .. } => EventLevel::Error,
             ContainerEvent::ShutdownInitiated { .. } => EventLevel::Warning,
-            ContainerEvent::ContainerStopped { reason, .. } => match reason {
-                StopReason::Crashed | StopReason::Killed => EventLevel::Warning,
-                _ => EventLevel::Info,
-            },
+            ContainerEvent::ContainerStopped {
+                reason: StopReason::Crashed | StopReason::Killed,
+                ..
+            } => EventLevel::Warning,
+            ContainerEvent::ContainerStopped { .. } => EventLevel::Info,
             _ => EventLevel::Info,
         };
 

@@ -359,8 +359,10 @@ mod tests {
 
         // Optional component can be skipped
         manager.reset().await;
-        let mut config = RecoveryConfig::default();
-        config.default_strategy = RecoveryStrategy::SkipNonCritical;
+        let mut config = RecoveryConfig {
+            default_strategy: RecoveryStrategy::SkipNonCritical,
+            ..Default::default()
+        };
         config
             .component_criticality
             .insert("monitoring".to_string(), Criticality::Optional);
@@ -379,10 +381,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_degraded_mode() {
-        let mut config = RecoveryConfig::default();
-        config.default_strategy = RecoveryStrategy::Graceful;
-        config.allow_degraded = true;
-        config.degraded_threshold = 0.6; // Allow if 60% healthy
+        let config = RecoveryConfig {
+            default_strategy: RecoveryStrategy::Graceful,
+            allow_degraded: true,
+            degraded_threshold: 0.6,
+            ..Default::default()
+        }; // Allow if 60% healthy
 
         let manager = RecoveryManager::new(config);
 
@@ -407,10 +411,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_network_retry() {
-        let mut config = RecoveryConfig::default();
-        config.default_strategy = RecoveryStrategy::Fallback;
-        config.network_retry_attempts = 3;
-        config.network_retry_delay = Duration::from_millis(100);
+        let config = RecoveryConfig {
+            default_strategy: RecoveryStrategy::Fallback,
+            network_retry_attempts: 3,
+            network_retry_delay: Duration::from_millis(100),
+            ..Default::default()
+        };
 
         let manager = RecoveryManager::new(config);
 

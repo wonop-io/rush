@@ -350,14 +350,12 @@ mod tests {
         let manager = GitignoreManager::new(base_path).unwrap();
 
         let mut files = Vec::new();
-        for entry in manager.walk(base_path) {
-            if let Ok(entry) = entry {
-                if entry.file_type().is_some_and(|ft| ft.is_file()) {
-                    let path = entry.path();
-                    // Skip .git directory files
-                    if !path.to_str().unwrap_or("").contains("/.git/") {
-                        files.push(path.to_path_buf());
-                    }
+        for entry in manager.walk(base_path).flatten() {
+            if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                let path = entry.path();
+                // Skip .git directory files
+                if !path.to_str().unwrap_or("").contains("/.git/") {
+                    files.push(path.to_path_buf());
                 }
             }
         }
@@ -400,13 +398,12 @@ mod tests {
             .standard_filters(true)
             .git_ignore(true)
             .build()
+            .flatten()
         {
-            if let Ok(entry) = entry {
-                if entry.file_type().is_some_and(|ft| ft.is_file()) {
-                    let path = entry.path();
-                    if !path.to_str().unwrap_or("").contains("/.git/") {
-                        found_files.push(path.to_path_buf());
-                    }
+            if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                let path = entry.path();
+                if !path.to_str().unwrap_or("").contains("/.git/") {
+                    found_files.push(path.to_path_buf());
                 }
             }
         }

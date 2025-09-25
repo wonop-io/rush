@@ -5,7 +5,7 @@
 //! prepare resources to minimize build time.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -230,7 +230,7 @@ impl PredictiveCache {
     }
 
     /// Load patterns from disk
-    fn load_patterns(cache_dir: &PathBuf) -> Result<BuildPatterns> {
+    fn load_patterns(cache_dir: &Path) -> Result<BuildPatterns> {
         let path = cache_dir.join("patterns.json");
         if path.exists() {
             let data = std::fs::read_to_string(&path).map_err(rush_core::Error::Io)?;
@@ -242,7 +242,7 @@ impl PredictiveCache {
     }
 
     /// Load metadata from disk
-    fn load_metadata(cache_dir: &PathBuf) -> Result<CacheMetadata> {
+    fn load_metadata(cache_dir: &Path) -> Result<CacheMetadata> {
         let path = cache_dir.join("metadata.json");
         if path.exists() {
             let data = std::fs::read_to_string(&path).map_err(rush_core::Error::Io)?;

@@ -21,6 +21,7 @@ pub struct CliContext {
 }
 
 impl CliContext {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: Arc<Config>,
         environment: String,

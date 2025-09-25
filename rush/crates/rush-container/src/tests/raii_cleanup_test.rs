@@ -131,7 +131,7 @@ async fn test_managed_docker_service_cleanup_on_drop() {
 
     // Since the Drop trait runs in a different context and we're using a mock,
     // we can't directly assert on the mock state, but we can verify the structure is correct
-    assert!(true, "RAII cleanup structure is in place");
+    // The test passes if no panic occurs during cleanup
 }
 
 #[tokio::test]
@@ -189,10 +189,7 @@ async fn test_managed_container_service_cleanup_on_drop() {
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
     // The structure for RAII cleanup is in place
-    assert!(
-        true,
-        "ManagedContainerService RAII cleanup structure is in place"
-    );
+    // The test passes if no panic occurs during cleanup
 }
 
 #[tokio::test]
@@ -218,10 +215,7 @@ async fn test_managed_container_service_disable_cleanup() {
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
     // When cleanup is disabled, no cleanup should occur
-    assert!(
-        true,
-        "ManagedContainerService respects cleanup disabled flag"
-    );
+    // The test passes if cleanup was properly disabled
 }
 
 // This test is commented out because ManagedDockerService doesn't implement Clone

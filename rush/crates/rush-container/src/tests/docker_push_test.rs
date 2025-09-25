@@ -23,8 +23,10 @@ mod tests {
         let mock_client = MockDockerClient::new();
 
         // Configure to fail
-        let mut responses = MockResponses::default();
-        responses.should_fail_image_push = true;
+        let responses = MockResponses {
+            should_fail_image_push: true,
+            ..Default::default()
+        };
         mock_client.set_response(responses).await;
 
         // Test failed push

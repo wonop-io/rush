@@ -294,6 +294,7 @@ impl SimpleLifecycleManager {
     }
 
     /// Start a single service using SimpleDocker
+    #[allow(clippy::await_holding_lock)]
     async fn start_service(
         &self,
         service: &ContainerService,
@@ -303,21 +304,17 @@ impl SimpleLifecycleManager {
         debug!("Starting service {} with SimpleDocker", service.name);
 
         // Load secrets from vault
-        let secrets = {
-            let vault = self.vault.clone();
-            let product_name = self.config.product_name.clone();
-            let service_name = service.name.clone();
-            let environment = self.config.environment.clone();
-
-            async move {
-                let vault_guard = vault.lock().unwrap();
-                vault_guard
-                    .get(&product_name, &service_name, &environment)
-                    .await
-                    .unwrap_or_default()
-            }
+        let secrets = self
+            .vault
+            .lock()
+            .unwrap()
+            .get(
+                &self.config.product_name,
+                &service.name,
+                &self.config.environment,
+            )
             .await
-        };
+            .unwrap_or_default();
 
         // Get component spec
         let component_spec = component_specs

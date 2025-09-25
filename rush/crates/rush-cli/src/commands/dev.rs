@@ -29,6 +29,7 @@ pub struct DevCommand {
 }
 
 impl DevCommand {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         product_name: String,
         config: Arc<Config>,
@@ -209,6 +210,7 @@ impl DevCommand {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     product_name: String,
     config: Arc<Config>,

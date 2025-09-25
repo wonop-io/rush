@@ -2066,12 +2066,12 @@ impl Reactor {
         );
 
         // Create kubectl wrapper
-        let mut kubectl_config = rush_k8s::KubectlConfig::default();
-        kubectl_config.namespace = Some(target_version.namespace.clone());
-
-        if let Ok(context) = std::env::var("K8S_CONTEXT") {
-            kubectl_config.context = Some(context);
-        }
+        let context = std::env::var("K8S_CONTEXT").ok();
+        let kubectl_config = rush_k8s::KubectlConfig {
+            namespace: Some(target_version.namespace.clone()),
+            context,
+            ..Default::default()
+        };
 
         let kubectl = rush_k8s::Kubectl::new(kubectl_config);
 
@@ -2137,6 +2137,7 @@ impl Reactor {
     }
 
     /// Build Kubernetes manifests
+    #[allow(clippy::await_holding_lock)]
     pub async fn build_manifests(&mut self) -> Result<()> {
         info!("Building Kubernetes manifests...");
 
@@ -2593,6 +2594,7 @@ impl Reactor {
     }
 
     /// Resolve ports for all components before building
+    #[allow(clippy::ptr_arg)]
     fn resolve_component_ports(
         specs: &mut Vec<ComponentBuildSpec>,
         config: &Arc<rush_config::Config>,

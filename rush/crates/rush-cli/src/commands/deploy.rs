@@ -312,6 +312,7 @@ fn validate_environment(_config: &Config) -> Result<()> {
 }
 
 /// Create a reactor for building and deployment
+#[allow(clippy::arc_with_non_send_sync)]
 async fn create_reactor(
     config: Arc<Config>,
 ) -> Result<Arc<tokio::sync::Mutex<rush_container::reactor::Reactor>>> {
