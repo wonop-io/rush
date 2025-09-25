@@ -118,7 +118,6 @@ impl DevCommand {
         let data_dir = self.config.product_path().join("target").join("local-services");
         let mut dev_env = DevEnvironment::new(
             reactor,
-            docker_client,
             network_manager.network_name().to_string(),
             data_dir,
         );

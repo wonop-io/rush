@@ -4,7 +4,6 @@
 
 use log::{error, info};
 use rush_build::{BuildType, ComponentBuildSpec};
-use rush_docker::DockerClient;
 use rush_core::error::{Error, Result};
 use rush_local_services::{
     DockerLocalService, LocalServiceConfig, LocalServiceManager,
@@ -25,9 +24,6 @@ pub struct DevEnvironment {
     /// Manages application containers
     reactor: ContainerReactor,
     
-    /// Docker client
-    docker_client: Arc<dyn DockerClient>,
-    
     /// Network name
     network_name: String,
     
@@ -40,14 +36,12 @@ impl DevEnvironment {
     /// Create a new development environment
     pub fn new(
         reactor: ContainerReactor,
-        docker_client: Arc<dyn DockerClient>,
         network_name: String,
         data_dir: PathBuf,
     ) -> Self {
         Self {
             local_services: LocalServiceManager::new(),
             reactor,
-            docker_client,
             network_name,
             data_dir,
         }
@@ -95,11 +89,13 @@ impl DevEnvironment {
                     resources: None,
                 };
                 
-                // Create Docker-based service
+                // Create Docker-based service with compatibility shim
+                // TODO: Update DockerLocalService to use SimpleDocker
+                let docker_client = Arc::new(crate::docker::DockerCliClient::new("docker".to_string()));
                 let service = DockerLocalService::new(
                     spec.component_name.clone(),
                     config.service_type.clone(),
-                    self.docker_client.clone(),
+                    docker_client,
                     config,
                     self.network_name.clone(),
                     self.data_dir.clone(),

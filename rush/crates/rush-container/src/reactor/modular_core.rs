@@ -877,201 +877,55 @@ impl Reactor {
         }
     }
     
-    /// Initiate graceful shutdown
+    /// Initiate shutdown - simplified to just kill processes
     pub async fn shutdown(&mut self) -> Result<()> {
-        info!("Initiating graceful reactor shutdown");
+        info!("Initiating reactor shutdown - killing all containers");
 
-        // IMPORTANT: Always cleanup containers first, even if already terminated
-        // This ensures containers are stopped regardless of reactor state
+        // Simply stop all containers via SimpleDocker
         self.cleanup_all_containers().await;
 
-        // Check if already shut down or shutting down
-        {
-            let state = self.state.read().await;
-            match state.phase() {
-                ReactorPhase::Terminated => {
-                    info!("Reactor already terminated, cleanup complete");
-                    return Ok(());
-                }
-                ReactorPhase::ShuttingDown => {
-                    info!("Reactor already shutting down");
-                    // Continue with shutdown process
-                }
-                _ => {}
-            }
-        }
-
-        // Transition to shutting down phase
-        {
-            let mut state = self.state.write().await;
-            // Only transition if we're not already in a shutdown state
-            if *state.phase() != ReactorPhase::Terminated && *state.phase() != ReactorPhase::ShuttingDown {
-                state.transition_to(ReactorPhase::ShuttingDown)?;
-            }
-        }
-        
-        // Container cleanup is now done in cleanup_all_containers() at the start of shutdown()
-        // Disable RAII cleanup since we've already handled it explicitly
+        // Disable RAII cleanup since we've already handled it
         for service in &self.services {
             service.disable_cleanup();
         }
-        
-        // Also update component states
-        let component_names: Vec<String> = {
-            let state = self.state.read().await;
-            state.components().keys().cloned().collect()
-        };
-        
-        for component_name in component_names {
-            if let Err(e) = self.lifecycle_manager.stop_component(&component_name).await {
-                warn!("Failed to update component {} state during shutdown: {}", component_name, e);
-            }
-        }
-        
+
         // Stop watcher
         if let Some(watcher) = &mut self.watcher_coordinator {
             watcher.stop();
         }
-        
-        // Stop lifecycle manager
-        if let Err(e) = self.lifecycle_manager.stop().await {
-            warn!("Failed to stop lifecycle manager during shutdown: {}", e);
-        }
-        
-        // Shutdown lifecycle manager
+
+        // Shutdown lifecycle manager (kills all Docker processes)
         self.lifecycle_manager.shutdown().await?;
-        
+
         // Send shutdown signal
         let _ = self.shutdown_sender.send(());
-        
-        // Transition to shutdown phase
-        {
-            let mut state = self.state.write().await;
-            // Only transition to Terminated if we're in ShuttingDown state
-            if *state.phase() == ReactorPhase::ShuttingDown {
-                state.transition_to(ReactorPhase::Terminated)?;
-            }
-        }
-        
-        info!("Reactor shutdown complete");
+
+        info!("Reactor shutdown complete - all containers killed");
         Ok(())
     }
 
-    /// Handle phased shutdown events
+    /// Handle shutdown events - simplified to just kill everything
     /// Returns Ok(true) if shutdown is complete, Ok(false) to continue running
     async fn handle_shutdown_event(&mut self, event: ShutdownEvent) -> Result<bool> {
         match event.phase {
             ShutdownPhase::Graceful { deadline } => {
-                info!("Initiating graceful shutdown, deadline: {:?}", deadline);
-
-                // Check if we're already shutting down
-                {
-                    let state = self.state.read().await;
-                    if *state.phase() == ReactorPhase::Terminated || *state.phase() == ReactorPhase::ShuttingDown {
-                        info!("Already in shutdown state, continuing graceful shutdown");
-                        // Don't try to transition again, just proceed with cleanup
-                    } else {
-                        // Try to transition to shutting down
-                        drop(state);
-                        let mut state = self.state.write().await;
-                        if let Err(e) = state.transition_to(ReactorPhase::ShuttingDown) {
-                            warn!("Failed to transition to ShuttingDown: {}", e);
-                        }
-                    }
-                }
+                info!("Initiating shutdown, deadline: {:?}", deadline);
 
                 // Cancel all builds immediately
-                if let Some(orchestrator) = Arc::get_mut(&mut self.build_orchestrator) {
-                    orchestrator.cancel_all_builds().await;
-                } else {
-                    // If we can't get mutable access, clone and cancel
-                    self.build_orchestrator.cancel_all_builds().await;
-                }
+                self.build_orchestrator.cancel_all_builds().await;
 
                 // Disable RAII cleanup since we're handling shutdown gracefully
                 for service in &self.services {
                     service.disable_cleanup();
                 }
 
-                // Start graceful shutdown
-                let shutdown_manager = self.lifecycle_manager.shutdown_manager();
-
-                // Get all running services as DockerService
-                let services: Vec<crate::docker::DockerService> = self.services
-                    .iter()
-                    .map(|svc| {
-                        let config = crate::docker::DockerServiceConfig {
-                            name: svc.name.clone(),
-                            image: svc.image.clone(),
-                            network: self.config.base.network_name.clone(),
-                            env_vars: std::collections::HashMap::new(),
-                            ports: vec![],
-                            volumes: vec![],
-                        };
-                        crate::docker::DockerService::new(
-                            svc.id.clone(),
-                            config,
-                            self.lifecycle_manager.docker_client().clone()
-                        )
-                    })
-                    .collect();
-
-                // Convert shutdown reason to container events type
-                let container_shutdown_reason = match &event.reason {
-                    ShutdownReason::UserRequested | ShutdownReason::Signal => {
-                        crate::events::ShutdownReason::UserRequested
-                    }
-                    ShutdownReason::Error(msg) => {
-                        crate::events::ShutdownReason::Error(msg.clone())
-                    }
-                    ShutdownReason::Timeout => {
-                        crate::events::ShutdownReason::Timeout
-                    }
-                    _ => crate::events::ShutdownReason::UserRequested,
-                };
-
-                // Start graceful shutdown with deadline awareness
-                let shutdown_task = shutdown_manager.shutdown_all(
-                    &services,
-                    container_shutdown_reason,
-                    crate::lifecycle::shutdown::ShutdownStrategy::Graceful,
-                );
-
-                // Wait until deadline
-                let now = std::time::Instant::now();
-                let remaining = deadline.saturating_duration_since(now);
-
-                match tokio::time::timeout(remaining, shutdown_task).await {
-                    Ok(Ok(_)) => {
-                        info!("Graceful shutdown completed within deadline");
-                        Ok(true)
-                    }
-                    Ok(Err(e)) => {
-                        error!("Graceful shutdown failed: {}", e);
-                        Ok(false) // Wait for forced phase
-                    }
-                    Err(_) => {
-                        warn!("Graceful shutdown incomplete at deadline");
-                        Ok(false) // Wait for forced phase
-                    }
-                }
+                // Simply kill all containers
+                self.shutdown().await?;
+                Ok(true)
             }
             ShutdownPhase::Forced => {
-                error!("Forcing immediate shutdown");
-
-                // CRITICAL: Always cleanup containers during forced shutdown
+                error!("Forcing immediate shutdown - killing all containers");
                 self.cleanup_all_containers().await;
-
-                // Also try emergency shutdown as backup (though IDs might be UUIDs)
-                let container_ids: Vec<String> = self.services
-                    .iter()
-                    .map(|svc| svc.id.clone())
-                    .collect();
-
-                // Force shutdown (but don't fail if it errors, we've already done cleanup)
-                let shutdown_manager = self.lifecycle_manager.shutdown_manager();
-                let _ = shutdown_manager.emergency_shutdown(&container_ids).await;
-
                 Ok(true)
             }
         }
