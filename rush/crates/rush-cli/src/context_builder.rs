@@ -24,7 +24,7 @@ pub async fn create_context(
     matches: &ArgMatches,
     output_sink: Arc<TokioMutex<Box<dyn Sink>>>,
 ) -> Result<CliContext> {
-    let total_start = std::time::Instant::now();
+    let _total_start = std::time::Instant::now();
 
     // Parse command line arguments
     let args_start = std::time::Instant::now();

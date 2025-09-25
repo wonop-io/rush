@@ -32,10 +32,10 @@ impl Default for WatcherIntegrationConfig {
 
 /// Integrates the new watcher with the reactor
 pub struct WatcherIntegration {
-    config: WatcherIntegrationConfig,
+    _config: WatcherIntegrationConfig,
     coordinator: Option<WatcherCoordinator>,
-    event_bus: EventBus,
-    state: SharedReactorState,
+    _event_bus: EventBus,
+    _state: SharedReactorState,
 }
 
 impl WatcherIntegration {
@@ -60,10 +60,10 @@ impl WatcherIntegration {
         };
         
         Ok(Self {
-            config,
+            _config: config,
             coordinator,
-            event_bus,
-            state,
+            _event_bus: event_bus,
+            _state: state,
         })
     }
 

@@ -181,14 +181,14 @@ fn convert_to_chrome_trace(report: &rush_container::profiling::PerformanceReport
 }
 
 /// Add a special mode for continuous profiling
-pub async fn execute_continuous(ctx: &mut CliContext) -> Result<()> {
+pub async fn execute_continuous(_ctx: &mut CliContext) -> Result<()> {
     info!("Starting continuous performance profiling...");
 
     // Enable profiling
     std::env::set_var("RUSH_PROFILE", "1");
 
     // Start a background task to periodically export metrics
-    let tracker = profiling::global_tracker();
+    let _tracker = profiling::global_tracker();
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));

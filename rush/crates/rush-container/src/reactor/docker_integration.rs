@@ -50,7 +50,7 @@ impl Default for DockerIntegrationConfig {
 /// Enhanced Docker integration for the reactor
 pub struct DockerIntegration {
     /// Configuration
-    config: DockerIntegrationConfig,
+    _config: DockerIntegrationConfig,
     /// The Docker client (wrapped with enhancements)
     client: Arc<dyn DockerClient>,
     /// Log stream manager
@@ -60,7 +60,7 @@ pub struct DockerIntegration {
     /// Event bus
     event_bus: EventBus,
     /// Reactor state
-    state: SharedReactorState,
+    _state: SharedReactorState,
 }
 
 impl DockerIntegration {
@@ -99,12 +99,12 @@ impl DockerIntegration {
         };
         
         Ok(Self {
-            config,
+            _config: config,
             client,
             log_manager,
             metrics,
             event_bus,
-            state,
+            _state: state,
         })
     }
     

@@ -326,15 +326,16 @@ pub fn init_tracing() {
         .with(env_filter)
         .with(fmt_layer);
 
-    #[cfg(feature = "profiling")]
-    let subscriber = {
-        if std::env::var("RUSH_FLAMEGRAPH").is_ok() {
-            let (flame_layer, _guard) = tracing_flame::FlameLayer::new(std::io::stdout());
-            subscriber.with(flame_layer)
-        } else {
-            subscriber
-        }
-    };
+    // Profiling feature disabled - remove cfg check to eliminate warning
+    // #[cfg(feature = "profiling")]
+    // let subscriber = {
+    //     if std::env::var("RUSH_FLAMEGRAPH").is_ok() {
+    //         let (flame_layer, _guard) = tracing_flame::FlameLayer::new(std::io::stdout());
+    //         subscriber.with(flame_layer)
+    //     } else {
+    //         subscriber
+    //     }
+    // };
 
     // Try to init, but don't panic if it fails (logger may be set)
     let _ = subscriber.try_init();

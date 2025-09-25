@@ -119,6 +119,7 @@ impl std::error::Error for BuildError {}
 
 /// Handles build errors and provides recovery mechanisms
 #[deprecated(note = "Function appears unused - will be removed in next release")]
+#[allow(dead_code)]
 pub async fn handle_build_error<F>(
     error: BuildError,
     test_if_files_changed: F,

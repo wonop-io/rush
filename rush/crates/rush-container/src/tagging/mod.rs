@@ -265,6 +265,7 @@ impl ImageTagGenerator {
 
     /// Get all directories that should be watched for changes
     /// This is kept for backwards compatibility but delegates to get_watch_files_and_directories
+    #[allow(dead_code)]
     fn get_watch_directories(&self, spec: &ComponentBuildSpec) -> Vec<PathBuf> {
         let (_files, dirs) = self.get_watch_files_and_directories(spec);
         dirs
@@ -414,6 +415,7 @@ impl ImageTagGenerator {
 
     /// Check if any of the watch directories have uncommitted changes
     /// This is kept for backwards compatibility
+    #[allow(dead_code)]
     fn is_dirty(&self, dirs: &[PathBuf]) -> Result<bool> {
         self.is_dirty_with_files(&[], dirs)
     }
@@ -468,6 +470,7 @@ impl ImageTagGenerator {
 
     /// Compute SHA256 hash of all file contents in watch directories
     /// This is kept for backwards compatibility
+    #[allow(dead_code)]
     fn compute_content_hash(&self, dirs: &[PathBuf]) -> Result<String> {
         let mut hasher = Sha256::new();
         let mut files = Vec::new();

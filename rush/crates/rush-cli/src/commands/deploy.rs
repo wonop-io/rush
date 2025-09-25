@@ -259,7 +259,7 @@ pub async fn execute(
 }
 
 /// Validate the deployment environment
-fn validate_environment(config: &Config) -> Result<()> {
+fn validate_environment(_config: &Config) -> Result<()> {
     // Check if we have required environment variables
     let required_vars = vec![
         "DOCKER_REGISTRY",
@@ -347,7 +347,7 @@ async fn build_images(
 
 /// Push Docker images to registry
 async fn push_images(config: Arc<Config>) -> Result<()> {
-    let docker_client = rush_docker::DockerExecutor::new();
+    let _docker_client = rush_docker::DockerExecutor::new();
     
     // Get registry configuration
     let registry = config.docker_registry();
@@ -406,8 +406,8 @@ async fn apply_deployment_strategy(
 
 /// Apply blue-green deployment strategy
 async fn apply_blue_green_deployment(
-    config: Arc<Config>,
-    dry_run: bool,
+    _config: Arc<Config>,
+    _dry_run: bool,
 ) -> Result<()> {
     // Blue-green deployment logic:
     // 1. Deploy to inactive environment (blue or green)
@@ -422,9 +422,9 @@ async fn apply_blue_green_deployment(
 
 /// Apply canary deployment strategy
 async fn apply_canary_deployment(
-    config: Arc<Config>,
-    percentage: u32,
-    dry_run: bool,
+    _config: Arc<Config>,
+    _percentage: u32,
+    _dry_run: bool,
 ) -> Result<()> {
     // Canary deployment logic:
     // 1. Deploy new version alongside old
