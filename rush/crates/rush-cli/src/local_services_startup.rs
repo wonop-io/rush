@@ -26,7 +26,7 @@ pub async fn start_local_services(
     product_name: &str,
     docker_command: &str,
 ) -> Result<(HashMap<String, String>, LocalServiceManager)> {
-    info!("Starting local services for {}", product_name);
+    info!("Starting local services for {product_name}");
 
     // Parse stack.spec.yaml to find local services
     let stack_spec_path = config.product_path().join("stack.spec.yaml");
@@ -38,9 +38,9 @@ pub async fn start_local_services(
 
     // Load and parse the stack spec
     let spec_content = std::fs::read_to_string(&stack_spec_path)
-        .map_err(|e| Error::Setup(format!("Failed to read stack spec: {}", e)))?;
+        .map_err(|e| Error::Setup(format!("Failed to read stack spec: {e}")))?;
     let yaml: serde_yaml::Value = serde_yaml::from_str(&spec_content)
-        .map_err(|e| Error::Setup(format!("Failed to parse stack spec: {}", e)))?;
+        .map_err(|e| Error::Setup(format!("Failed to parse stack spec: {e}")))?;
 
     // Create docker client
     let docker_client = Arc::new(DockerCliClient::new(docker_command.to_string()));
@@ -51,7 +51,7 @@ pub async fn start_local_services(
     // Create data directory for local services
     let data_dir = config.product_path().join("target").join("local-services");
     std::fs::create_dir_all(&data_dir)
-        .map_err(|e| Error::Setup(format!("Failed to create data directory: {}", e)))?;
+        .map_err(|e| Error::Setup(format!("Failed to create data directory: {e}")))?;
 
     // Parse component specs and register local services
     let variables = Variables::empty();
@@ -62,7 +62,7 @@ pub async fn start_local_services(
             if let (Some(name_str), Some(spec_obj)) = (name.as_str(), spec_yaml.as_mapping()) {
                 // Check if this is a LocalService
                 if let Some(build_type) =
-                    spec_obj.get(&serde_yaml::Value::String("build_type".to_string()))
+                    spec_obj.get(serde_yaml::Value::String("build_type".to_string()))
                 {
                     if let Some(build_type_str) = build_type.as_str() {
                         if build_type_str == "LocalService" {
@@ -71,7 +71,7 @@ pub async fn start_local_services(
                             // Clone the spec and add component_name field
                             let mut spec_yaml_clone = spec_yaml.clone();
                             if let serde_yaml::Value::Mapping(ref mut spec_map) = spec_yaml_clone {
-                                if !spec_map.contains_key(&serde_yaml::Value::String(
+                                if !spec_map.contains_key(serde_yaml::Value::String(
                                     "component_name".to_string(),
                                 )) {
                                     spec_map.insert(
@@ -113,27 +113,27 @@ pub async fn start_local_services(
     manager
         .start_all()
         .await
-        .map_err(|e| Error::Docker(format!("Failed to start local services: {}", e)))?;
+        .map_err(|e| Error::Docker(format!("Failed to start local services: {e}")))?;
 
     // Wait for services to be healthy
     info!("Waiting for local services to be healthy...");
     manager
         .wait_for_healthy(Duration::from_secs(60))
         .await
-        .map_err(|e| Error::Docker(format!("Services failed health check: {}", e)))?;
+        .map_err(|e| Error::Docker(format!("Services failed health check: {e}")))?;
 
     // Collect environment variables and secrets
     let mut all_env_vars = HashMap::new();
 
     // Add regular environment variables
     for (key, value) in manager.get_env_vars() {
-        info!("Local service env var: {}=...", key);
+        info!("Local service env var: {key}=...");
         all_env_vars.insert(key.clone(), value.clone());
     }
 
     // Add secrets
     for (key, value) in manager.get_env_secrets() {
-        info!("Local service secret: {}=...", key);
+        info!("Local service secret: {key}=...");
         all_env_vars.insert(key.clone(), value.clone());
     }
 
@@ -273,8 +273,7 @@ fn create_default_volumes(
             let postgres_data = data_dir.join(component_name).join("postgres.db");
             if let Err(e) = std::fs::create_dir_all(&postgres_data) {
                 eprintln!(
-                    "Warning: Failed to create PostgreSQL data directory at {:?}: {}",
-                    postgres_data, e
+                    "Warning: Failed to create PostgreSQL data directory at {postgres_data:?}: {e}"
                 );
             }
 
@@ -288,10 +287,7 @@ fn create_default_volumes(
             // Create MySQL data directory
             let mysql_data = data_dir.join(component_name).join("mysql.db");
             if let Err(e) = std::fs::create_dir_all(&mysql_data) {
-                eprintln!(
-                    "Warning: Failed to create MySQL data directory at {:?}: {}",
-                    mysql_data, e
-                );
+                eprintln!("Warning: Failed to create MySQL data directory at {mysql_data:?}: {e}");
             }
 
             vec![VolumeMapping::new(
@@ -305,8 +301,7 @@ fn create_default_volumes(
             let mongo_data = data_dir.join(component_name).join("mongo.db");
             if let Err(e) = std::fs::create_dir_all(&mongo_data) {
                 eprintln!(
-                    "Warning: Failed to create MongoDB data directory at {:?}: {}",
-                    mongo_data, e
+                    "Warning: Failed to create MongoDB data directory at {mongo_data:?}: {e}"
                 );
             }
 
@@ -320,10 +315,7 @@ fn create_default_volumes(
             // Create Redis data directory
             let redis_data = data_dir.join(component_name).join("redis.data");
             if let Err(e) = std::fs::create_dir_all(&redis_data) {
-                eprintln!(
-                    "Warning: Failed to create Redis data directory at {:?}: {}",
-                    redis_data, e
-                );
+                eprintln!("Warning: Failed to create Redis data directory at {redis_data:?}: {e}");
             }
 
             vec![VolumeMapping::new(
@@ -336,10 +328,7 @@ fn create_default_volumes(
             // Create MinIO data directory
             let minio_data = data_dir.join(component_name).join("minio.data");
             if let Err(e) = std::fs::create_dir_all(&minio_data) {
-                eprintln!(
-                    "Warning: Failed to create MinIO data directory at {:?}: {}",
-                    minio_data, e
-                );
+                eprintln!("Warning: Failed to create MinIO data directory at {minio_data:?}: {e}");
             }
 
             vec![VolumeMapping::new(
@@ -355,14 +344,10 @@ fn create_default_volumes(
             // Ensure the directory exists - log error if creation fails
             if let Err(e) = std::fs::create_dir_all(&localstack_data) {
                 eprintln!(
-                    "Warning: Failed to create LocalStack data directory at {:?}: {}",
-                    localstack_data, e
+                    "Warning: Failed to create LocalStack data directory at {localstack_data:?}: {e}"
                 );
             } else {
-                println!(
-                    "Created LocalStack data directory at: {:?}",
-                    localstack_data
-                );
+                println!("Created LocalStack data directory at: {localstack_data:?}");
             }
 
             vec![

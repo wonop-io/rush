@@ -41,7 +41,7 @@ pub async fn execute(ctx: &mut CliContext) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            error!("Rollout failed: {}", e);
+            error!("Rollout failed: {e}");
             eprintln!("{e}");
             process::exit(1);
         }

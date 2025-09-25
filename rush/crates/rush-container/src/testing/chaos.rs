@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use log::{debug, info, warn};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use rush_core::{Error, Result};
+use rush_core::Result;
 use tokio::sync::RwLock;
 
 /// Type of chaos to inject
@@ -87,6 +87,12 @@ pub struct ChaosMonkey {
     last_injection: Arc<RwLock<Option<Instant>>>,
     /// Random number generator
     rng: Arc<RwLock<StdRng>>,
+}
+
+impl Default for ChaosMonkey {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ChaosMonkey {
@@ -195,21 +201,18 @@ impl ChaosMonkey {
         match chaos_type {
             ChaosType::RandomFailure { probability } => {
                 // This is handled per-operation
-                debug!(
-                    "Random failure injection enabled with probability {}",
-                    probability
-                );
+                debug!("Random failure injection enabled with probability {probability}");
             }
             ChaosType::LatencyInjection { min, max } => {
                 let duration = self.random_duration(*min, *max).await;
-                debug!("Injecting latency: {:?}", duration);
+                debug!("Injecting latency: {duration:?}");
                 tokio::time::sleep(duration).await;
             }
             ChaosType::ResourceExhaustion { resource } => {
                 self.exhaust_resource(resource).await;
             }
             ChaosType::NetworkPartition { duration } => {
-                warn!("Simulating network partition for {:?}", duration);
+                warn!("Simulating network partition for {duration:?}");
                 // In real implementation, would block network operations
             }
             ChaosType::CpuSpike { intensity } => {
@@ -219,7 +222,7 @@ impl ChaosMonkey {
                 self.simulate_memory_pressure(*amount_mb).await;
             }
             ChaosType::DiskThrottle { iops_limit } => {
-                debug!("Throttling disk I/O to {} IOPS", iops_limit);
+                debug!("Throttling disk I/O to {iops_limit} IOPS");
                 // In real implementation, would throttle I/O
             }
         }
@@ -246,10 +249,7 @@ impl ChaosMonkey {
                 let mut rng = self.rng.write().await;
                 if rng.gen::<f32>() < *probability {
                     self.failures_injected.fetch_add(1, Ordering::Relaxed);
-                    warn!(
-                        "Chaos monkey injecting failure for component: {}",
-                        component
-                    );
+                    warn!("Chaos monkey injecting failure for component: {component}");
                     return true;
                 }
             }
@@ -265,7 +265,7 @@ impl ChaosMonkey {
         for chaos_type in &policy.chaos_types {
             if let ChaosType::LatencyInjection { min, max } = chaos_type {
                 let duration = self.random_duration(*min, *max).await;
-                debug!("Chaos monkey injecting latency: {:?}", duration);
+                debug!("Chaos monkey injecting latency: {duration:?}");
                 tokio::time::sleep(duration).await;
             }
         }
@@ -327,7 +327,7 @@ impl ChaosMonkey {
 
     /// Simulate memory pressure
     async fn simulate_memory_pressure(&self, amount_mb: usize) {
-        warn!("Simulating memory pressure: {} MB", amount_mb);
+        warn!("Simulating memory pressure: {amount_mb} MB");
 
         // Allocate memory
         let _memory: Vec<u8> = vec![0; amount_mb * 1024 * 1024];
@@ -346,7 +346,7 @@ impl ChaosMonkey {
             active: self.active.load(Ordering::Relaxed),
             failures_injected: self.failures_injected.load(Ordering::Relaxed),
             chaos_types: policy.chaos_types.len(),
-            last_injection: last_injection.clone(),
+            last_injection: *last_injection,
         }
     }
 }
@@ -430,7 +430,6 @@ impl<T> ChaosTestSystem<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicU32;
 
     use super::*;
 
@@ -452,7 +451,7 @@ mod tests {
             }
         }
 
-        println!("Failures: {}, Successes: {}", failures, successes);
+        println!("Failures: {failures}, Successes: {successes}");
 
         // With 0.5 probability, we expect roughly 50/50
         assert!(failures > 20 && failures < 80);

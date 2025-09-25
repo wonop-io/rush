@@ -64,7 +64,7 @@ pub fn setup_logging_with_sink(
     log_bridge::init_with_sink(sink, log_level)?;
 
     // Test the logger is working
-    log::info!("Rush logging initialized at level: {:?}", log_level);
+    log::info!("Rush logging initialized at level: {log_level:?}");
     log::debug!("Debug logging is enabled");
     log::trace!("Trace logging is enabled");
     Ok(())
@@ -75,7 +75,7 @@ pub fn setup_env_logging(matches: &ArgMatches) {
     if let Some(log_level) = matches.get_one::<String>("log_level") {
         env::set_var("RUST_LOG", log_level);
         env_logger::builder().parse_env("RUST_LOG").init();
-        log::trace!("Log level set to: {}", log_level);
+        log::trace!("Log level set to: {log_level}");
     } else {
         env_logger::init();
     }

@@ -143,7 +143,7 @@ impl DevCommand {
                     {
                         // Create a minimal ComponentBuildSpec for local services
                         if let Some(build_type) =
-                            spec_obj.get(&serde_yaml::Value::String("build_type".to_string()))
+                            spec_obj.get(serde_yaml::Value::String("build_type".to_string()))
                         {
                             if let Some(build_type_str) = build_type.as_str() {
                                 if build_type_str == "LocalService" {
@@ -192,7 +192,7 @@ impl DevCommand {
         // This is crucial for cleanup
         info!("Stopping development environment and local services...");
         if let Err(e) = dev_env.stop().await {
-            error!("Error during development environment stop: {}", e);
+            error!("Error during development environment stop: {e}");
         }
 
         // Return the original result
@@ -202,7 +202,7 @@ impl DevCommand {
                 Ok(())
             }
             Err(e) => {
-                error!("Development environment failed: {}", e);
+                error!("Development environment failed: {e}");
                 Err(Error::LaunchFailed(e.to_string()))
             }
         }

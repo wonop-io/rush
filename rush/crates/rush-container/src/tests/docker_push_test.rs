@@ -69,20 +69,19 @@ mod tests {
             // but we're testing the concept here
             let result = if let Some(url) = &config.url {
                 if let Some(ns) = &config.namespace {
-                    format!("{}/{}/{}", url, ns, image)
+                    format!("{url}/{ns}/{image}")
                 } else {
-                    format!("{}/{}", url, image)
+                    format!("{url}/{image}")
                 }
             } else if let Some(ns) = &config.namespace {
-                format!("{}/{}", ns, image)
+                format!("{ns}/{image}")
             } else {
                 image.to_string()
             };
 
             assert_eq!(
                 result, expected,
-                "Registry tagging failed for {:?}/{:?}",
-                registry, namespace
+                "Registry tagging failed for {registry:?}/{namespace:?}"
             );
         }
     }

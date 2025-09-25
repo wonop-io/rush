@@ -104,61 +104,6 @@ pub type ServiceCollection = HashMap<String, Vec<Arc<ContainerService>>>;
 /// A collection of services organized by domain
 pub type ServicesSpec = HashMap<String, Vec<ServiceSpec>>;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_service_creation() {
-        let mut env = HashMap::new();
-        env.insert("ENV1".to_string(), "value1".to_string());
-
-        let mut secrets = HashMap::new();
-        secrets.insert("SECRET1".to_string(), "secret_value".to_string());
-
-        let config = ServiceConfig {
-            name: "test-service".to_string(),
-            image: "test-image:latest".to_string(),
-            host: "localhost".to_string(),
-            port: 8080,
-            target_port: 3000,
-            environment: env,
-            secrets,
-            volumes: HashMap::new(),
-            mount_point: Some("/api".to_string()),
-            domain: "test.example.com".to_string(),
-        };
-
-        let service = ContainerService::from_config("container123".to_string(), &config);
-
-        assert_eq!(service.name, "test-service");
-        assert_eq!(service.image, "test-image:latest");
-        assert_eq!(service.port, 8080);
-        assert_eq!(service.address(), "localhost:8080");
-        assert_eq!(service.url(), "http://localhost:8080/api");
-    }
-
-    #[test]
-    fn test_service_without_mount_point() {
-        let config = ServiceConfig {
-            name: "api".to_string(),
-            image: "api:latest".to_string(),
-            host: "localhost".to_string(),
-            port: 9000,
-            target_port: 8080,
-            environment: HashMap::new(),
-            secrets: HashMap::new(),
-            volumes: HashMap::new(),
-            mount_point: None,
-            domain: "api.example.com".to_string(),
-        };
-
-        let service = ContainerService::from_config("container456".to_string(), &config);
-
-        assert_eq!(service.url(), "http://localhost:9000");
-    }
-}
-
 /// RAII wrapper for ContainerService that ensures cleanup on drop
 pub struct ManagedContainerService {
     inner: ContainerService,
@@ -310,5 +255,60 @@ impl Clone for ManagedContainerService {
             cleanup_on_drop: Arc::new(AtomicBool::new(false)),
             docker_client: self.docker_client.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_service_creation() {
+        let mut env = HashMap::new();
+        env.insert("ENV1".to_string(), "value1".to_string());
+
+        let mut secrets = HashMap::new();
+        secrets.insert("SECRET1".to_string(), "secret_value".to_string());
+
+        let config = ServiceConfig {
+            name: "test-service".to_string(),
+            image: "test-image:latest".to_string(),
+            host: "localhost".to_string(),
+            port: 8080,
+            target_port: 3000,
+            environment: env,
+            secrets,
+            volumes: HashMap::new(),
+            mount_point: Some("/api".to_string()),
+            domain: "test.example.com".to_string(),
+        };
+
+        let service = ContainerService::from_config("container123".to_string(), &config);
+
+        assert_eq!(service.name, "test-service");
+        assert_eq!(service.image, "test-image:latest");
+        assert_eq!(service.port, 8080);
+        assert_eq!(service.address(), "localhost:8080");
+        assert_eq!(service.url(), "http://localhost:8080/api");
+    }
+
+    #[test]
+    fn test_service_without_mount_point() {
+        let config = ServiceConfig {
+            name: "api".to_string(),
+            image: "api:latest".to_string(),
+            host: "localhost".to_string(),
+            port: 9000,
+            target_port: 8080,
+            environment: HashMap::new(),
+            secrets: HashMap::new(),
+            volumes: HashMap::new(),
+            mount_point: None,
+            domain: "api.example.com".to_string(),
+        };
+
+        let service = ContainerService::from_config("container456".to_string(), &config);
+
+        assert_eq!(service.url(), "http://localhost:9000");
     }
 }

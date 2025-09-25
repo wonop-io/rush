@@ -17,7 +17,7 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         .validate_vault(ctx.vault.clone(), &ctx.environment)
         .await
     {
-        error!("Missing secrets in vault: {}", e);
+        error!("Missing secrets in vault: {e}");
         eprintln!("{e}");
         process::exit(1);
     }
@@ -160,7 +160,7 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
                 Ok(())
             }
             Err(e) => {
-                error!("Failed to launch development environment: {}", e);
+                error!("Failed to launch development environment: {e}");
                 eprintln!("{e}");
                 process::exit(1);
             }

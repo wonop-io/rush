@@ -22,10 +22,7 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
         .map(|s| s.as_str())
         .unwrap_or("json");
 
-    info!(
-        "Starting performance profiling (output: {}, format: {})",
-        output_file, format
-    );
+    info!("Starting performance profiling (output: {output_file}, format: {format})");
 
     // Enable profiling globally - this needs to be set BEFORE any tracing initialization
     std::env::set_var("RUSH_PROFILE", "1");
@@ -53,10 +50,7 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
         .map(|vals| vals.cloned().collect())
         .unwrap_or_default();
 
-    info!(
-        "Profiling command: {} with args: {:?}",
-        subcommand, additional_args
-    );
+    info!("Profiling command: {subcommand} with args: {additional_args:?}");
 
     // Check for common flags in additional args
     let force_rebuild = additional_args.iter().any(|arg| arg == "--force-rebuild");
@@ -82,10 +76,9 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
             ctx.reactor.build_and_push().await?;
         }
         _ => {
-            warn!("Unknown command to profile: {}", subcommand);
+            warn!("Unknown command to profile: {subcommand}");
             return Err(rush_core::error::Error::InvalidInput(format!(
-                "Unknown command: {}",
-                subcommand
+                "Unknown command: {subcommand}"
             )));
         }
     }
@@ -97,39 +90,33 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     // Save the report based on format
     match format {
         "json" => {
-            let json = serde_json::to_string_pretty(&report).map_err(|e| {
-                rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
-            fs::write(output_file, json).map_err(|e| rush_core::error::Error::Io(e))?;
-            info!("Performance report saved to: {}", output_file);
+            let json = serde_json::to_string_pretty(&report)
+                .map_err(|e| rush_core::error::Error::Io(std::io::Error::other(e)))?;
+            fs::write(output_file, json).map_err(rush_core::error::Error::Io)?;
+            info!("Performance report saved to: {output_file}");
 
             // Print summary to console
             print_summary(&report);
         }
         "flamegraph" => {
             warn!("Flamegraph format requires running with RUSH_FLAMEGRAPH=1 environment variable");
-            warn!(
-                "Rerun with: RUSH_FLAMEGRAPH=1 rush profile --format flamegraph {}",
-                subcommand
-            );
+            warn!("Rerun with: RUSH_FLAMEGRAPH=1 rush profile --format flamegraph {subcommand}");
         }
         "chrome-trace" => {
             // Convert to Chrome trace format
             let trace = convert_to_chrome_trace(&report);
-            let json = serde_json::to_string_pretty(&trace).map_err(|e| {
-                rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
+            let json = serde_json::to_string_pretty(&trace)
+                .map_err(|e| rush_core::error::Error::Io(std::io::Error::other(e)))?;
             let trace_file = output_file.replace(".json", ".trace.json");
-            fs::write(&trace_file, json).map_err(|e| rush_core::error::Error::Io(e))?;
-            info!("Chrome trace saved to: {}", trace_file);
+            fs::write(&trace_file, json).map_err(rush_core::error::Error::Io)?;
+            info!("Chrome trace saved to: {trace_file}");
             info!("Open chrome://tracing and load this file to visualize");
         }
         _ => {
-            warn!("Unknown format: {}, using JSON", format);
-            let json = serde_json::to_string_pretty(&report).map_err(|e| {
-                rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
-            })?;
-            fs::write(output_file, json).map_err(|e| rush_core::error::Error::Io(e))?;
+            warn!("Unknown format: {format}, using JSON");
+            let json = serde_json::to_string_pretty(&report)
+                .map_err(|e| rush_core::error::Error::Io(std::io::Error::other(e)))?;
+            fs::write(output_file, json).map_err(rush_core::error::Error::Io)?;
         }
     }
 
@@ -143,7 +130,7 @@ fn print_summary(report: &rush_container::profiling::PerformanceReport) {
 
     println!("\n--- Operation Statistics ---");
     for (op, stats) in &report.operation_stats {
-        println!("\n{}:", op);
+        println!("\n{op}:");
         println!("  Count: {}", stats.count);
         println!("  Total: {:?}", stats.total_duration);
         println!("  Average: {:?}", stats.avg_duration);
@@ -226,9 +213,9 @@ pub async fn execute_continuous(_ctx: &mut CliContext) -> Result<()> {
                         .as_secs()
                 );
                 if let Err(e) = fs::write(&filename, json) {
-                    warn!("Failed to write profile: {}", e);
+                    warn!("Failed to write profile: {e}");
                 } else {
-                    info!("Profile snapshot saved to: {}", filename);
+                    info!("Profile snapshot saved to: {filename}");
                 }
             }
         }

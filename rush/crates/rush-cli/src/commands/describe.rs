@@ -159,7 +159,7 @@ async fn describe_images(config: &Arc<Config>, toolchain: &Arc<ToolchainContext>
 
                 // Compute tag for this component
                 let tag = tag_generator.compute_tag(&spec).unwrap_or_else(|e| {
-                    eprintln!("Warning: Failed to compute tag for {}: {}", name_str, e);
+                    eprintln!("Warning: Failed to compute tag for {name_str}: {e}");
                     "latest".to_string()
                 });
 
@@ -203,7 +203,7 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
 
     // Image name and tag
     let image_name = format!("{}/{}", info.product_name, info.name);
-    println!("  Image Name: {}", image_name);
+    println!("  Image Name: {image_name}");
     println!("  Image Tag: {}", info.tag);
     println!("  Full Image: {}:{}", image_name, info.tag);
 
@@ -213,7 +213,7 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
     // Context and Dockerfile information
     if let Some(dockerfile) = info.spec.build_type.dockerfile_path() {
         let dockerfile_path = product_path.join(dockerfile);
-        println!("  Dockerfile: {}", dockerfile);
+        println!("  Dockerfile: {dockerfile}");
         if dockerfile_path.exists() {
             println!("    └─ Status: ✓ Found at {}", dockerfile_path.display());
         } else {
@@ -241,7 +241,7 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
                         && name_str != "dist"
                 })
                 .count();
-            println!("    └─ Status: ✓ Found ({} entries)", file_count);
+            println!("    └─ Status: ✓ Found ({file_count} entries)");
         }
     } else {
         println!("    └─ Status: ✗ Directory not found");
@@ -263,7 +263,7 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
                 if !commands.is_empty() {
                     println!("  Precompile Commands:");
                     for cmd in commands {
-                        println!("    - {}", cmd);
+                        println!("    - {cmd}");
                     }
                 }
             }
@@ -287,7 +287,7 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
                 if !commands.is_empty() {
                     println!("  Precompile Commands:");
                     for cmd in commands {
-                        println!("    - {}", cmd);
+                        println!("    - {cmd}");
                     }
                 }
             }
@@ -298,9 +298,9 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
             persist_data,
             ..
         } => {
-            println!("  Service Type: {}", service_type);
+            println!("  Service Type: {service_type}");
             if let Some(version) = version {
-                println!("  Version: {}", version);
+                println!("  Version: {version}");
             }
             println!(
                 "  Persist Data: {}",
@@ -312,7 +312,7 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
             image_name_with_tag,
             ..
         } => {
-            println!("  Base Image: {}", image_name_with_tag);
+            println!("  Base Image: {image_name_with_tag}");
             println!("  Note: Uses existing Docker image, not built locally");
         }
         BuildType::Ingress { components, .. } => {
@@ -323,11 +323,11 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
 
     // Additional useful information
     if let Some(mount) = &info.spec.mount_point {
-        println!("  Mount Point: {}", mount);
+        println!("  Mount Point: {mount}");
     }
 
     if let Some(port) = info.spec.port {
-        println!("  Exposed Port: {}", port);
+        println!("  Exposed Port: {port}");
     }
 
     if let Some(env) = &info.spec.env {

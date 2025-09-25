@@ -552,8 +552,9 @@ impl OptimizationReport {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rush_build::ComponentBuildSpec;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_dependency_optimizer() {

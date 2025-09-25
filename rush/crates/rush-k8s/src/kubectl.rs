@@ -58,15 +58,16 @@ pub struct Kubectl {
     pub config: KubectlConfig,
 }
 
+impl Default for Kubectl {
+    fn default() -> Self {
+        Self::new(KubectlConfig::default())
+    }
+}
+
 impl Kubectl {
     /// Create a new kubectl wrapper with the given configuration
     pub fn new(config: KubectlConfig) -> Self {
         Self { config }
-    }
-
-    /// Create a kubectl wrapper with default configuration
-    pub fn default() -> Self {
-        Self::new(KubectlConfig::default())
     }
 
     /// Set the namespace for operations

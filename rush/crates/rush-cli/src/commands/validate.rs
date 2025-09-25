@@ -39,15 +39,12 @@ pub async fn execute(
                 Ok(())
             }
             Err(e) => {
-                error!("Deprecated APIs found in manifests: {}", e);
+                error!("Deprecated APIs found in manifests: {e}");
                 Err(Error::Validation(format!("Deprecated APIs found: {e}")))
             }
         }
     } else {
-        info!(
-            "Validating Kubernetes manifests against schema for version {}",
-            kubernetes_version
-        );
+        info!("Validating Kubernetes manifests against schema for version {kubernetes_version}");
         match validator.validate(
             manifest_path.to_str().unwrap_or_default(),
             kubernetes_version,
@@ -57,7 +54,7 @@ pub async fn execute(
                 Ok(())
             }
             Err(e) => {
-                error!("Validation failed: {}", e);
+                error!("Validation failed: {e}");
                 Err(Error::Validation(format!("Schema validation failed: {e}")))
             }
         }

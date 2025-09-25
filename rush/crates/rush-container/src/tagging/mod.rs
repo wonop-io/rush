@@ -762,7 +762,7 @@ mod tests {
             patterns,
         )));
 
-        let (files, dirs) = generator.get_watch_files_and_directories(&spec);
+        let (files, _dirs) = generator.get_watch_files_and_directories(&spec);
 
         // After our fix, ALL component files are included, plus any additional watch pattern matches
         // So we should find all 4 files from the component directory
@@ -917,17 +917,14 @@ mod tests {
 
         if let Some(output) = git_status {
             let status_str = String::from_utf8_lossy(&output.stdout);
-            println!("Git status after modification:\n{}", status_str);
+            println!("Git status after modification:\n{status_str}");
         }
 
         // Note: The current implementation generates consistent tags based on file content patterns,
         // not on whether files are modified. This ensures reproducible builds.
         // If we want tags to change when files are dirty, we'd need to include git status in the hash.
         // For now, we'll just verify that the tag computation works consistently.
-        println!(
-            "Tag1: {}, Tag2: {} (tags are consistent even with modifications)",
-            tag1, tag2
-        );
+        println!("Tag1: {tag1}, Tag2: {tag2} (tags are consistent even with modifications)");
 
         // Commit the change to make it part of the repository
         std::process::Command::new("git")

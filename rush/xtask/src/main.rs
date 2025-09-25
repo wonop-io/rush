@@ -222,7 +222,8 @@ fn run_ci(skip_tests: bool, skip_clippy: bool) -> Result<()> {
     println!("{}", "🚀 Running CI pipeline...".blue().bold());
     println!();
 
-    let steps: Vec<(&str, Box<dyn Fn() -> Result<()>>)> = vec![
+    type StepFn = Box<dyn Fn() -> Result<()>>;
+    let steps: Vec<(&str, StepFn)> = vec![
         ("Checking formatting", Box::new(|| run_fmt(true))),
         (
             "Checking Cargo.toml sorting",

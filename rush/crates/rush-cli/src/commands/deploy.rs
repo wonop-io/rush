@@ -238,7 +238,7 @@ pub async fn execute(config: Arc<Config>, deployment_config: DeploymentConfig) -
             reporter.complete_step("Deployed to Kubernetes");
         }
         Err(e) => {
-            reporter.error_step(&format!("Deployment failed: {}", e));
+            reporter.error_step(&format!("Deployment failed: {e}"));
 
             if deployment_config.auto_rollback && !deployment_config.dry_run {
                 reporter.start_step("Initiating automatic rollback");
@@ -266,7 +266,7 @@ pub async fn execute(config: Arc<Config>, deployment_config: DeploymentConfig) -
 
     // Run post-deployment hooks
     if let Err(e) = hook_manager.run_post_deploy_hooks(&hook_context).await {
-        warn!("Post-deployment hook failed: {}", e);
+        warn!("Post-deployment hook failed: {e}");
         // Post-deployment hooks are usually optional, so we don't fail the deployment
     }
 
@@ -283,7 +283,7 @@ fn validate_environment(_config: &Config) -> Result<()> {
 
     for var in required_vars {
         if std::env::var(var).is_err() {
-            warn!("Environment variable {} not set, using defaults", var);
+            warn!("Environment variable {var} not set, using defaults");
         }
     }
 
@@ -330,7 +330,7 @@ async fn create_reactor(
 
     // Create network manager
     let network_manager = Arc::new(
-        rush_container::network::NetworkManager::new(docker_client.clone(), &config.product_name())
+        rush_container::network::NetworkManager::new(docker_client.clone(), config.product_name())
             .await?,
     );
 
@@ -373,7 +373,7 @@ async fn push_images(config: Arc<Config>) -> Result<()> {
     let registry = config.docker_registry();
     let namespace = config.docker_registry_namespace();
 
-    info!("Pushing images to registry: {}/{:?}", registry, namespace);
+    info!("Pushing images to registry: {registry}/{namespace:?}");
 
     // TODO: Get list of built images from reactor and push them
     // For now, we'll use a placeholder
@@ -406,8 +406,7 @@ async fn apply_deployment_strategy(
             max_unavailable,
         } => {
             info!(
-                "Configuring rolling update (max_surge: {}, max_unavailable: {})",
-                max_surge, max_unavailable
+                "Configuring rolling update (max_surge: {max_surge}, max_unavailable: {max_unavailable})"
             );
             // The rolling update is handled by Kubernetes deployment spec
             // which is configured in the manifest generator
@@ -417,7 +416,7 @@ async fn apply_deployment_strategy(
             apply_blue_green_deployment(config, dry_run).await?;
         }
         DeploymentStrategy::Canary { percentage } => {
-            info!("Configuring canary deployment ({}% traffic)", percentage);
+            info!("Configuring canary deployment ({percentage}% traffic)");
             apply_canary_deployment(config, *percentage, dry_run).await?;
         }
         DeploymentStrategy::Direct => {
@@ -498,10 +497,7 @@ async fn verify_deployment(config: Arc<Config>, timeout: u64, health_checks: boo
     let kubectl = rush_k8s::Kubectl::new(kubectl_config);
 
     // Wait for deployments to be ready
-    info!(
-        "Waiting for deployments to be ready (timeout: {}s)",
-        timeout
-    );
+    info!("Waiting for deployments to be ready (timeout: {timeout}s)");
 
     let start = std::time::Instant::now();
     let timeout_duration = Duration::from_secs(timeout);

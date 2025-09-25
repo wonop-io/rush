@@ -47,7 +47,7 @@ pub async fn create_context(
         .record_with_component("context_init", "parse_args", args_start.elapsed())
         .await;
 
-    info!("Product name: {}", product_name);
+    info!("Product name: {product_name}");
 
     let root_dir = env::var("RUSHD_ROOT").unwrap();
     let config = create_config(
@@ -102,7 +102,7 @@ pub async fn create_context(
                     (env_vars, Some(manager))
                 }
                 Err(e) => {
-                    warn!("Failed to start local services: {}", e);
+                    warn!("Failed to start local services: {e}");
                     (HashMap::new(), None)
                 }
             }
@@ -263,7 +263,7 @@ async fn create_minimal_reactor(
     {
         Ok(reactor) => Ok(reactor),
         Err(e) => {
-            error!("Failed to create minimal Reactor: {}", e);
+            error!("Failed to create minimal Reactor: {e}");
             Err(e)
         }
     }
@@ -273,7 +273,7 @@ pub fn setup_logging(matches: &ArgMatches) {
     if let Some(log_level) = matches.get_one::<String>("log_level") {
         env::set_var("RUST_LOG", log_level);
         env_logger::builder().parse_env("RUST_LOG").init();
-        trace!("Log level set to: {}", log_level);
+        trace!("Log level set to: {log_level}");
     } else {
         env_logger::init();
     }
@@ -283,11 +283,11 @@ pub fn setup_logging(matches: &ArgMatches) {
 fn get_target_arch(matches: &ArgMatches) -> String {
     if let Some(target_arch) = matches.get_one::<String>("target_arch") {
         let arch = target_arch.clone();
-        info!("Target architecture: {}", arch);
+        info!("Target architecture: {arch}");
         arch
     } else {
         let default_arch = "x86_64".to_string();
-        info!("Target architecture: {}", default_arch);
+        info!("Target architecture: {default_arch}");
         default_arch
     }
 }
@@ -295,11 +295,11 @@ fn get_target_arch(matches: &ArgMatches) -> String {
 fn get_target_os(matches: &ArgMatches) -> String {
     if let Some(target_os) = matches.get_one::<String>("target_os") {
         let os = target_os.clone();
-        info!("Target OS: {}", os);
+        info!("Target OS: {os}");
         os
     } else {
         let default_os = "linux".to_string();
-        info!("Target OS: {}", default_os);
+        info!("Target OS: {default_os}");
         default_os
     }
 }
@@ -307,11 +307,11 @@ fn get_target_os(matches: &ArgMatches) -> String {
 fn get_environment(matches: &ArgMatches) -> String {
     if let Some(environment) = matches.get_one::<String>("environment") {
         let env = environment.clone();
-        info!("Environment: {}", env);
+        info!("Environment: {env}");
         env
     } else {
         let default_env = "local".to_string();
-        info!("Environment: {}", default_env);
+        info!("Environment: {default_env}");
         default_env
     }
 }
@@ -319,7 +319,7 @@ fn get_environment(matches: &ArgMatches) -> String {
 fn get_docker_registry(matches: &ArgMatches) -> String {
     if let Some(docker_registry) = matches.get_one::<String>("docker_registry") {
         let registry = docker_registry.clone();
-        info!("Docker registry: {}", registry);
+        info!("Docker registry: {registry}");
         registry
     } else {
         let registry = env::var("DOCKER_REGISTRY").unwrap_or_else(|_| {
@@ -360,7 +360,7 @@ fn create_config(
     match config_loader.load_config(product_name, environment, docker_registry, start_port) {
         Ok(config) => Ok(config),
         Err(e) => {
-            error!("Failed to create config: {}", e);
+            error!("Failed to create config: {e}");
             eprintln!("{e}");
             process::exit(1);
         }
@@ -396,7 +396,7 @@ fn create_vault(product_path: &Path, config: &Config, name: &str) -> Arc<Mutex<d
             let account_name = config
                 .one_password_account()
                 .expect("1Password account not found. Please set this in rushd.yaml");
-            info!("Vault: {}", account_name);
+            info!("Vault: {account_name}");
             Arc::new(Mutex::new(OnePassword::new(account_name))) as Arc<Mutex<dyn Vault + Send>>
         }
         "json" => {
@@ -431,10 +431,7 @@ fn setup_environment_files(config: &Config, product_name: &str, environment: &st
         }
         Err(e) => {
             // Fallback to simple generator if component-level fails
-            warn!(
-                "Component-level env generation failed, trying simple generator: {}",
-                e
-            );
+            warn!("Component-level env generation failed, trying simple generator: {e}");
             let simple_generator = EnvironmentGenerator::new(
                 product_name.to_string(),
                 &format!("{}/stack.env.base.yaml", config.product_path().display()),
@@ -448,7 +445,7 @@ fn setup_environment_files(config: &Config, product_name: &str, environment: &st
             match simple_generator.generate_dotenv_files() {
                 Ok(_) => Ok(()),
                 Err(e) => {
-                    error!("Unable to generate dotenv files: {}", e);
+                    error!("Unable to generate dotenv files: {e}");
                     eprintln!("{e:#?}");
                     process::exit(1);
                 }
@@ -517,7 +514,7 @@ async fn create_reactor(
             Ok(reactor)
         }
         Err(e) => {
-            error!("Failed to create Reactor: {}", e);
+            error!("Failed to create Reactor: {e}");
             eprintln!("{e}");
             process::exit(1);
         }

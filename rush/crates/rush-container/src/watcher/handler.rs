@@ -558,7 +558,7 @@ impl FileChangeHandler {
 
 #[cfg(test)]
 mod tests {
-    use notify::event::{CreateKind, ModifyKind, RemoveKind};
+    use notify::event::{CreateKind, ModifyKind};
 
     use super::*;
 
@@ -646,7 +646,7 @@ mod tests {
         for i in 0..5 {
             let event = NotifyEvent {
                 kind: EventKind::Modify(ModifyKind::Any),
-                paths: vec![PathBuf::from(format!("src/file{}.rs", i))],
+                paths: vec![PathBuf::from(format!("src/file{i}.rs"))],
                 attrs: Default::default(),
             };
             handler.handle_event(event).await;
@@ -690,7 +690,7 @@ mod tests {
 
         // Create handler
         let handler_config = HandlerConfig::default();
-        let handler = FileChangeHandler::new(handler_config).with_base_dir(base_dir.clone());
+        let _handler = FileChangeHandler::new(handler_config).with_base_dir(base_dir.clone());
 
         // Create a batch with changes matching patterns
         let mut batch = ChangeBatch::new();

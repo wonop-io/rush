@@ -71,10 +71,13 @@ pub trait EventHandler: Send + Sync {
     }
 }
 
+type EventHandlerList = Vec<Arc<dyn EventHandler>>;
+type TypedHandlerMap = HashMap<TypeId, EventHandlerList>;
+
 /// Event bus for publishing and subscribing to events
 pub struct EventBus {
-    handlers: Arc<RwLock<Vec<Arc<dyn EventHandler>>>>,
-    typed_handlers: Arc<RwLock<HashMap<TypeId, Vec<Arc<dyn EventHandler>>>>>,
+    handlers: Arc<RwLock<EventHandlerList>>,
+    typed_handlers: Arc<RwLock<TypedHandlerMap>>,
 }
 
 impl EventBus {

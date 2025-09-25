@@ -70,6 +70,9 @@ impl Default for BuildOrchestratorConfig {
     }
 }
 
+/// Type alias for the output sink to reduce complexity
+type OutputSink = Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>;
+
 /// Orchestrates the building of container images
 pub struct BuildOrchestrator {
     config: BuildOrchestratorConfig,
@@ -80,7 +83,7 @@ pub struct BuildOrchestrator {
     _build_processor: Arc<BuildProcessor>,
     pub(crate) tag_generator: Arc<ImageTagGenerator>,
     /// Output sink for build logs
-    output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
+    output_sink: OutputSink,
     /// Track active build containers for cancellation
     active_builds: Arc<Mutex<HashSet<String>>>,
     /// Flag to indicate builds are being cancelled

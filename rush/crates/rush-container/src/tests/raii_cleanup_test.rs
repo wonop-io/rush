@@ -1,7 +1,7 @@
 //! Tests for RAII cleanup behavior of managed services
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
@@ -11,6 +11,7 @@ use crate::service::{ContainerService, ManagedContainerService, ServiceConfig};
 use crate::tests::mock_docker::MockDockerClient;
 
 /// Test state tracker for cleanup validation
+#[allow(dead_code)]
 struct CleanupTracker {
     stop_count: Arc<AtomicUsize>,
     kill_count: Arc<AtomicUsize>,
@@ -20,6 +21,7 @@ struct CleanupTracker {
     containers_removed: Arc<Mutex<Vec<String>>>,
 }
 
+#[allow(dead_code)]
 impl CleanupTracker {
     fn new() -> Self {
         Self {

@@ -75,8 +75,7 @@ mod tests {
             );
             assert_eq!(
                 result, expected,
-                "Failed for registry={:?}, namespace={:?}, image={}",
-                registry, namespace, image
+                "Failed for registry={registry:?}, namespace={namespace:?}, image={image}"
             );
         }
     }
@@ -84,10 +83,10 @@ mod tests {
     /// Helper function to format registry tags
     fn format_registry_tag(url: Option<String>, namespace: Option<String>, image: &str) -> String {
         match (url.as_ref(), namespace.as_ref()) {
-            (Some(u), Some(n)) if !u.is_empty() => format!("{}/{}/{}", u, n, image),
-            (Some(u), None) if !u.is_empty() => format!("{}/{}", u, image),
-            (Some(u), Some(n)) if u.is_empty() => format!("{}/{}", n, image),
-            (None, Some(n)) => format!("{}/{}", n, image),
+            (Some(u), Some(n)) if !u.is_empty() => format!("{u}/{n}/{image}"),
+            (Some(u), None) if !u.is_empty() => format!("{u}/{image}"),
+            (Some(u), Some(n)) if u.is_empty() => format!("{n}/{image}"),
+            (None, Some(n)) => format!("{n}/{image}"),
             _ => image.to_string(),
         }
     }

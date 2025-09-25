@@ -40,7 +40,7 @@ async fn test_simple_docker_basic_operations() {
     docker.create_network("test-net").await.unwrap();
 
     // Test listing containers (should work even with no containers)
-    let containers = docker.list().await.unwrap();
+    let _containers = docker.list().await.unwrap();
     // containers is already a Vec, just check it doesn't panic
 
     // Clean up

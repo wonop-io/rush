@@ -515,7 +515,6 @@ impl BuildCache {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use tempfile::TempDir;
 

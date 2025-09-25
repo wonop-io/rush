@@ -29,10 +29,7 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
         .map(|s| s.as_str())
         .unwrap_or("local");
 
-    debug!(
-        "Loading environment variables for environment: {}",
-        environment
-    );
+    debug!("Loading environment variables for environment: {environment}");
     load_environment_variables(environment)?;
 
     // Load product configuration
@@ -49,15 +46,12 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
         target_platform.clone(),
     ));
 
-    info!(
-        "Building product: {} for environment: {}",
-        product_name, environment
-    );
+    info!("Building product: {product_name} for environment: {environment}");
 
     // Build components
     let mut built_components = Vec::new();
     for (component_name, component) in product.components().iter() {
-        info!("Building component: {}", component_name);
+        info!("Building component: {component_name}");
 
         // Parse build type from component - assuming build_type is a string that needs to be converted to BuildType
         let build_type = parse_build_type(&component.build_type)?;
@@ -99,7 +93,7 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
             }
             Err(e) => {
                 println!("[{}]", "FAILED".red().bold());
-                error!("Failed to build component {}: {}", component_name, e);
+                error!("Failed to build component {component_name}: {e}");
                 return Err(e);
             }
         }
@@ -211,7 +205,7 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
             ..
         } => {
             // Pull the Docker image
-            debug!("Pulling Docker image: {}", image_name_with_tag);
+            debug!("Pulling Docker image: {image_name_with_tag}");
             let config = CommandConfig::new(toolchain.docker())
                 .args(vec!["pull", image_name_with_tag])
                 .capture(true);
@@ -239,10 +233,7 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
         }
         BuildType::Ingress { components, .. } => {
             // Build Docker image for ingress
-            debug!(
-                "Building Ingress component that depends on: {:?}",
-                components
-            );
+            debug!("Building Ingress component that depends on: {components:?}");
             build_docker_image(context, toolchain).await?;
         }
     }
@@ -401,10 +392,7 @@ async fn build_docker_image(
     let image_tag =
         rush_core::naming::NamingConvention::image_name(&context.product_name, &context.component);
 
-    debug!(
-        "Building Docker image: {} from {}",
-        image_tag, dockerfile_path
-    );
+    debug!("Building Docker image: {image_tag} from {dockerfile_path}");
 
     let config = CommandConfig::new(toolchain.docker())
         .args(vec![
@@ -440,7 +428,7 @@ pub async fn execute_with_context(ctx: &mut CliContext) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            error!("Build failed: {}", e);
+            error!("Build failed: {e}");
             eprintln!("{e}");
             process::exit(1);
         }
@@ -456,7 +444,7 @@ pub async fn push(ctx: &mut CliContext) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            error!("Build and push failed: {}", e);
+            error!("Build and push failed: {e}");
             eprintln!("{e}");
             process::exit(1);
         }

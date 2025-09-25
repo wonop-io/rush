@@ -1,7 +1,7 @@
 //! Sink proxy for bridging between different sink ownership models
 //!
-//! This module provides a proxy that allows using an Arc<Mutex<Box<dyn Sink>>>
-//! where a Box<dyn Sink> is expected.
+//! This module provides a proxy that allows using an `Arc<Mutex<Box<dyn Sink>>>`
+//! where a `Box<dyn Sink>` is expected.
 
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::simple::{LogEntry, Sink};
 
-/// A proxy sink that forwards to an Arc<Mutex<Box<dyn Sink>>>
+/// A proxy sink that forwards to an `Arc<Mutex<Box<dyn Sink>>>`
 pub struct SinkProxy {
     inner: Arc<Mutex<Box<dyn Sink>>>,
 }

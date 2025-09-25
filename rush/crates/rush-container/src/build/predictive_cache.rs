@@ -550,8 +550,8 @@ mod tests {
         cache.save_metadata().await.unwrap();
 
         // Test performance analysis
-        let report = cache.analyze_performance().await;
-        assert!(report.entry_count == 0 || report.entry_count > 0);
+        let _report = cache.analyze_performance().await;
+        // entry_count is always >= 0 since it's usize
     }
 
     #[tokio::test]
@@ -565,9 +565,9 @@ mod tests {
             metadata.total_size = 1_000_000_000; // 1GB
             metadata.entry_count = 10;
             for i in 0..10 {
-                let component_name = format!("component_{}", i);
+                let component_name = format!("component_{i}");
                 // Create actual cache files so eviction can remove them
-                let cache_file = temp_dir.path().join(format!("{}.cache", component_name));
+                let cache_file = temp_dir.path().join(format!("{component_name}.cache"));
                 std::fs::write(&cache_file, vec![0u8; 100_000_000]).unwrap(); // 100MB each
                 metadata.mru_components.push_back(component_name);
             }

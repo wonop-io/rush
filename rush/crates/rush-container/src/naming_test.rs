@@ -12,7 +12,7 @@ mod tests {
 
         // All these should produce the same result
         let name1 = NamingConvention::container_name(product_name, component_name);
-        let name2 = format!("{}-{}", product_name, component_name);
+        let name2 = format!("{product_name}-{component_name}");
 
         assert_eq!(name1, name2);
         assert_eq!(name1, "compoundcoders.com-frontend");

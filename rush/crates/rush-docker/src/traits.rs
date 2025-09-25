@@ -37,6 +37,7 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
     ) -> Result<String>; // Returns container ID
 
     /// Runs a container with the specified configuration and optional command
+    #[allow(clippy::too_many_arguments)]
     async fn run_container_with_command(
         &self,
         image: &str,

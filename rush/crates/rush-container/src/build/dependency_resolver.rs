@@ -422,7 +422,7 @@ mod tests {
 
         // Create a wide graph with many parallel components
         for i in 0..10 {
-            resolver.add_component(format!("component_{}", i), vec![]);
+            resolver.add_component(format!("component_{i}"), vec![]);
         }
 
         let groups = resolver.optimize_for_resources(3).unwrap();

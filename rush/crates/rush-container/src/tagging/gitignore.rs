@@ -337,7 +337,7 @@ mod tests {
 
         // Initialize git repo for ignore crate to work properly
         std::process::Command::new("git")
-            .args(&["init"])
+            .args(["init"])
             .current_dir(base_path)
             .output()
             .unwrap();
@@ -352,7 +352,7 @@ mod tests {
         let mut files = Vec::new();
         for entry in manager.walk(base_path) {
             if let Ok(entry) = entry {
-                if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                if entry.file_type().is_some_and(|ft| ft.is_file()) {
                     let path = entry.path();
                     // Skip .git directory files
                     if !path.to_str().unwrap_or("").contains("/.git/") {
@@ -365,13 +365,11 @@ mod tests {
         // Should include included.rs and .gitignore but not excluded.log
         assert!(
             files.iter().any(|p| p.ends_with("included.rs")),
-            "Walk should include included.rs, found files: {:?}",
-            files
+            "Walk should include included.rs, found files: {files:?}"
         );
         assert!(
             !files.iter().any(|p| p.ends_with("excluded.log")),
-            "Walk should exclude excluded.log, found files: {:?}",
-            files
+            "Walk should exclude excluded.log, found files: {files:?}"
         );
     }
 
@@ -382,7 +380,7 @@ mod tests {
 
         // Initialize git repo for ignore crate to work properly
         std::process::Command::new("git")
-            .args(&["init"])
+            .args(["init"])
             .current_dir(base_path)
             .output()
             .unwrap();
@@ -404,7 +402,7 @@ mod tests {
             .build()
         {
             if let Ok(entry) = entry {
-                if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                if entry.file_type().is_some_and(|ft| ft.is_file()) {
                     let path = entry.path();
                     if !path.to_str().unwrap_or("").contains("/.git/") {
                         found_files.push(path.to_path_buf());

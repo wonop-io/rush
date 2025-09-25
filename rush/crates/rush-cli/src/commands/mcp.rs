@@ -68,18 +68,18 @@ async fn serve(matches: &ArgMatches) -> Result<()> {
 
         // Create stdio transport
         let transport = StdioTransport::new()
-            .map_err(|e| Error::Other(format!("Failed to create stdio transport: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to create stdio transport: {e}")))?;
 
         // Create and run server
         let server = McpServer::new(config);
         server
             .run(transport)
             .await
-            .map_err(|e| Error::Other(format!("MCP server error: {}", e)))?;
+            .map_err(|e| Error::Other(format!("MCP server error: {e}")))?;
     } else {
         // Network mode not yet implemented
         eprintln!("Network mode not yet implemented. Use --stdio for subprocess mode.");
-        eprintln!("");
+        eprintln!();
         eprintln!("Example MCP client configuration:");
         eprintln!("{{");
         eprintln!("  \"mcpServers\": {{");

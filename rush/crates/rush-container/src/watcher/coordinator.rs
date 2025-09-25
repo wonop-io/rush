@@ -392,7 +392,7 @@ mod tests {
 
         // Set state to idle (which allows rebuilds)
         {
-            let mut state_guard = state.write().await;
+            let state_guard = state.write().await;
             // Transition through valid states to reach Idle
             // The state starts at Idle by default, so no transition needed
             assert_eq!(state_guard.phase(), &ReactorPhase::Idle);

@@ -50,7 +50,7 @@ impl CliContext {
         if let Some(ref mut local_services) = self.local_services {
             log::info!("Stopping local services from context...");
             if let Err(e) = local_services.stop_all().await {
-                log::error!("Failed to stop local services: {}", e);
+                log::error!("Failed to stop local services: {e}");
             }
         }
     }

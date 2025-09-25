@@ -535,7 +535,6 @@ impl Default for DependencyGraph {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use rush_build::{BuildType, Variables};
     use rush_config::Config;

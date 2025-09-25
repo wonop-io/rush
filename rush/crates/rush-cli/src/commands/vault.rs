@@ -276,7 +276,7 @@ async fn create_vault_cmd(ctx: &mut CliContext) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            error!("Failed to create vault: {}", e);
+            error!("Failed to create vault: {e}");
             eprintln!("{e}");
             process::exit(1);
         }
@@ -285,7 +285,7 @@ async fn create_vault_cmd(ctx: &mut CliContext) -> Result<()> {
 
 async fn migrate_vault(matches: &ArgMatches, _ctx: &mut CliContext) -> Result<()> {
     let dest = matches.get_one::<String>("dest").unwrap();
-    trace!("Migrating secrets to: {}", dest);
+    trace!("Migrating secrets to: {dest}");
 
     // Implementation would go here
     Ok(())
@@ -310,7 +310,7 @@ async fn add_secrets(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            error!("Failed to add secrets: {}", e);
+            error!("Failed to add secrets: {e}");
             eprintln!("{e}");
             process::exit(1);
         }
@@ -332,7 +332,7 @@ async fn remove_secrets(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()
             Ok(())
         }
         Err(e) => {
-            error!("Failed to remove secrets: {}", e);
+            error!("Failed to remove secrets: {e}");
             eprintln!("{e}");
             process::exit(1);
         }

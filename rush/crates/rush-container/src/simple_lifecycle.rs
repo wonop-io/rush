@@ -56,6 +56,9 @@ impl Default for SimpleLifecycleConfig {
     }
 }
 
+/// Type alias for the output sink to reduce complexity
+type OutputSink = Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>;
+
 /// Simplified lifecycle manager using SimpleDocker
 pub struct SimpleLifecycleManager {
     config: SimpleLifecycleConfig,
@@ -65,7 +68,7 @@ pub struct SimpleLifecycleManager {
     state: SharedReactorState,
     shutdown_sender: broadcast::Sender<()>,
     /// Output sink for container logs
-    output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
+    output_sink: OutputSink,
 }
 
 impl SimpleLifecycleManager {
@@ -97,7 +100,7 @@ impl SimpleLifecycleManager {
     }
 
     /// Start services with dependency management (delegates to start_services for now)
-    /// Returns Vec<DockerService> for compatibility with Reactor
+    /// Returns `Vec<DockerService>` for compatibility with Reactor
     pub async fn start_services_with_dependencies(
         &self,
         services: Vec<ContainerService>,

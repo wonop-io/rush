@@ -43,10 +43,7 @@ async fn main() -> Result<(), std::io::Error> {
     // Set up logging to route through the sink
     if let Err(e) = logging::setup_logging_with_sink(&matches, output_sink.clone()) {
         // Fallback to env_logger if sink setup fails
-        eprintln!(
-            "Failed to setup sink-based logging: {}, falling back to env_logger",
-            e
-        );
+        eprintln!("Failed to setup sink-based logging: {e}, falling back to env_logger");
         context_builder::setup_logging(&matches);
     }
 
@@ -60,7 +57,7 @@ async fn main() -> Result<(), std::io::Error> {
         return match rush_cli::commands::mcp::execute(mcp_matches).await {
             Ok(_) => Ok(()),
             Err(e) => {
-                eprintln!("MCP server error: {}", e);
+                eprintln!("MCP server error: {e}");
                 std::process::exit(1);
             }
         };

@@ -473,7 +473,7 @@ mod tests {
 
         // Create multiple files quickly
         for i in 0..5 {
-            let file_path = temp_dir.path().join(format!("test{}.txt", i));
+            let file_path = temp_dir.path().join(format!("test{i}.txt"));
             std::fs::write(&file_path, "content").unwrap();
             sleep(Duration::from_millis(10)).await;
         }
