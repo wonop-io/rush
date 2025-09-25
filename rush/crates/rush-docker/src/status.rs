@@ -34,7 +34,7 @@ impl fmt::Display for ContainerStatus {
             ContainerStatus::Created => write!(f, "Created"),
             ContainerStatus::Running => write!(f, "Running"),
             ContainerStatus::Restarting => write!(f, "Restarting"),
-            ContainerStatus::Exited(code) => write!(f, "Exited({})", code),
+            ContainerStatus::Exited(code) => write!(f, "Exited({code})"),
             ContainerStatus::Paused => write!(f, "Paused"),
             ContainerStatus::Dead => write!(f, "Dead"),
             ContainerStatus::Unknown => write!(f, "Unknown"),

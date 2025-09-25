@@ -317,7 +317,7 @@ impl MultiClusterManager {
                     (self.clusters.len() as f32 * percentage as f32 / 100.0).ceil() as usize;
                 let canary_count = canary_count.max(1);
 
-                info!("Deploying to {} canary clusters", canary_count);
+                info!("Deploying to {canary_count} canary clusters");
 
                 for cluster in self.clusters.iter().take(canary_count) {
                     deploy_fn(cluster).await?;
@@ -410,7 +410,7 @@ impl NamespaceManager {
 
         if !check_output.status.success() {
             // Create namespace
-            info!("Creating namespace: {}", namespace);
+            info!("Creating namespace: {namespace}");
 
             let create_output = Command::new("kubectl")
                 .arg("--context")
@@ -501,7 +501,7 @@ spec:
             )));
         }
 
-        info!("Applied resource quota to namespace: {}", namespace);
+        info!("Applied resource quota to namespace: {namespace}");
         Ok(())
     }
 }

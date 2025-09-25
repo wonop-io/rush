@@ -228,19 +228,11 @@ impl FileChangeHandler {
                 // Simple glob matching
                 let pattern = pattern.replace("*", "");
                 if path_str.contains(&pattern) {
-                    trace!(
-                        "Ignoring path '{}' (matched pattern '*{}')",
-                        path_str,
-                        pattern
-                    );
+                    trace!("Ignoring path '{path_str}' (matched pattern '*{pattern}')");
                     return true;
                 }
             } else if path_str.contains(pattern) {
-                trace!(
-                    "Ignoring path '{}' (matched pattern '{}')",
-                    path_str,
-                    pattern
-                );
+                trace!("Ignoring path '{path_str}' (matched pattern '{pattern}')");
                 return true;
             }
         }
@@ -248,7 +240,7 @@ impl FileChangeHandler {
         // Ignore hidden files and directories (starting with .)
         if let Some(file_name) = path.file_name() {
             if file_name.to_string_lossy().starts_with('.') {
-                trace!("Ignoring hidden file/directory: {}", path_str);
+                trace!("Ignoring hidden file/directory: {path_str}");
                 return true;
             }
         }
@@ -290,13 +282,13 @@ impl FileChangeHandler {
                 ))
                 .await
             {
-                warn!("Failed to publish file changes event: {}", e);
+                warn!("Failed to publish file changes event: {e}");
             }
         }
 
         // Send the batch through the channel
         if let Err(e) = self.change_sender.send(batch.clone()) {
-            warn!("Failed to send change batch: {}", e);
+            warn!("Failed to send change batch: {e}");
         }
 
         info!(
@@ -529,7 +521,7 @@ impl FileChangeHandler {
 
         // Send the batch
         if let Err(e) = self.change_sender.send(pending.clone()) {
-            warn!("Failed to send flushed batch: {}", e);
+            warn!("Failed to send flushed batch: {e}");
         }
 
         // Clear the pending changes

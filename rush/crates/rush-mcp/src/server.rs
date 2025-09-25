@@ -211,7 +211,7 @@ impl McpServer {
         match self.tools.execute(call).await {
             Ok(result) => success_response(request.id, serde_json::to_value(result).unwrap()),
             Err(e) => {
-                error!("Tool execution failed: {}", e);
+                error!("Tool execution failed: {e}");
                 error_response(request.id, -32000, format!("Tool execution failed: {e}"))
             }
         }
@@ -242,7 +242,7 @@ impl McpServer {
         match self.resources.read(read_request).await {
             Ok(content) => success_response(request.id, serde_json::to_value(content).unwrap()),
             Err(e) => {
-                error!("Resource read failed: {}", e);
+                error!("Resource read failed: {e}");
                 error_response(request.id, -32000, format!("Resource read failed: {e}"))
             }
         }

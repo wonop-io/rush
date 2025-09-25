@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use log::info;
-use rush_build::spec::ComponentBuildSpec;
 use rush_core::Result;
 use tokio::sync::RwLock;
 
@@ -554,6 +553,7 @@ impl OptimizationReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rush_build::ComponentBuildSpec;
 
     #[tokio::test]
     async fn test_dependency_optimizer() {

@@ -165,7 +165,7 @@ impl ConnectionPool {
         // Forget the permit so it doesn't get dropped
         std::mem::forget(permit);
 
-        debug!("Created new connection with ID {}", id);
+        debug!("Created new connection with ID {id}");
         Ok(())
     }
 
@@ -230,12 +230,12 @@ impl ConnectionPool {
         for conn in connections.iter_mut() {
             if conn.id == id {
                 conn.mark_returned();
-                debug!("Returned connection {}", id);
+                debug!("Returned connection {id}");
                 return;
             }
         }
 
-        warn!("Attempted to return unknown connection {}", id);
+        warn!("Attempted to return unknown connection {id}");
     }
 
     /// Remove idle connections
@@ -269,7 +269,7 @@ impl ConnectionPool {
 
         let removed = initial_count - connections.len();
         if removed > 0 {
-            info!("Removed {} idle connections", removed);
+            info!("Removed {removed} idle connections");
 
             // Release semaphore permits for removed connections
             for _ in 0..removed {

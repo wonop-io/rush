@@ -137,11 +137,11 @@ impl WatcherCoordinator {
                     Ok(event) => {
                         // Send event through channel to be processed in Tokio context
                         if let Err(e) = sender.send(event) {
-                            error!("Failed to send file event: {}", e);
+                            error!("Failed to send file event: {e}");
                         }
                     }
                     Err(e) => {
-                        error!("File watcher error: {}", e);
+                        error!("File watcher error: {e}");
                     }
                 }
             })?;
@@ -257,7 +257,7 @@ impl WatcherCoordinator {
                 true
             }
             _ => {
-                debug!("Reactor not in a state to rebuild: {:?}", phase);
+                debug!("Reactor not in a state to rebuild: {phase:?}");
                 false
             }
         }

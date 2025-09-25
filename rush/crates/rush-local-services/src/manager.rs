@@ -104,7 +104,7 @@ impl LocalServiceManager {
             self.output.info(format!("Starting service: {name}")).await;
 
             if let Err(e) = service.start().await {
-                error!("Failed to start service {}: {}", name, e);
+                error!("Failed to start service {name}: {e}");
                 // Stop already started services
                 self.stop_all().await?;
                 return Err(Error::Docker(format!("Failed to start {name}: {e}")));
@@ -133,7 +133,7 @@ impl LocalServiceManager {
             self.output.info(format!("Stopping service: {name}")).await;
 
             if let Err(e) = service.stop().await {
-                warn!("Failed to stop service {}: {}", name, e);
+                warn!("Failed to stop service {name}: {e}");
                 // Continue stopping other services
             }
         }
@@ -183,7 +183,7 @@ impl LocalServiceManager {
                             sleep(Duration::from_secs(1)).await;
                         }
                         Err(e) => {
-                            warn!("Health check failed for {}: {}", name, e);
+                            warn!("Health check failed for {name}: {e}");
                             sleep(Duration::from_secs(1)).await;
                         }
                     }

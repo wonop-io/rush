@@ -35,7 +35,7 @@ impl ResourceRegistry {
     /// Read a resource
     pub async fn read(&self, request: ResourceRead) -> Result<ResourceContent> {
         let uri = &request.uri;
-        log::debug!("Reading resource: {}", uri);
+        log::debug!("Reading resource: {uri}");
 
         // Parse URI
         if let Some(path) = uri.strip_prefix("logs://") {

@@ -416,7 +416,7 @@ impl IncrementalBuilder {
 
         let removed = before_count - states.len();
         if removed > 0 {
-            info!("Cleaned {} old build states", removed);
+            info!("Cleaned {removed} old build states");
             drop(states);
             self.save_states().await?;
         }

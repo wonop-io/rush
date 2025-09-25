@@ -180,7 +180,7 @@ impl DockerClientWrapper {
                     *self.healthy.write().await = true;
 
                     if self.config.verbose {
-                        debug!("{} operation succeeded in {:?}", operation_name, duration);
+                        debug!("{operation_name} operation succeeded in {duration:?}");
                     }
 
                     return Ok(value);
@@ -191,8 +191,7 @@ impl DockerClientWrapper {
 
                     if attempts > self.config.max_retries {
                         warn!(
-                            "{} operation failed after {} attempts: {:?}",
-                            operation_name, attempts, last_error
+                            "{operation_name} operation failed after {attempts} attempts: {last_error:?}"
                         );
                     }
                 }
@@ -203,7 +202,7 @@ impl DockerClientWrapper {
                     )));
                     attempts += 1;
 
-                    warn!("{} operation timed out", operation_name);
+                    warn!("{operation_name} operation timed out");
                 }
             }
         }

@@ -49,11 +49,7 @@ impl Default for ToolchainContext {
 impl ToolchainContext {
     /// Creates a new ToolchainContext for the specified host and target platforms
     pub fn create_with_platforms(host: Platform, target: Platform) -> Self {
-        trace!(
-            "Creating new ToolchainContext with host: {:?}, target: {:?}",
-            host,
-            target
-        );
+        trace!("Creating new ToolchainContext with host: {host:?}, target: {target:?}");
 
         let mut ret = if host.arch == target.arch && host.os == target.os {
             Self::default()
@@ -105,10 +101,10 @@ impl ToolchainContext {
 
     /// Creates a ToolchainContext from a specific directory path containing tools
     pub fn from_path(path: &str) -> Option<Self> {
-        trace!("Attempting to create ToolchainContext from path: {}", path);
+        trace!("Attempting to create ToolchainContext from path: {path}");
 
         if !Path::new(path).exists() {
-            warn!("Toolchain path does not exist: {}", path);
+            warn!("Toolchain path does not exist: {path}");
             return None;
         }
 
@@ -122,7 +118,7 @@ impl ToolchainContext {
         let objcopy = resolve_toolchain_path(path, "objcopy")?;
         let ld = resolve_toolchain_path(path, "ld")?;
 
-        debug!("Found toolchain in {}: cc={}, cxx={}", path, cc, cxx);
+        debug!("Found toolchain in {path}: cc={cc}, cxx={cxx}");
 
         Some(ToolchainContext {
             host: Platform::default(),
@@ -157,12 +153,12 @@ impl ToolchainContext {
 
     /// Tries to find a toolchain from a list of potential paths
     pub fn from_first_path(paths: Vec<&str>) -> Option<Self> {
-        trace!("Searching for toolchain in paths: {:?}", paths);
+        trace!("Searching for toolchain in paths: {paths:?}");
 
         for path in &paths {
-            debug!("Checking path: {}", path);
+            debug!("Checking path: {path}");
             if let Some(toolchain) = Self::from_path(path) {
-                debug!("Found toolchain at path: {}", path);
+                debug!("Found toolchain at path: {path}");
                 return Some(toolchain);
             }
         }
@@ -183,7 +179,7 @@ impl ToolchainContext {
                 debug!("Looking for x86_64-linux toolchain on macOS");
                 // First try to find the prefixed tools directly
                 if let Some(gcc) = first_which(vec!["x86_64-unknown-linux-gnu-gcc"]) {
-                    debug!("Found x86_64-unknown-linux-gnu-gcc at: {}", gcc);
+                    debug!("Found x86_64-unknown-linux-gnu-gcc at: {gcc}");
                     return Some(ToolchainContext {
                         host: host.clone(),
                         target: target.clone(),
@@ -353,7 +349,7 @@ impl ToolchainContext {
 
     /// Gets the git folder hash for a given subdirectory path
     pub fn get_git_folder_hash(&self, subdirectory_path: &str) -> Result<String, String> {
-        trace!("Getting git folder hash for: {}", subdirectory_path);
+        trace!("Getting git folder hash for: {subdirectory_path}");
 
         // First try to get hash for the specific subdirectory
         let hash_output = Command::new(&self.git)
@@ -367,10 +363,7 @@ impl ToolchainContext {
             .to_string();
 
         if !hash_output.status.success() || hash.is_empty() {
-            debug!(
-                "No git hash found for subdirectory '{}', trying HEAD",
-                subdirectory_path
-            );
+            debug!("No git hash found for subdirectory '{subdirectory_path}', trying HEAD");
 
             // Fall back to HEAD commit hash if subdirectory has no commits
             let head_output = Command::new(&self.git)
@@ -388,17 +381,17 @@ impl ToolchainContext {
                 return Ok("precommit".to_string());
             }
 
-            trace!("Using HEAD hash: {}", head_hash);
+            trace!("Using HEAD hash: {head_hash}");
             return Ok(head_hash);
         }
 
-        trace!("Git folder hash: {}", hash);
+        trace!("Git folder hash: {hash}");
         Ok(hash)
     }
 
     /// Checks if a git directory has work-in-progress changes and returns a hash suffix if it does
     pub fn get_git_wip(&self, subdirectory_path: &str) -> Result<String, String> {
-        trace!("Checking for WIP changes in: {}", subdirectory_path);
+        trace!("Checking for WIP changes in: {subdirectory_path}");
 
         // Use git status --porcelain to check for changes, respecting .gitignore
         // The --porcelain flag gives us machine-readable output
@@ -437,7 +430,7 @@ impl ToolchainContext {
                 let wip_hash = hex::encode(hasher.finalize());
                 let suffix = format!("-wip-{}", &wip_hash[..8]);
 
-                trace!("WIP changes detected, suffix: {}", suffix);
+                trace!("WIP changes detected, suffix: {suffix}");
                 return Ok(suffix);
             }
         }

@@ -26,7 +26,7 @@ impl K8sEncoder for SealedSecretsEncoder {
     fn encode_file(&self, path: &str) -> Result<()> {
         let content = fs::read_to_string(path)
             .map_err(|e| Error::Filesystem(format!("Failed to read manifest file: {e}")))?;
-        trace!("Testing {} if it contains 'kind: Secret'", path);
+        trace!("Testing {path} if it contains 'kind: Secret'");
 
         // Check if this is a Secret resource that needs encoding
         let contains_kind_secret = content.lines().any(|line| line.trim() == "kind: Secret");
@@ -38,7 +38,7 @@ impl K8sEncoder for SealedSecretsEncoder {
         }
 
         let temp_file = format!("{path}.tmp.yaml");
-        trace!("Encoding file {}", path);
+        trace!("Encoding file {path}");
 
         // Run kubeseal command
         let output = Command::new("kubeseal")
@@ -52,7 +52,7 @@ impl K8sEncoder for SealedSecretsEncoder {
             .map_err(|e| Error::External(format!("Failed to execute kubeseal: {e}")))?;
 
         if !output.status.success() {
-            info!("File attempted to be encoded: {}", path);
+            info!("File attempted to be encoded: {path}");
             return Err(Error::External(format!(
                 "kubeseal failed: {}",
                 String::from_utf8_lossy(&output.stderr)
@@ -97,10 +97,7 @@ pub fn create_encoder(encoder_type: &str) -> Box<dyn K8sEncoder> {
             Box::new(NoopEncoder)
         }
         _ => {
-            warn!(
-                "Unknown encoder type '{}', defaulting to no-op encoder",
-                encoder_type
-            );
+            warn!("Unknown encoder type '{encoder_type}', defaulting to no-op encoder");
             Box::new(NoopEncoder)
         }
     }

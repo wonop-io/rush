@@ -92,12 +92,7 @@ impl Vault for FileVault {
         component_name: &str,
         environment: &str,
     ) -> Result<HashMap<String, String>, Box<dyn Error>> {
-        trace!(
-            "Getting secrets for {}/{}/{}",
-            product_name,
-            component_name,
-            environment
-        );
+        trace!("Getting secrets for {product_name}/{component_name}/{environment}");
 
         let path = self.get_vault_path(product_name, environment);
         let secrets = self.load_secrets(&path)?;
@@ -124,12 +119,7 @@ impl Vault for FileVault {
         environment: &str,
         secrets: HashMap<String, String>,
     ) -> Result<(), Box<dyn Error>> {
-        trace!(
-            "Setting secrets for {}/{}/{}",
-            product_name,
-            component_name,
-            environment
-        );
+        trace!("Setting secrets for {product_name}/{component_name}/{environment}");
 
         let path = self.get_vault_path(product_name, environment);
         let mut current_secrets = self.load_secrets(&path)?;
@@ -151,10 +141,10 @@ impl Vault for FileVault {
     }
 
     async fn create_vault(&mut self, product_name: &str) -> Result<(), Box<dyn Error>> {
-        trace!("Creating vault directory for {}", product_name);
+        trace!("Creating vault directory for {product_name}");
         let vault_dir = self.directory.join(product_name);
         fs::create_dir_all(vault_dir)?;
-        debug!("Created vault directory for {}", product_name);
+        debug!("Created vault directory for {product_name}");
         Ok(())
     }
 
@@ -164,12 +154,7 @@ impl Vault for FileVault {
         component_name: &str,
         environment: &str,
     ) -> Result<(), Box<dyn Error>> {
-        trace!(
-            "Removing secrets for {}/{}/{}",
-            product_name,
-            component_name,
-            environment
-        );
+        trace!("Removing secrets for {product_name}/{component_name}/{environment}");
 
         let path = self.get_vault_path(product_name, environment);
         if !path.exists() {
@@ -183,14 +168,14 @@ impl Vault for FileVault {
         }
 
         self.save_secrets(&path, current_secrets)?;
-        debug!("Removed secrets for {}", component_name);
+        debug!("Removed secrets for {component_name}");
         Ok(())
     }
 
     async fn check_if_vault_exists(&self, product_name: &str) -> Result<bool, Box<dyn Error>> {
         let vault_dir = self.directory.join(product_name);
         let exists = vault_dir.exists() && vault_dir.is_dir();
-        trace!("Checking if vault exists for {}: {}", product_name, exists);
+        trace!("Checking if vault exists for {product_name}: {exists}");
         Ok(exists)
     }
 }

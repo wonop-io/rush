@@ -123,7 +123,7 @@ pub fn path_exists<P: AsRef<Path>>(path: P) -> bool {
 pub fn copy_file<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<u64> {
     trace!("Copying file from {:?} to {:?}", from.as_ref(), to.as_ref());
     let bytes_copied = fs::copy(&from, &to)?;
-    debug!("Successfully copied {} bytes", bytes_copied);
+    debug!("Successfully copied {bytes_copied} bytes");
     Ok(bytes_copied)
 }
 
@@ -193,7 +193,7 @@ pub fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Resul
 pub fn canonicalize<P: AsRef<Path>>(path: P) -> io::Result<PathBuf> {
     trace!("Canonicalizing path: {:?}", path.as_ref());
     let canonical = fs::canonicalize(&path)?;
-    debug!("Canonicalized path: {:?}", canonical);
+    debug!("Canonicalized path: {canonical:?}");
     Ok(canonical)
 }
 

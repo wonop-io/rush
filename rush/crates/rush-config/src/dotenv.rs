@@ -111,7 +111,7 @@ pub fn load_and_set_dotenv(path: &Path) -> Result<(), std::io::Error> {
     let env_map = load_dotenv(path)?;
 
     for (key, value) in env_map {
-        trace!("Setting environment variable: {}={}", key, value);
+        trace!("Setting environment variable: {key}={value}");
         std::env::set_var(key, value);
     }
 

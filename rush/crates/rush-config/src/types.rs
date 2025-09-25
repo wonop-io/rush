@@ -129,7 +129,7 @@ impl Config {
         match Tera::one_off(&self.domain_template, &context, false) {
             Ok(d) => d,
             Err(e) => {
-                log::error!("Failed to render domain template: {}", e);
+                log::error!("Failed to render domain template: {e}");
                 // Return a default domain as fallback
                 format!("{}.localhost", self.product_uri)
             }
@@ -265,7 +265,7 @@ impl Config {
             .join(".");
         // Use the root_path that was passed in instead of current_dir
         let products_dir = PathBuf::from(root_path).join(PRODUCTS_DIR);
-        trace!("Products directory: {:?}", products_dir);
+        trace!("Products directory: {products_dir:?}");
 
         // To support the Apple quirk that ".app" is an "App", we allow for using _ in the product name
         if let Ok(entries) = std::fs::read_dir(&products_dir) {
@@ -277,12 +277,8 @@ impl Config {
                     }
                 }
             }
-            trace!("Searching for product path in {:#?}", dirnames);
-            trace!(
-                "Candidate product name: {} and {}",
-                product_name,
-                product_dirname
-            );
+            trace!("Searching for product path in {dirnames:#?}");
+            trace!("Candidate product name: {product_name} and {product_dirname}");
             if let Some(normalized_name) = dirnames.iter().find(|&name| name.1 == product_dirname) {
                 product_dirname = normalized_name.0.clone();
             } else if let Some(normalized_name) =
@@ -303,7 +299,7 @@ impl Config {
         }
 
         let network_name = format!("{NETWORK_PREFIX}{product_uri}");
-        trace!("Product dirname: {}", product_dirname);
+        trace!("Product dirname: {product_dirname}");
 
         let one_password_account = std::env::var(ONE_PASSWORD_ACCOUNT_VAR).ok();
         let json_vault_dir = std::env::var(JSON_VAULT_DIR_VAR).ok();

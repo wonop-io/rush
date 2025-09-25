@@ -32,7 +32,7 @@ impl ProductLoader {
                 "Stack specification file not found at {}",
                 stack_spec_path.display()
             );
-            error!("{}", err_msg);
+            error!("{err_msg}");
             return Err(err_msg);
         }
 
@@ -41,7 +41,7 @@ impl ProductLoader {
                 Ok(value) => value,
                 Err(e) => {
                     let err_msg = format!("Failed to load stack specification: {e}");
-                    error!("{}", err_msg);
+                    error!("{err_msg}");
                     return Err(err_msg);
                 }
             };
@@ -67,19 +67,19 @@ impl ProductLoader {
         if let Some(mapping) = spec.as_mapping() {
             for (name_value, component_spec) in mapping {
                 if let Some(name) = name_value.as_str() {
-                    trace!("Parsing component: {}", name);
+                    trace!("Parsing component: {name}");
 
                     // Extract component fields from YAML
                     let location = match component_spec.get("location") {
                         Some(loc) => match loc.as_str() {
                             Some(path) => PathBuf::from(path),
                             None => {
-                                warn!("Component {} has invalid location, skipping", name);
+                                warn!("Component {name} has invalid location, skipping");
                                 continue;
                             }
                         },
                         None => {
-                            warn!("Component {} has no location, skipping", name);
+                            warn!("Component {name} has no location, skipping");
                             continue;
                         }
                     };
@@ -104,7 +104,7 @@ impl ProductLoader {
                     };
 
                     components.insert(name.to_string(), component);
-                    debug!("Added component: {}", name);
+                    debug!("Added component: {name}");
                 }
             }
         }

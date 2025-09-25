@@ -75,7 +75,7 @@ pub enum GenerationResult {
 impl SecretsDefinitions {
     /// Create a new SecretsDefinitions from a YAML file
     pub fn new(product_name: String, yaml_filename: &str) -> Self {
-        trace!("Loading secret definitions from {}", yaml_filename);
+        trace!("Loading secret definitions from {yaml_filename}");
 
         let components = match File::open(yaml_filename) {
             Ok(mut file) => {
@@ -84,21 +84,18 @@ impl SecretsDefinitions {
                     Ok(_) => match serde_yaml::from_str(&contents) {
                         Ok(parsed_components) => parsed_components,
                         Err(e) => {
-                            warn!("Unable to parse YAML file: {}. Using empty definition.", e);
+                            warn!("Unable to parse YAML file: {e}. Using empty definition.");
                             HashMap::new()
                         }
                     },
                     Err(e) => {
-                        warn!("Unable to read YAML file: {}. Using empty definition.", e);
+                        warn!("Unable to read YAML file: {e}. Using empty definition.");
                         HashMap::new()
                     }
                 }
             }
             Err(e) => {
-                warn!(
-                    "Unable to open YAML file '{}': {}. Using empty definition.",
-                    yaml_filename, e
-                );
+                warn!("Unable to open YAML file '{yaml_filename}': {e}. Using empty definition.");
                 HashMap::new()
             }
         };
@@ -108,7 +105,7 @@ impl SecretsDefinitions {
             .map(|(component_name, secrets)| (component_name, ComponentSecrets { secrets }))
             .collect();
 
-        debug!("Loaded secret definitions for product: {}", product_name);
+        debug!("Loaded secret definitions for product: {product_name}");
         Self {
             product_name,
             components,
@@ -117,7 +114,7 @@ impl SecretsDefinitions {
 
     /// Add a new component to the definitions
     pub fn add_component(&mut self, component_name: String) {
-        debug!("Adding component: {}", component_name);
+        debug!("Adding component: {component_name}");
         self.components.insert(
             component_name,
             ComponentSecrets {
@@ -134,13 +131,10 @@ impl SecretsDefinitions {
         generation_method: GenerationMethod,
     ) {
         if let Some(component) = self.components.get_mut(component_name) {
-            debug!(
-                "Adding secret '{}' to component '{}'",
-                secret_name, component_name
-            );
+            debug!("Adding secret '{secret_name}' to component '{component_name}'");
             component.secrets.insert(secret_name, generation_method);
         } else {
-            warn!("Component '{}' not found", component_name);
+            warn!("Component '{component_name}' not found");
         }
     }
 
@@ -151,11 +145,11 @@ impl SecretsDefinitions {
         vault: Arc<Mutex<dyn Vault + Send>>,
         env: &str,
     ) -> Result<bool, Box<dyn Error>> {
-        debug!("Validating vault for environment: {}", env);
+        debug!("Validating vault for environment: {env}");
         let mut all_valid = true;
 
         for (component_name, component) in &self.components {
-            trace!("Validating component: {}", component_name);
+            trace!("Validating component: {component_name}");
 
             let vault_secrets = vault
                 .lock()
@@ -169,8 +163,7 @@ impl SecretsDefinitions {
                         let parts: Vec<&str> = path.split('.').collect();
                         if parts.len() != 2 {
                             warn!(
-                                "Invalid reference format for '{}' in component '{}'",
-                                secret_name, component_name
+                                "Invalid reference format for '{secret_name}' in component '{component_name}'"
                             );
                             all_valid = false;
                             continue;
@@ -187,18 +180,14 @@ impl SecretsDefinitions {
 
                         if !ref_secrets.contains_key(ref_secret) {
                             warn!(
-                                "Referenced secret '{}' not found in component '{}'",
-                                ref_secret, ref_component
+                                "Referenced secret '{ref_secret}' not found in component '{ref_component}'"
                             );
                             all_valid = false;
                         }
                     }
                     _ => {
                         if !vault_secrets.contains_key(secret_name) {
-                            warn!(
-                                "Missing secret '{}' in component '{}'",
-                                secret_name, component_name
-                            );
+                            warn!("Missing secret '{secret_name}' in component '{component_name}'");
                             all_valid = false;
                         }
                     }
@@ -206,7 +195,7 @@ impl SecretsDefinitions {
             }
         }
 
-        debug!("Vault validation result: {}", all_valid);
+        debug!("Vault validation result: {all_valid}");
         Ok(all_valid)
     }
 
@@ -225,11 +214,7 @@ impl SecretsDefinitions {
 
     /// Generate a secret value based on its definition
     pub fn generate_secret(&self, component_name: &str, secret_name: &str) -> GenerationResult {
-        trace!(
-            "Generating secret '{}' for component '{}'",
-            secret_name,
-            component_name
-        );
+        trace!("Generating secret '{secret_name}' for component '{component_name}'");
 
         if let Some(component) = self.components.get(component_name) {
             if let Some(generation_method) = component.secrets.get(secret_name) {
@@ -324,7 +309,7 @@ impl SecretsDefinitions {
                             Ok(mut file) => {
                                 let mut contents = Vec::new();
                                 if let Err(e) = file.read_to_end(&mut contents) {
-                                    warn!("Failed to read file contents: {}", e);
+                                    warn!("Failed to read file contents: {e}");
                                     return GenerationResult::None;
                                 }
 
@@ -343,7 +328,7 @@ impl SecretsDefinitions {
                                 }
                             }
                             Err(e) => {
-                                warn!("Failed to open file '{}': {}", expanded_path, e);
+                                warn!("Failed to open file '{expanded_path}': {e}");
                                 GenerationResult::None
                             }
                         }
@@ -360,14 +345,11 @@ impl SecretsDefinitions {
                     }
                 }
             } else {
-                warn!(
-                    "Secret '{}' not found in component '{}'",
-                    secret_name, component_name
-                );
+                warn!("Secret '{secret_name}' not found in component '{component_name}'");
                 GenerationResult::None
             }
         } else {
-            warn!("Component '{}' not found", component_name);
+            warn!("Component '{component_name}' not found");
             GenerationResult::None
         }
     }
@@ -379,7 +361,7 @@ impl SecretsDefinitions {
         vault: Arc<Mutex<dyn Vault + Send>>,
         env: &str,
     ) -> Result<(), Box<dyn Error>> {
-        debug!("Populating vault for environment: {}", env);
+        debug!("Populating vault for environment: {env}");
 
         // Define the helper struct within this function to avoid name conflicts
         struct InnerSecretStore {
@@ -419,7 +401,7 @@ impl SecretsDefinitions {
             let existing_component_secrets = existing_secrets.get(component_name).unwrap();
             let component_secrets = &self.components[component_name];
 
-            trace!("Processing secrets for component: {}", component_name);
+            trace!("Processing secrets for component: {component_name}");
             println!("\n{component_name}");
             println!("{}", "=".repeat(component_name.len()));
 
@@ -487,8 +469,7 @@ impl SecretsDefinitions {
                     }
                     GenerationResult::None => {
                         warn!(
-                            "Failed to generate value for '{}' in component '{}'",
-                            secret_name, component_name
+                            "Failed to generate value for '{secret_name}' in component '{component_name}'"
                         );
                     }
                 }
@@ -502,7 +483,7 @@ impl SecretsDefinitions {
             for (secret_name, ref_path) in references {
                 let parts: Vec<&str> = ref_path.split('.').collect();
                 if parts.len() != 2 {
-                    warn!("Invalid reference format: {}", ref_path);
+                    warn!("Invalid reference format: {ref_path}");
                     continue;
                 }
 
@@ -523,16 +504,11 @@ impl SecretsDefinitions {
                         .insert(secret_name.clone(), ref_value);
 
                     trace!(
-                        "Resolved reference: {}.{} -> {}.{}",
-                        component_name,
-                        secret_name,
-                        ref_component,
-                        ref_secret
+                        "Resolved reference: {component_name}.{secret_name} -> {ref_component}.{ref_secret}"
                     );
                 } else {
                     warn!(
-                        "Referenced secret '{}' not found in component '{}'",
-                        ref_secret, ref_component
+                        "Referenced secret '{ref_secret}' not found in component '{ref_component}'"
                     );
                 }
             }

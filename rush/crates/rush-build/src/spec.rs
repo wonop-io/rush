@@ -404,7 +404,7 @@ impl ComponentBuildSpec {
                                 env.len()
                             );
                             for key in env.keys() {
-                                log::debug!("  Secret key: {}", key);
+                                log::debug!("  Secret key: {key}");
                             }
                             env
                         }
@@ -589,7 +589,7 @@ impl ComponentBuildSpec {
             .unwrap()
             .to_string();
 
-        debug!("Parsing LocalService with service_type: {}", service_type);
+        debug!("Parsing LocalService with service_type: {service_type}");
 
         // Parse and validate version
         let version = yaml_section
@@ -836,7 +836,7 @@ mod tests {
                 env,
                 health_check,
                 init_scripts,
-                post_startup_tasks,
+                post_startup_tasks: _,
                 depends_on,
                 command,
             } => {
@@ -893,7 +893,7 @@ mod tests {
                 env,
                 health_check,
                 init_scripts,
-                post_startup_tasks,
+                post_startup_tasks: _,
                 depends_on,
                 command,
             } => {

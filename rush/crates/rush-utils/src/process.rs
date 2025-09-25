@@ -20,7 +20,7 @@ pub fn execute_command(
     args: &[&str],
     working_dir: Option<&Path>,
 ) -> io::Result<Output> {
-    trace!("Executing command: {} with args: {:?}", command, args);
+    trace!("Executing command: {command} with args: {args:?}");
 
     let mut cmd = Command::new(command);
     cmd.args(args);
@@ -34,7 +34,7 @@ pub fn execute_command(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        error!("Command execution failed: {}", stderr);
+        error!("Command execution failed: {stderr}");
     } else {
         trace!("Command executed successfully");
     }
@@ -78,7 +78,7 @@ pub fn spawn_process(
     args: &[&str],
     working_dir: Option<&Path>,
 ) -> io::Result<std::process::Child> {
-    trace!("Spawning process: {} with args: {:?}", command, args);
+    trace!("Spawning process: {command} with args: {args:?}");
 
     let mut cmd = Command::new(command);
     cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());

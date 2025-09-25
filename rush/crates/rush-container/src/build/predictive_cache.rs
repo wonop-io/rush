@@ -303,10 +303,10 @@ impl PredictiveCache {
         let cache_path = self.cache_dir.join(format!("{component}.cache"));
         if cache_path.exists() {
             // In real implementation, would deserialize CacheEntry
-            debug!("Cache hit for component: {}", component);
+            debug!("Cache hit for component: {component}");
             None // Placeholder
         } else {
-            debug!("Cache miss for component: {}", component);
+            debug!("Cache miss for component: {component}");
             None
         }
     }
@@ -324,7 +324,7 @@ impl PredictiveCache {
             // Spawn prefetch task
             tokio::spawn(async move {
                 if let Ok(_permit) = semaphore.try_acquire() {
-                    debug!("Prefetching predicted component: {}", component);
+                    debug!("Prefetching predicted component: {component}");
                     // In real implementation, would prefetch component
                     // This might involve:
                     // - Pulling Docker base images
@@ -450,10 +450,7 @@ impl PredictiveCache {
                     metadata.entry_count -= 1;
                     metadata.cache_ages.remove(&component);
 
-                    info!(
-                        "Evicted cache entry for '{}' (freed {} bytes)",
-                        component, size
-                    );
+                    info!("Evicted cache entry for '{component}' (freed {size} bytes)");
                 }
             }
         }

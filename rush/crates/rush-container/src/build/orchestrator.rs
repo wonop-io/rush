@@ -184,9 +184,9 @@ impl BuildOrchestrator {
         };
 
         for container_id in active_builds {
-            info!("Killing build container: {}", container_id);
+            info!("Killing build container: {container_id}");
             if let Err(e) = self.docker_client.kill_container(&container_id).await {
-                warn!("Failed to kill build container {}: {}", container_id, e);
+                warn!("Failed to kill build container {container_id}: {e}");
             }
         }
 
@@ -252,7 +252,7 @@ impl BuildOrchestrator {
             ))
             .await
         {
-            debug!("Failed to publish build started event: {}", e);
+            debug!("Failed to publish build started event: {e}");
         }
 
         let mut built_images = HashMap::new();
@@ -411,7 +411,7 @@ impl BuildOrchestrator {
                         ))
                         .await
                     {
-                        debug!("Failed to publish build completed event: {}", e);
+                        debug!("Failed to publish build completed event: {e}");
                     }
                 }
                 Err(e) => {
@@ -437,7 +437,7 @@ impl BuildOrchestrator {
                         ))
                         .await
                     {
-                        debug!("Failed to publish error event: {}", pub_err);
+                        debug!("Failed to publish error event: {pub_err}");
                     }
                 }
             }
@@ -447,7 +447,7 @@ impl BuildOrchestrator {
         if !build_errors.is_empty() {
             error!("Build failed for {} components", build_errors.len());
             for (component, error) in &build_errors {
-                error!("  {}: {}", component, error);
+                error!("  {component}: {error}");
             }
             return Err(rush_core::error::Error::Build(format!(
                 "Failed to build {} components",
@@ -1086,10 +1086,7 @@ impl BuildOrchestrator {
                         .or_insert_with(Vec::new)
                         .push(service_spec);
                 } else {
-                    warn!(
-                        "Component {} referenced by ingress not found in specs",
-                        component_name
-                    );
+                    warn!("Component {component_name} referenced by ingress not found in specs");
                 }
             }
             services_map
@@ -1179,7 +1176,7 @@ impl BuildOrchestrator {
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to render artifact {}: {}", input_path, e);
+                        warn!("Failed to render artifact {input_path}: {e}");
                     }
                 }
             }

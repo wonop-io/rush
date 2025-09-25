@@ -490,7 +490,7 @@ impl MonitoringIntegration {
     pub async fn send_prometheus_metrics(&self, _entry: &AuditEntry) -> Result<()> {
         if let Some(ref url) = self.prometheus_url {
             // TODO: Implement Prometheus metrics push
-            info!("Would send metrics to Prometheus: {}", url);
+            info!("Would send metrics to Prometheus: {url}");
         }
         Ok(())
     }

@@ -66,7 +66,7 @@ where
                 retries += 1;
             }
             Err(e) => {
-                error!("Operation failed after {} retries: {}", retries, e);
+                error!("Operation failed after {retries} retries: {e}");
                 return Err(e);
             }
         }
@@ -184,7 +184,7 @@ impl CircuitBreaker {
         self.half_open_success_count.store(0, Ordering::SeqCst);
 
         if failures == self.threshold {
-            error!("Circuit breaker opened after {} failures", failures);
+            error!("Circuit breaker opened after {failures} failures");
         }
     }
 }
@@ -324,7 +324,7 @@ where
         match self.circuit_breaker.call(primary).await {
             Ok(response) => Ok(response),
             Err(e) => {
-                warn!("Primary service failed, using fallback: {}", e);
+                warn!("Primary service failed, using fallback: {e}");
                 fallback().await
             }
         }

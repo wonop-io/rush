@@ -117,10 +117,7 @@ impl ShutdownCoordinator {
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
         {
-            info!(
-                "Initiating immediate shutdown with escalation: {:?}",
-                reason
-            );
+            info!("Initiating immediate shutdown with escalation: {reason:?}");
 
             // Cancel all operations immediately
             self.cancellation_token.cancel();
@@ -290,7 +287,7 @@ pub fn setup_signal_handlers() {
                 shutdown.shutdown(ShutdownReason::UserRequested);
             }
             Err(err) => {
-                warn!("Failed to listen for interrupt signal: {}", err);
+                warn!("Failed to listen for interrupt signal: {err}");
             }
         }
     });
@@ -305,7 +302,7 @@ pub fn setup_signal_handlers() {
             let mut sigterm = match signal(SignalKind::terminate()) {
                 Ok(signal) => signal,
                 Err(err) => {
-                    warn!("Failed to register SIGTERM handler: {}", err);
+                    warn!("Failed to register SIGTERM handler: {err}");
                     return;
                 }
             };

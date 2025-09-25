@@ -37,20 +37,17 @@ impl ConfigLoader {
         docker_registry: &str,
         start_port: u16,
     ) -> Result<Arc<Config>, String> {
-        debug!(
-            "Loading configuration for product '{}' in environment '{}'",
-            product_name, environment
-        );
+        debug!("Loading configuration for product '{product_name}' in environment '{environment}'");
 
         // Validate environment
         if !VALID_ENVIRONMENTS.contains(&environment) {
             let err_msg = format!("Invalid environment: {environment}");
-            error!("{}", err_msg);
-            error!("Valid environments: {:?}", VALID_ENVIRONMENTS);
+            error!("{err_msg}");
+            error!("Valid environments: {VALID_ENVIRONMENTS:?}");
             return Err(err_msg);
         }
 
-        trace!("Environment '{}' is valid", environment);
+        trace!("Environment '{environment}' is valid");
 
         // Create config
         Config::new(
@@ -234,7 +231,7 @@ pub fn apply_rushd_config(config: &RushdConfig) {
     trace!("Applying rushd configuration");
 
     for (key, value) in &config.env {
-        debug!("Setting environment variable: {}={}", key, value);
+        debug!("Setting environment variable: {key}={value}");
         std::env::set_var(key, value);
     }
 

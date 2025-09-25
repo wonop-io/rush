@@ -54,9 +54,9 @@ impl Directory {
     /// // Directory is restored when _guard is dropped
     /// ```
     pub fn chdir(dir: &str) -> Self {
-        trace!("Changing directory to: {}", dir);
+        trace!("Changing directory to: {dir}");
         let previous = env::current_dir().expect("Failed to get current directory");
-        debug!("Previous directory: {:?}", previous);
+        debug!("Previous directory: {previous:?}");
         env::set_current_dir(dir)
             .unwrap_or_else(|_| panic!("Failed to set current directory to {dir}"));
         Directory { previous }
@@ -75,12 +75,12 @@ impl Directory {
     /// * `Ok(Directory)` - Guard that restores the previous directory
     /// * `Err(Error)` - If unable to get current directory or change to new directory
     pub fn try_chdir(dir: &str) -> Result<Self> {
-        trace!("Changing directory to: {}", dir);
+        trace!("Changing directory to: {dir}");
         let previous = env::current_dir().map_err(|e| Error::FileSystem {
             path: PathBuf::from("."),
             message: format!("Failed to get current directory: {e}"),
         })?;
-        debug!("Previous directory: {:?}", previous);
+        debug!("Previous directory: {previous:?}");
 
         env::set_current_dir(dir).map_err(|e| Error::FileSystem {
             path: PathBuf::from(dir),
@@ -116,9 +116,9 @@ impl Directory {
     /// // Directory is restored when _guard is dropped
     /// ```
     pub fn chpath(dir: &Path) -> Self {
-        trace!("Changing directory to: {:?}", dir);
+        trace!("Changing directory to: {dir:?}");
         let previous = env::current_dir().expect("Failed to get current directory");
-        debug!("Previous directory: {:?}", previous);
+        debug!("Previous directory: {previous:?}");
         env::set_current_dir(dir)
             .unwrap_or_else(|_| panic!("Failed to set current directory to {}", dir.display()));
         Directory { previous }
@@ -137,12 +137,12 @@ impl Directory {
     /// * `Ok(Directory)` - Guard that restores the previous directory
     /// * `Err(Error)` - If unable to get current directory or change to new directory
     pub fn try_chpath(dir: &Path) -> Result<Self> {
-        trace!("Changing directory to: {:?}", dir);
+        trace!("Changing directory to: {dir:?}");
         let previous = env::current_dir().map_err(|e| Error::FileSystem {
             path: dir.to_path_buf(),
             message: format!("Failed to get current directory: {e}"),
         })?;
-        debug!("Previous directory: {:?}", previous);
+        debug!("Previous directory: {previous:?}");
 
         env::set_current_dir(dir).map_err(|e| Error::FileSystem {
             path: dir.to_path_buf(),

@@ -124,12 +124,12 @@ impl CommandRunner {
         cmd.args(&config.args);
 
         if let Some(dir) = &config.working_dir {
-            trace!("Setting working directory: {}", dir);
+            trace!("Setting working directory: {dir}");
             cmd.current_dir(dir);
         }
 
         for (key, value) in &config.env_vars {
-            trace!("Setting env var: {}={}", key, value);
+            trace!("Setting env var: {key}={value}");
             cmd.env(key, value);
         }
 
@@ -169,7 +169,7 @@ impl CommandRunner {
                 config.args.join(" ")
             );
             if !stderr.is_empty() {
-                error!("Stderr: {}", stderr);
+                error!("Stderr: {stderr}");
             }
         }
 
@@ -229,7 +229,7 @@ pub async fn run_command_with_label(
     args: Vec<&str>,
 ) -> std::result::Result<String, String> {
     let debug_args = args.join(" ");
-    trace!("Running command: {} {}", command, debug_args);
+    trace!("Running command: {command} {debug_args}");
 
     // Create process
     let mut child = TokioCommand::new(command)

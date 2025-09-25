@@ -24,15 +24,12 @@ impl DockerCrossCompileGuard {
     ///
     /// * `target` - Docker platform target string (e.g., "linux/amd64")
     pub fn new(target: &str) -> Self {
-        debug!(
-            "Creating new DockerCrossCompileGuard with target: {}",
-            target
-        );
+        debug!("Creating new DockerCrossCompileGuard with target: {target}");
 
         // Save original environment variables if they exist
         let cross_container_opts = match env::var("CROSS_CONTAINER_OPTS") {
             Ok(val) => {
-                debug!("Found existing CROSS_CONTAINER_OPTS: {}", val);
+                debug!("Found existing CROSS_CONTAINER_OPTS: {val}");
                 Some(val)
             }
             Err(_) => {
@@ -43,7 +40,7 @@ impl DockerCrossCompileGuard {
 
         let docker_default_platform = match env::var("DOCKER_DEFAULT_PLATFORM") {
             Ok(val) => {
-                debug!("Found existing DOCKER_DEFAULT_PLATFORM: {}", val);
+                debug!("Found existing DOCKER_DEFAULT_PLATFORM: {val}");
                 Some(val)
             }
             Err(_) => {
@@ -55,10 +52,7 @@ impl DockerCrossCompileGuard {
         // Set environment variables for cross-compilation
         env::set_var("CROSS_CONTAINER_OPTS", format!("--platform {target}"));
         env::set_var("DOCKER_DEFAULT_PLATFORM", target);
-        trace!(
-            "Set CROSS_CONTAINER_OPTS and DOCKER_DEFAULT_PLATFORM to {}",
-            target
-        );
+        trace!("Set CROSS_CONTAINER_OPTS and DOCKER_DEFAULT_PLATFORM to {target}");
 
         Self {
             cross_container_opts,
@@ -81,7 +75,7 @@ impl Drop for DockerCrossCompileGuard {
         match &self.cross_container_opts {
             Some(v) => {
                 env::set_var("CROSS_CONTAINER_OPTS", v);
-                debug!("Restored CROSS_CONTAINER_OPTS to: {}", v);
+                debug!("Restored CROSS_CONTAINER_OPTS to: {v}");
             }
             None => {
                 env::remove_var("CROSS_CONTAINER_OPTS");
@@ -92,7 +86,7 @@ impl Drop for DockerCrossCompileGuard {
         match &self.docker_default_platform {
             Some(v) => {
                 env::set_var("DOCKER_DEFAULT_PLATFORM", v);
-                debug!("Restored DOCKER_DEFAULT_PLATFORM to: {}", v);
+                debug!("Restored DOCKER_DEFAULT_PLATFORM to: {v}");
             }
             None => {
                 env::remove_var("DOCKER_DEFAULT_PLATFORM");

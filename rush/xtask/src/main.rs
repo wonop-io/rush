@@ -654,7 +654,7 @@ fn run_command(mut cmd: Command, name: &str) -> Result<()> {
         .with_context(|| format!("Failed to execute {name}"))?;
 
     if !status.success() {
-        anyhow::bail!("{} failed with status: {:?}", name, status);
+        anyhow::bail!("{name} failed with status: {status:?}");
     }
 
     Ok(())

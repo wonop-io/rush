@@ -74,7 +74,7 @@ impl DockerCliClient {
 #[async_trait::async_trait]
 impl DockerClient for DockerCliClient {
     async fn create_network(&self, name: &str) -> Result<()> {
-        trace!("Creating Docker network: {}", name);
+        trace!("Creating Docker network: {name}");
 
         let output = Command::new(&self.docker_path)
             .args(["network", "create", "-d", "bridge", name])
@@ -86,16 +86,16 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Failed to create Docker network: {}", stderr);
+            error!("Failed to create Docker network: {stderr}");
             return Err(Error::Docker(format!("Network creation failed: {stderr}")));
         }
 
-        debug!("Successfully created Docker network: {}", name);
+        debug!("Successfully created Docker network: {name}");
         Ok(())
     }
 
     async fn delete_network(&self, name: &str) -> Result<()> {
-        trace!("Deleting Docker network: {}", name);
+        trace!("Deleting Docker network: {name}");
 
         let output = Command::new(&self.docker_path)
             .args(["network", "rm", name])
@@ -109,19 +109,19 @@ impl DockerClient for DockerCliClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Don't treat this as an error if the network doesn't exist
             if stderr.contains("No such network") {
-                debug!("Network {} already removed", name);
+                debug!("Network {name} already removed");
                 return Ok(());
             }
-            error!("Failed to delete Docker network: {}", stderr);
+            error!("Failed to delete Docker network: {stderr}");
             return Err(Error::Docker(format!("Network deletion failed: {stderr}")));
         }
 
-        debug!("Successfully deleted Docker network: {}", name);
+        debug!("Successfully deleted Docker network: {name}");
         Ok(())
     }
 
     async fn network_exists(&self, name: &str) -> Result<bool> {
-        trace!("Checking if Docker network exists: {}", name);
+        trace!("Checking if Docker network exists: {name}");
 
         let output = Command::new(&self.docker_path)
             .args(["network", "inspect", name])
@@ -135,7 +135,7 @@ impl DockerClient for DockerCliClient {
     }
 
     async fn pull_image(&self, image: &str) -> Result<()> {
-        trace!("Pulling Docker image: {}", image);
+        trace!("Pulling Docker image: {image}");
 
         let output = Command::new(&self.docker_path)
             .args(["pull", image])
@@ -147,11 +147,11 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Failed to pull Docker image: {}", stderr);
+            error!("Failed to pull Docker image: {stderr}");
             return Err(Error::Docker(format!("Image pull failed: {stderr}")));
         }
 
-        debug!("Successfully pulled Docker image: {}", image);
+        debug!("Successfully pulled Docker image: {image}");
         Ok(())
     }
 
@@ -181,7 +181,7 @@ impl DockerClient for DockerCliClient {
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         use std::path::Path;
 
-        trace!("Building Docker image: {}", tag);
+        trace!("Building Docker image: {tag}");
         let build_start = std::time::Instant::now();
 
         // Convert paths to PathBuf for manipulation
@@ -205,11 +205,8 @@ impl DockerClient for DockerCliClient {
 
         let dockerfile_arg = dockerfile_relative.to_string_lossy();
 
-        info!("Docker build: Running from directory '{}'", context);
-        info!(
-            "Docker build command: docker build --tag {} --file {} .",
-            tag, dockerfile_arg
-        );
+        info!("Docker build: Running from directory '{context}'");
+        info!("Docker build command: docker build --tag {tag} --file {dockerfile_arg} .");
 
         // Use the Directory guard to change to the build context directory
         let _dir_guard = rush_utils::Directory::chdir(context);
@@ -236,34 +233,33 @@ impl DockerClient for DockerCliClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
             error!("\n=== Docker Build Failed ===");
-            error!("Image tag: {}", tag);
-            error!("Working directory: {}", context);
-            error!("Dockerfile (relative): {}", dockerfile_arg);
-            error!("Dockerfile (absolute): {}", dockerfile);
+            error!("Image tag: {tag}");
+            error!("Working directory: {context}");
+            error!("Dockerfile (relative): {dockerfile_arg}");
+            error!("Dockerfile (absolute): {dockerfile}");
             error!("Exit code: {:?}", output.status.code());
 
             if !stdout.is_empty() {
                 error!("\n=== Build Output ===");
                 for line in stdout.lines() {
-                    error!("  {}", line);
+                    error!("  {line}");
                 }
             }
 
             if !stderr.is_empty() {
                 error!("\n=== Error Output ===");
                 for line in stderr.lines() {
-                    error!("  {}", line);
+                    error!("  {line}");
                 }
             }
 
             error!("\n=== Troubleshooting ===");
-            error!("1. Check if the Dockerfile exists at: {}", dockerfile);
-            error!("2. Verify the build context directory: {}", context);
+            error!("1. Check if the Dockerfile exists at: {dockerfile}");
+            error!("2. Verify the build context directory: {context}");
             error!("3. Ensure Docker daemon is running: docker ps");
             error!("4. Check Docker disk space: docker system df");
             error!(
-                "5. Try building manually: cd {} && docker build --tag {} --file {} .",
-                context, tag, dockerfile_arg
+                "5. Try building manually: cd {context} && docker build --tag {tag} --file {dockerfile_arg} ."
             );
 
             // Create a more informative error message
@@ -284,7 +280,7 @@ impl DockerClient for DockerCliClient {
             )));
         }
 
-        debug!("Successfully built Docker image: {}", tag);
+        debug!("Successfully built Docker image: {tag}");
 
         crate::profiling::global_tracker()
             .record_with_component("docker_build", "total", build_start.elapsed())
@@ -316,7 +312,7 @@ impl DockerClient for DockerCliClient {
         volumes: &[String],
         command: Option<&[String]>,
     ) -> Result<String> {
-        trace!("Running Docker container {} from image {}", name, image);
+        trace!("Running Docker container {name} from image {image}");
 
         let mut args = vec![
             "run",
@@ -370,20 +366,17 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Failed to run Docker container: {}", stderr);
+            error!("Failed to run Docker container: {stderr}");
             return Err(Error::Docker(format!("Container run failed: {stderr}")));
         }
 
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        info!(
-            "Successfully started Docker container: {} (ID: {})",
-            name, container_id
-        );
+        info!("Successfully started Docker container: {name} (ID: {container_id})");
         Ok(container_id)
     }
 
     async fn stop_container(&self, container_id: &str) -> Result<()> {
-        trace!("Stopping Docker container: {}", container_id);
+        trace!("Stopping Docker container: {container_id}");
 
         let output = Command::new(&self.docker_path)
             .args(["stop", container_id])
@@ -397,19 +390,19 @@ impl DockerClient for DockerCliClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Don't treat as error if container is already stopped
             if stderr.contains("No such container") {
-                debug!("Container {} already stopped", container_id);
+                debug!("Container {container_id} already stopped");
                 return Ok(());
             }
-            error!("Failed to stop Docker container: {}", stderr);
+            error!("Failed to stop Docker container: {stderr}");
             return Err(Error::Docker(format!("Container stop failed: {stderr}")));
         }
 
-        debug!("Successfully stopped Docker container: {}", container_id);
+        debug!("Successfully stopped Docker container: {container_id}");
         Ok(())
     }
 
     async fn kill_container(&self, container_id: &str) -> Result<()> {
-        trace!("Force killing Docker container: {}", container_id);
+        trace!("Force killing Docker container: {container_id}");
 
         let output = Command::new(&self.docker_path)
             .args(["kill", container_id])
@@ -423,22 +416,19 @@ impl DockerClient for DockerCliClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Don't treat as error if container doesn't exist or is already stopped
             if stderr.contains("No such container") || stderr.contains("is not running") {
-                debug!(
-                    "Container {} already stopped or doesn't exist",
-                    container_id
-                );
+                debug!("Container {container_id} already stopped or doesn't exist");
                 return Ok(());
             }
-            error!("Failed to kill Docker container: {}", stderr);
+            error!("Failed to kill Docker container: {stderr}");
             return Err(Error::Docker(format!("Container kill failed: {stderr}")));
         }
 
-        debug!("Successfully killed Docker container: {}", container_id);
+        debug!("Successfully killed Docker container: {container_id}");
         Ok(())
     }
 
     async fn remove_container(&self, container_id: &str) -> Result<()> {
-        trace!("Removing Docker container: {}", container_id);
+        trace!("Removing Docker container: {container_id}");
 
         let output = Command::new(&self.docker_path)
             .args(["rm", "-f", container_id])
@@ -452,19 +442,19 @@ impl DockerClient for DockerCliClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Don't treat as error if container is already removed
             if stderr.contains("No such container") {
-                debug!("Container {} already removed", container_id);
+                debug!("Container {container_id} already removed");
                 return Ok(());
             }
-            error!("Failed to remove Docker container: {}", stderr);
+            error!("Failed to remove Docker container: {stderr}");
             return Err(Error::Docker(format!("Container removal failed: {stderr}")));
         }
 
-        debug!("Successfully removed Docker container: {}", container_id);
+        debug!("Successfully removed Docker container: {container_id}");
         Ok(())
     }
 
     async fn container_status(&self, container_id: &str) -> Result<ContainerStatus> {
-        trace!("Getting status for Docker container: {}", container_id);
+        trace!("Getting status for Docker container: {container_id}");
 
         let output = Command::new(&self.docker_path)
             .args([
@@ -485,13 +475,10 @@ impl DockerClient for DockerCliClient {
                 || stderr.contains("No such object")
                 || stderr.contains("not found")
             {
-                debug!(
-                    "Container {} not found (may have been removed)",
-                    container_id
-                );
+                debug!("Container {container_id} not found (may have been removed)");
                 return Ok(ContainerStatus::Unknown);
             }
-            error!("Failed to inspect Docker container: {}", stderr);
+            error!("Failed to inspect Docker container: {stderr}");
             return Err(Error::Docker(format!(
                 "Container inspection failed: {stderr}"
             )));
@@ -515,7 +502,7 @@ impl DockerClient for DockerCliClient {
     }
 
     async fn container_exists(&self, name: &str) -> Result<bool> {
-        trace!("Checking if Docker container exists: {}", name);
+        trace!("Checking if Docker container exists: {name}");
 
         let output = Command::new(&self.docker_path)
             .args([
@@ -534,7 +521,7 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Failed to check Docker container existence: {}", stderr);
+            error!("Failed to check Docker container existence: {stderr}");
             return Err(Error::Docker(format!("Container check failed: {stderr}")));
         }
 
@@ -543,7 +530,7 @@ impl DockerClient for DockerCliClient {
     }
 
     async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String> {
-        trace!("Getting logs for Docker container: {}", container_id);
+        trace!("Getting logs for Docker container: {container_id}");
 
         let output = Command::new(&self.docker_path)
             .args(["logs", "--tail", &lines.to_string(), container_id])
@@ -555,7 +542,7 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Failed to get Docker container logs: {}", stderr);
+            error!("Failed to get Docker container logs: {stderr}");
             return Err(Error::Docker(format!(
                 "Container logs retrieval failed: {stderr}"
             )));
@@ -571,7 +558,7 @@ impl DockerClient for DockerCliClient {
         label: String,
         color: &str,
     ) -> Result<()> {
-        trace!("Following logs for Docker container: {}", container_id);
+        trace!("Following logs for Docker container: {container_id}");
 
         use colored::Colorize;
 
@@ -606,7 +593,7 @@ impl DockerClient for DockerCliClient {
                             print!("{label_clone} | {line}");
                         }
                         Err(e) => {
-                            error!("Error reading stdout: {}", e);
+                            error!("Error reading stdout: {e}");
                             break;
                         }
                     }
@@ -629,7 +616,7 @@ impl DockerClient for DockerCliClient {
                             eprint!("{label_clone} | {line}");
                         }
                         Err(e) => {
-                            error!("Error reading stderr: {}", e);
+                            error!("Error reading stderr: {e}");
                             break;
                         }
                     }
@@ -641,11 +628,7 @@ impl DockerClient for DockerCliClient {
     }
 
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {
-        trace!(
-            "Sending signal {} to Docker container: {}",
-            signal,
-            container_id
-        );
+        trace!("Sending signal {signal} to Docker container: {container_id}");
 
         let output = Command::new(&self.docker_path)
             .args(["kill", "--signal", &signal.to_string(), container_id])
@@ -659,26 +642,19 @@ impl DockerClient for DockerCliClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Don't treat as error if container is already gone
             if stderr.contains("No such container") {
-                debug!("Container {} not found when sending signal", container_id);
+                debug!("Container {container_id} not found when sending signal");
                 return Ok(());
             }
-            error!("Failed to send signal to Docker container: {}", stderr);
+            error!("Failed to send signal to Docker container: {stderr}");
             return Err(Error::Docker(format!("Container signal failed: {stderr}")));
         }
 
-        debug!(
-            "Successfully sent signal {} to Docker container: {}",
-            signal, container_id
-        );
+        debug!("Successfully sent signal {signal} to Docker container: {container_id}");
         Ok(())
     }
 
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
-        trace!(
-            "Executing command in container {}: {:?}",
-            container_id,
-            command
-        );
+        trace!("Executing command in container {container_id}: {command:?}");
 
         let mut args = vec!["exec", container_id];
         args.extend(command);
@@ -700,7 +676,7 @@ impl DockerClient for DockerCliClient {
     }
 
     async fn get_container_by_name(&self, name: &str) -> Result<String> {
-        trace!("Getting container by name: {}", name);
+        trace!("Getting container by name: {name}");
 
         let output = Command::new(&self.docker_path)
             .args(["ps", "-aq", "--filter", &format!("name={name}")])
@@ -724,7 +700,7 @@ impl DockerClient for DockerCliClient {
     }
 
     async fn push_image(&self, image: &str) -> Result<()> {
-        info!("Pushing Docker image: {}", image);
+        info!("Pushing Docker image: {image}");
 
         let output = Command::new(&self.docker_path)
             .args(["push", image])
@@ -736,16 +712,16 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("Failed to push Docker image: {}", stderr);
+            error!("Failed to push Docker image: {stderr}");
             return Err(Error::Docker(format!("Image push failed: {stderr}")));
         }
 
-        debug!("Successfully pushed Docker image: {}", image);
+        debug!("Successfully pushed Docker image: {image}");
         Ok(())
     }
 
     async fn image_exists(&self, image: &str) -> Result<bool> {
-        trace!("Checking if Docker image exists: {}", image);
+        trace!("Checking if Docker image exists: {image}");
 
         let output = Command::new(&self.docker_path)
             .args(["image", "inspect", image])
@@ -757,17 +733,17 @@ impl DockerClient for DockerCliClient {
 
         // If the command succeeds, the image exists
         if output.status.success() {
-            debug!("Image {} exists", image);
+            debug!("Image {image} exists");
             Ok(true)
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Check if the error is because the image doesn't exist
             if stderr.contains("No such image") || stderr.contains("not found") {
-                debug!("Image {} does not exist", image);
+                debug!("Image {image} does not exist");
                 Ok(false)
             } else {
                 // Some other error occurred
-                error!("Failed to check image existence: {}", stderr);
+                error!("Failed to check image existence: {stderr}");
                 Err(Error::Docker(format!("Image inspection failed: {stderr}")))
             }
         }
@@ -782,10 +758,7 @@ impl DockerCliClient {
         source: OutputSource,
         director: &mut T,
     ) -> Result<()> {
-        trace!(
-            "Following logs for Docker container with director: {}",
-            container_id
-        );
+        trace!("Following logs for Docker container with director: {container_id}");
 
         // Use docker logs -f to follow the container logs
         let mut child = Command::new(&self.docker_path)
@@ -827,7 +800,7 @@ impl DockerCliClient {
                             }
                         }
                         Err(e) => {
-                            error!("Error reading stdout: {}", e);
+                            error!("Error reading stdout: {e}");
                             break;
                         }
                     }
@@ -860,7 +833,7 @@ impl DockerCliClient {
                             }
                         }
                         Err(e) => {
-                            error!("Error reading stderr: {}", e);
+                            error!("Error reading stderr: {e}");
                             break;
                         }
                     }
@@ -874,7 +847,7 @@ impl DockerCliClient {
         // Process messages from the streams and send them to the director
         while let Some((msg_source, stream)) = rx.recv().await {
             if let Err(e) = director.write_output(&msg_source, &stream).await {
-                error!("Error writing to output director: {}", e);
+                error!("Error writing to output director: {e}");
                 break;
             }
         }
@@ -1344,7 +1317,7 @@ impl Drop for ManagedDockerService {
             // Spawn cleanup task if runtime is available
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 handle.spawn(async move {
-                    warn!("RAII cleanup: Force stopping container {}", container_id);
+                    warn!("RAII cleanup: Force stopping container {container_id}");
 
                     // Try graceful stop first (1 second timeout)
                     match tokio::time::timeout(
@@ -1353,19 +1326,17 @@ impl Drop for ManagedDockerService {
                     )
                     .await
                     {
-                        Ok(Ok(_)) => debug!(
-                            "Container {} stopped gracefully during cleanup",
-                            container_id
-                        ),
+                        Ok(Ok(_)) => {
+                            debug!("Container {container_id} stopped gracefully during cleanup")
+                        }
                         _ => {
                             // Force kill if graceful fails
                             match docker_client.kill_container(&container_id).await {
                                 Ok(_) => {
-                                    warn!("Container {} force killed during cleanup", container_id)
+                                    warn!("Container {container_id} force killed during cleanup")
                                 }
                                 Err(e) => error!(
-                                    "Failed to kill container {} during cleanup: {}",
-                                    container_id, e
+                                    "Failed to kill container {container_id} during cleanup: {e}"
                                 ),
                             }
                         }
@@ -1373,11 +1344,10 @@ impl Drop for ManagedDockerService {
 
                     // Always try to remove
                     match docker_client.remove_container(&container_id).await {
-                        Ok(_) => debug!("Container {} removed during cleanup", container_id),
-                        Err(e) => debug!(
-                            "Failed to remove container {} during cleanup: {}",
-                            container_id, e
-                        ),
+                        Ok(_) => debug!("Container {container_id} removed during cleanup"),
+                        Err(e) => {
+                            debug!("Failed to remove container {container_id} during cleanup: {e}")
+                        }
                     }
                 });
             } else {
@@ -1388,8 +1358,7 @@ impl Drop for ManagedDockerService {
 
                     rt.block_on(async move {
                         warn!(
-                            "RAII cleanup (new runtime): Force stopping container {}",
-                            container_id
+                            "RAII cleanup (new runtime): Force stopping container {container_id}"
                         );
 
                         // Best effort cleanup

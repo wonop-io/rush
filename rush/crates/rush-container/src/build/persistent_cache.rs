@@ -216,10 +216,7 @@ impl PersistentBuildCache {
         // Verify the cached data still exists
         let data_path = self.get_data_path(&key);
         if !data_path.exists() {
-            warn!(
-                "Cache entry {} exists in index but data file is missing",
-                key
-            );
+            warn!("Cache entry {key} exists in index but data file is missing");
             return None;
         }
 

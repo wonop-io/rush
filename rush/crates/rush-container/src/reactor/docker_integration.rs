@@ -116,7 +116,7 @@ impl DockerIntegration {
             let pool_clone = pool.clone();
             tokio::spawn(async move {
                 if let Err(e) = pool_clone.init().await {
-                    log::error!("Failed to initialize connection pool: {}", e);
+                    log::error!("Failed to initialize connection pool: {e}");
                 }
             });
 
@@ -169,7 +169,7 @@ impl DockerIntegration {
                 }
             });
 
-            info!("Started log streaming for {} ({})", component, container_id);
+            info!("Started log streaming for {component} ({container_id})");
         }
 
         Ok(())
@@ -228,7 +228,7 @@ impl DockerIntegration {
     pub async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         let timer = self.start_operation(OperationType::BuildImage).await;
 
-        info!("Building image {} with enhanced Docker client", tag);
+        info!("Building image {tag} with enhanced Docker client");
         let result = self.client.build_image(tag, dockerfile, context).await;
 
         if let Some(timer) = timer {
@@ -250,7 +250,7 @@ impl DockerIntegration {
     ) -> Result<String> {
         let timer = self.start_operation(OperationType::RunContainer).await;
 
-        info!("Running container {} with enhanced Docker client", name);
+        info!("Running container {name} with enhanced Docker client");
         let result = self
             .client
             .run_container(image, name, network, env_vars, ports, volumes)

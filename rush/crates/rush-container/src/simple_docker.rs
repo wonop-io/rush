@@ -153,7 +153,7 @@ impl SimpleDocker {
             }
         }
 
-        debug!("Executing: {:?}", cmd);
+        debug!("Executing: {cmd:?}");
 
         // Run the container and capture the container ID
         let output = cmd.output().await.map_err(|e| {
@@ -246,7 +246,7 @@ impl SimpleDocker {
 
     /// Stop a container using docker stop
     pub async fn stop(&self, name: &str) -> Result<()> {
-        info!("Stopping container {}", name);
+        info!("Stopping container {name}");
 
         // Use docker stop to stop the container
         let output = Command::new(&self.docker_cmd)
@@ -264,13 +264,13 @@ impl SimpleDocker {
             }
         }
 
-        info!("Container {} stopped", name);
+        info!("Container {name} stopped");
         Ok(())
     }
 
     /// Remove a container (force remove)
     pub async fn remove(&self, name: &str) -> Result<()> {
-        info!("Removing container {}", name);
+        info!("Removing container {name}");
 
         // Force remove the container
         let output = Command::new(&self.docker_cmd)
@@ -288,7 +288,7 @@ impl SimpleDocker {
             }
         }
 
-        info!("Container {} removed", name);
+        info!("Container {name} removed");
         Ok(())
     }
 
@@ -374,7 +374,7 @@ impl SimpleDocker {
 
         for name in containers {
             if let Err(e) = self.stop(&name).await {
-                error!("Failed to stop container {}: {}", name, e);
+                error!("Failed to stop container {name}: {e}");
             }
         }
 
@@ -419,7 +419,7 @@ impl SimpleDocker {
 
     /// Pull an image
     pub async fn pull_image(&self, image: &str) -> Result<()> {
-        info!("Pulling image {}", image);
+        info!("Pulling image {image}");
 
         let output = Command::new(&self.docker_cmd)
             .args(["pull", image])
@@ -434,13 +434,13 @@ impl SimpleDocker {
             )));
         }
 
-        info!("Successfully pulled image {}", image);
+        info!("Successfully pulled image {image}");
         Ok(())
     }
 
     /// Create a network
     pub async fn create_network(&self, name: &str) -> Result<()> {
-        info!("Creating network {}", name);
+        info!("Creating network {name}");
 
         let output = Command::new(&self.docker_cmd)
             .args(["network", "create", name])
@@ -456,9 +456,9 @@ impl SimpleDocker {
                     "Failed to create network {name}: {stderr}"
                 )));
             }
-            debug!("Network {} already exists", name);
+            debug!("Network {name} already exists");
         } else {
-            info!("Created network {}", name);
+            info!("Created network {name}");
         }
 
         Ok(())
@@ -466,7 +466,7 @@ impl SimpleDocker {
 
     /// Remove a network
     pub async fn remove_network(&self, name: &str) -> Result<()> {
-        info!("Removing network {}", name);
+        info!("Removing network {name}");
 
         let output = Command::new(&self.docker_cmd)
             .args(["network", "rm", name])
@@ -482,9 +482,9 @@ impl SimpleDocker {
                     "Failed to remove network {name}: {stderr}"
                 )));
             }
-            debug!("Network {} not found", name);
+            debug!("Network {name} not found");
         } else {
-            info!("Removed network {}", name);
+            info!("Removed network {name}");
         }
 
         Ok(())
@@ -518,7 +518,9 @@ mod tests {
 
         let args = options.to_args();
 
-        assert!(args.contains(&"-it".to_string()));
+        // Now we use -d -t instead of -it for detached with pseudo-TTY
+        assert!(args.contains(&"-d".to_string()));
+        assert!(args.contains(&"-t".to_string()));
         assert!(args.contains(&"--name".to_string()));
         assert!(args.contains(&"test-container".to_string()));
         assert!(args.contains(&"--network".to_string()));

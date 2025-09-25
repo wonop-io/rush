@@ -361,7 +361,7 @@ impl SimpleLifecycleManager {
 
         // Clean up any existing container
         if self.docker.exists(&container_name).await? {
-            info!("Removing existing container: {}", container_name);
+            info!("Removing existing container: {container_name}");
             self.docker.stop(&container_name).await?;
             self.docker.remove(&container_name).await?;
         }
@@ -382,10 +382,7 @@ impl SimpleLifecycleManager {
 
         // Run the container interactively with output streaming
         let container_id = self.docker.run_interactive(run_options).await?;
-        info!(
-            "Container {} started with ID: {}",
-            container_name, container_id
-        );
+        info!("Container {container_name} started with ID: {container_id}");
 
         Ok(container_name)
     }
@@ -426,7 +423,7 @@ impl SimpleLifecycleManager {
             if container_name.starts_with(&self.config.product_name) {
                 match self.docker.stop(&container_name).await {
                     Ok(_) => {
-                        info!("Stopped container: {}", container_name);
+                        info!("Stopped container: {container_name}");
 
                         // Extract component name from container name
                         let component_name = container_name
@@ -455,13 +452,13 @@ impl SimpleLifecycleManager {
                             .await;
                     }
                     Err(e) => {
-                        warn!("Failed to stop container {}: {}", container_name, e);
+                        warn!("Failed to stop container {container_name}: {e}");
                     }
                 }
 
                 // Remove the container
                 if let Err(e) = self.docker.remove(&container_name).await {
-                    warn!("Failed to remove container {}: {}", container_name, e);
+                    warn!("Failed to remove container {container_name}: {e}");
                 }
             }
         }
@@ -479,7 +476,7 @@ impl SimpleLifecycleManager {
 
     /// Stop a specific component
     pub async fn stop_component(&self, component_name: &str) -> Result<()> {
-        info!("Stopping component: {}", component_name);
+        info!("Stopping component: {component_name}");
 
         let container_name =
             NamingConvention::container_name(&self.config.product_name, component_name);
@@ -520,7 +517,7 @@ impl SimpleLifecycleManager {
         component_specs: &[rush_build::ComponentBuildSpec],
         built_images: &HashMap<String, String>,
     ) -> Result<String> {
-        info!("Restarting component: {}", component_name);
+        info!("Restarting component: {component_name}");
 
         // Stop it first
         self.stop_component(component_name).await?;

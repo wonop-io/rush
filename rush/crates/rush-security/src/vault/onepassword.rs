@@ -22,7 +22,7 @@ impl OnePassword {
     }
 
     fn run_op_command(&self, args: Vec<String>) -> Result<String, Box<dyn Error>> {
-        debug!("Running 1Password CLI command with args: {:?}", args);
+        debug!("Running 1Password CLI command with args: {args:?}");
         let output = Command::new("op").args(&args).output()?;
 
         if output.status.success() {
@@ -31,7 +31,7 @@ impl OnePassword {
             Ok(stdout)
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            debug!("1Password CLI command failed: {}", stderr);
+            debug!("1Password CLI command failed: {stderr}");
             Err(Box::new(std::io::Error::other(stderr)))
         }
     }
@@ -45,12 +45,7 @@ impl Vault for OnePassword {
         component_name: &str,
         environment: &str,
     ) -> Result<HashMap<String, String>, Box<dyn Error>> {
-        trace!(
-            "Getting secrets for {}-{} in vault {}",
-            component_name,
-            environment,
-            product_name
-        );
+        trace!("Getting secrets for {component_name}-{environment} in vault {product_name}");
         let item_name = format!("{component_name}-{environment}");
         let output = self.run_op_command(
             [
@@ -76,7 +71,7 @@ impl Vault for OnePassword {
         for field in fields {
             if let (Some(label), Some(value)) = (field["label"].as_str(), field["value"].as_str()) {
                 secrets.insert(label.to_string(), value.to_string());
-                debug!("Retrieved secret: {}", label);
+                debug!("Retrieved secret: {label}");
             }
         }
 
@@ -91,12 +86,7 @@ impl Vault for OnePassword {
         environment: &str,
         secrets: HashMap<String, String>,
     ) -> Result<(), Box<dyn Error>> {
-        trace!(
-            "Setting secrets for {}-{} in vault {}",
-            component_name,
-            environment,
-            product_name
-        );
+        trace!("Setting secrets for {component_name}-{environment} in vault {product_name}");
         let item_name = format!("{component_name}-{environment}");
 
         // Check if the item already exists
@@ -123,11 +113,11 @@ impl Vault for OnePassword {
 
         let mut args = vec!["item".to_string()];
         if item_exists {
-            debug!("Item {} already exists, updating", item_name);
+            debug!("Item {item_name} already exists, updating");
             args.push("edit".to_string());
             args.push(item_name.clone());
         } else {
-            debug!("Item {} does not exist, creating new", item_name);
+            debug!("Item {item_name} does not exist, creating new");
             args.push("create".to_string());
             args.push("--title".to_string());
             args.push(item_name.clone());
@@ -141,7 +131,7 @@ impl Vault for OnePassword {
 
         for (key, value) in &secrets {
             args.push(format!("{key}={value}"));
-            debug!("Adding secret: {}", key);
+            debug!("Adding secret: {key}");
         }
 
         let _output = self.run_op_command(args)?;
@@ -155,7 +145,7 @@ impl Vault for OnePassword {
     }
 
     async fn create_vault(&mut self, product_name: &str) -> Result<(), Box<dyn Error>> {
-        trace!("Checking if vault exists: {}", product_name);
+        trace!("Checking if vault exists: {product_name}");
         let list_args = vec![
             "vault".to_string(),
             "list".to_string(),
@@ -171,11 +161,11 @@ impl Vault for OnePassword {
             .iter()
             .any(|vault| vault["name"].as_str() == Some(product_name))
         {
-            trace!("Vault '{}' already exists", product_name);
+            trace!("Vault '{product_name}' already exists");
             return Ok(());
         }
 
-        trace!("Creating vault: {}", product_name);
+        trace!("Creating vault: {product_name}");
         let create_args = vec![
             "vault".to_string(),
             "create".to_string(),
@@ -185,7 +175,7 @@ impl Vault for OnePassword {
         ];
         let _create_output = self.run_op_command(create_args)?;
 
-        trace!("Successfully created vault: {}", product_name);
+        trace!("Successfully created vault: {product_name}");
         Ok(())
     }
 
@@ -195,12 +185,7 @@ impl Vault for OnePassword {
         component_name: &str,
         environment: &str,
     ) -> Result<(), Box<dyn Error>> {
-        trace!(
-            "Removing secrets for {}-{} in vault {}",
-            component_name,
-            environment,
-            product_name
-        );
+        trace!("Removing secrets for {component_name}-{environment} in vault {product_name}");
         let item_name = format!("{component_name}-{environment}");
 
         let args = vec![
@@ -214,12 +199,12 @@ impl Vault for OnePassword {
         ];
         let _output = self.run_op_command(args)?;
 
-        trace!("Successfully removed item {}", item_name);
+        trace!("Successfully removed item {item_name}");
         Ok(())
     }
 
     async fn check_if_vault_exists(&self, product_name: &str) -> Result<bool, Box<dyn Error>> {
-        trace!("Checking if vault exists: {}", product_name);
+        trace!("Checking if vault exists: {product_name}");
         let list_args = vec![
             "vault".to_string(),
             "list".to_string(),
@@ -234,7 +219,7 @@ impl Vault for OnePassword {
         let exists = vaults
             .iter()
             .any(|vault| vault["name"].as_str() == Some(product_name));
-        trace!("Vault '{}' exists: {}", product_name, exists);
+        trace!("Vault '{product_name}' exists: {exists}");
         Ok(exists)
     }
 }

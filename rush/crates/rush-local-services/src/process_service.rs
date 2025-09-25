@@ -103,7 +103,7 @@ impl ProcessLocalService {
                 }
             });
 
-        log::info!("Using Stripe CLI at: {}", stripe_path);
+        log::info!("Using Stripe CLI at: {stripe_path}");
 
         let args = vec![
             "listen".to_string(),

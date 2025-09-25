@@ -229,7 +229,7 @@ impl Drop for ManagedContainerService {
                 // Spawn cleanup task if runtime is available
                 if let Ok(handle) = tokio::runtime::Handle::try_current() {
                     handle.spawn(async move {
-                        log::warn!("RAII cleanup: Force stopping container {}", container_id);
+                        log::warn!("RAII cleanup: Force stopping container {container_id}");
 
                         // Try graceful stop first (1 second timeout)
                         match tokio::time::timeout(
@@ -239,20 +239,16 @@ impl Drop for ManagedContainerService {
                         .await
                         {
                             Ok(Ok(_)) => log::debug!(
-                                "Container {} stopped gracefully during cleanup",
-                                container_id
+                                "Container {container_id} stopped gracefully during cleanup"
                             ),
                             _ => {
                                 // Force kill if graceful fails
                                 match client.kill_container(&container_id).await {
                                     Ok(_) => log::warn!(
-                                        "Container {} force killed during cleanup",
-                                        container_id
+                                        "Container {container_id} force killed during cleanup"
                                     ),
                                     Err(e) => log::error!(
-                                        "Failed to kill container {} during cleanup: {}",
-                                        container_id,
-                                        e
+                                        "Failed to kill container {container_id} during cleanup: {e}"
                                     ),
                                 }
                             }
@@ -261,12 +257,10 @@ impl Drop for ManagedContainerService {
                         // Always try to remove
                         match client.remove_container(&container_id).await {
                             Ok(_) => {
-                                log::debug!("Container {} removed during cleanup", container_id)
+                                log::debug!("Container {container_id} removed during cleanup")
                             }
                             Err(e) => log::debug!(
-                                "Failed to remove container {} during cleanup: {}",
-                                container_id,
-                                e
+                                "Failed to remove container {container_id} during cleanup: {e}"
                             ),
                         }
                     });
@@ -278,8 +272,7 @@ impl Drop for ManagedContainerService {
 
                         rt.block_on(async move {
                             log::warn!(
-                                "RAII cleanup (new runtime): Force stopping container {}",
-                                container_id
+                                "RAII cleanup (new runtime): Force stopping container {container_id}"
                             );
 
                             // Best effort cleanup

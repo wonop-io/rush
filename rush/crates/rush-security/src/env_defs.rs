@@ -51,7 +51,7 @@ impl EnvironmentDefinitions {
     /// * `base_yaml` - Path to the base environment configuration file
     /// * `env_specific_yaml` - Path to the environment-specific configuration file
     pub fn new(product_name: String, base_yaml: &str, env_specific_yaml: &str) -> Self {
-        trace!("Creating new EnvironmentDefinitions for {}", product_name);
+        trace!("Creating new EnvironmentDefinitions for {product_name}");
         let product_dir = PathBuf::from(base_yaml).parent().unwrap().to_path_buf();
 
         let base_components = Self::load_components(base_yaml, true);
@@ -80,39 +80,33 @@ impl EnvironmentDefinitions {
         yaml_path: &str,
         is_base: bool,
     ) -> HashMap<String, HashMap<String, GenerationMethod>> {
-        trace!("Loading components from {}", yaml_path);
+        trace!("Loading components from {yaml_path}");
         match File::open(yaml_path) {
             Ok(mut file) => {
                 let mut contents = String::new();
                 match file.read_to_string(&mut contents) {
-                    Ok(_) => {
-                        match serde_yaml::from_str(&contents) {
-                            Ok(parsed_components) => {
-                                debug!(
-                                    "Successfully parsed component configurations from {}",
-                                    yaml_path
-                                );
-                                parsed_components
-                            }
-                            Err(e) => {
-                                if is_base {
-                                    error!("Unable to parse YAML file '{}': {}", yaml_path, e);
-                                    panic!("Unable to parse base YAML file: {e}");
-                                } else {
-                                    warn!("Unable to parse YAML file '{}': {}. Ignoring specialization.", yaml_path, e);
-                                    HashMap::new()
-                                }
+                    Ok(_) => match serde_yaml::from_str(&contents) {
+                        Ok(parsed_components) => {
+                            debug!("Successfully parsed component configurations from {yaml_path}");
+                            parsed_components
+                        }
+                        Err(e) => {
+                            if is_base {
+                                error!("Unable to parse YAML file '{yaml_path}': {e}");
+                                panic!("Unable to parse base YAML file: {e}");
+                            } else {
+                                warn!("Unable to parse YAML file '{yaml_path}': {e}. Ignoring specialization.");
+                                HashMap::new()
                             }
                         }
-                    }
+                    },
                     Err(e) => {
                         if is_base {
-                            error!("Unable to read YAML file '{}': {}", yaml_path, e);
+                            error!("Unable to read YAML file '{yaml_path}': {e}");
                             panic!("Unable to read base YAML file: {e}");
                         } else {
                             warn!(
-                                "Unable to read YAML file '{}': {}. Ignoring specialization.",
-                                yaml_path, e
+                                "Unable to read YAML file '{yaml_path}': {e}. Ignoring specialization."
                             );
                             HashMap::new()
                         }
@@ -121,13 +115,10 @@ impl EnvironmentDefinitions {
             }
             Err(e) => {
                 if is_base {
-                    error!("Unable to open YAML file '{}': {}", yaml_path, e);
+                    error!("Unable to open YAML file '{yaml_path}': {e}");
                     panic!("Unable to open base YAML file: {e}");
                 } else {
-                    warn!(
-                        "Unable to open YAML file '{}': {}. Ignoring specialization.",
-                        yaml_path, e
-                    );
+                    warn!("Unable to open YAML file '{yaml_path}': {e}. Ignoring specialization.");
                     HashMap::new()
                 }
             }
@@ -179,7 +170,7 @@ impl EnvironmentDefinitions {
     ///
     /// * `component_name` - The name of the component to add
     pub fn add_component(&mut self, component_name: String) {
-        debug!("Adding component: {}", component_name);
+        debug!("Adding component: {component_name}");
         self.components.insert(
             component_name,
             ComponentEnvironment {
@@ -202,15 +193,12 @@ impl EnvironmentDefinitions {
         generation_method: GenerationMethod,
     ) {
         if let Some(component) = self.components.get_mut(component_name) {
-            debug!(
-                "Adding environment variable '{}' to component '{}'",
-                variable_name, component_name
-            );
+            debug!("Adding environment variable '{variable_name}' to component '{component_name}'");
             component
                 .environment_variables
                 .insert(variable_name, generation_method);
         } else {
-            error!("Component '{}' not found", component_name);
+            error!("Component '{component_name}' not found");
             panic!("Component '{component_name}' not found");
         }
     }
@@ -230,11 +218,7 @@ impl EnvironmentDefinitions {
             if let Some(generation_method) = component.environment_variables.get(variable_name) {
                 match generation_method {
                     GenerationMethod::Static(value) => {
-                        trace!(
-                            "Using static value for {}.{}",
-                            component_name,
-                            variable_name
-                        );
+                        trace!("Using static value for {component_name}.{variable_name}");
                         Some(value.clone())
                     }
                     GenerationMethod::Ask(prompt) => {
@@ -244,10 +228,7 @@ impl EnvironmentDefinitions {
                         if std::io::stdin().read_line(&mut input).is_ok() {
                             Some(input.trim().to_string())
                         } else {
-                            error!(
-                                "Failed to read input for {}.{}",
-                                component_name, variable_name
-                            );
+                            error!("Failed to read input for {component_name}.{variable_name}");
                             None
                         }
                     }
@@ -263,10 +244,7 @@ impl EnvironmentDefinitions {
                                 Some(input.to_string())
                             }
                         } else {
-                            error!(
-                                "Failed to read input for {}.{}",
-                                component_name, variable_name
-                            );
+                            error!("Failed to read input for {component_name}.{variable_name}");
                             None
                         }
                     }
@@ -276,15 +254,11 @@ impl EnvironmentDefinitions {
                     }
                 }
             } else {
-                trace!(
-                    "Variable '{}' not found in component '{}'",
-                    variable_name,
-                    component_name
-                );
+                trace!("Variable '{variable_name}' not found in component '{component_name}'");
                 None
             }
         } else {
-            trace!("Component '{}' not found", component_name);
+            trace!("Component '{component_name}' not found");
             None
         }
     }
@@ -312,10 +286,7 @@ impl EnvironmentDefinitions {
                 ) {
                     let component_dir = self.product_dir.join(location);
                     if !component_dir.exists() {
-                        warn!(
-                            "Component '{}' directory not found, skipping",
-                            component_name
-                        );
+                        warn!("Component '{component_name}' directory not found, skipping");
                         continue;
                     }
 
@@ -349,13 +320,10 @@ impl EnvironmentDefinitions {
         if let Some(component) = self.components.get(component_name) {
             // Read existing .env file if it exists
             let mut env_map = if env_path.exists() {
-                debug!(
-                    "Reading existing .env file for component '{}'",
-                    component_name
-                );
+                debug!("Reading existing .env file for component '{component_name}'");
                 self.load_dotenv(&env_path)?
             } else {
-                debug!("Creating new .env file for component '{}'", component_name);
+                debug!("Creating new .env file for component '{component_name}'");
                 HashMap::new()
             };
 
@@ -369,17 +337,14 @@ impl EnvironmentDefinitions {
                         trace!("Setting {}={} in {}", var_name, value, env_path.display());
                         env_map.insert(var_name.clone(), value);
                     } else {
-                        error!(
-                            "Failed to generate value for {}.{}",
-                            component_name, var_name
-                        );
+                        error!("Failed to generate value for {component_name}.{var_name}");
                     }
                 }
             }
 
             // Write the updated .env file
             self.save_dotenv(&env_path, env_map)?;
-            debug!("Saved .env file for component '{}'", component_name);
+            debug!("Saved .env file for component '{component_name}'");
         }
 
         Ok(())

@@ -17,7 +17,7 @@ pub fn setup_environment() {
         .find(|dir| dir.join(".git").exists())
         .expect("Unable to find git repository amongst ancestors");
     env::set_var("RUSHD_ROOT", rushd_root);
-    debug!("RUSHD_ROOT set to: {:?}", rushd_root);
+    debug!("RUSHD_ROOT set to: {rushd_root:?}");
 
     // Set the HOME environment variable if not already set
     if env::var("HOME").is_err() {
@@ -61,7 +61,7 @@ pub fn setup_environment() {
 ///
 /// A Result indicating success or error
 pub fn load_environment_variables(environment: &str) -> Result<(), String> {
-    trace!("Loading environment variables for: {}", environment);
+    trace!("Loading environment variables for: {environment}");
 
     // Set environment-specific variables
     let variable_names = [
@@ -79,25 +79,25 @@ pub fn load_environment_variables(environment: &str) -> Result<(), String> {
 
         if env::var(&env_var_name).is_err() {
             if let Ok(value) = env::var(&fallback_var_name) {
-                debug!("Using fallback value for {}: {}", env_var_name, value);
+                debug!("Using fallback value for {env_var_name}: {value}");
                 env::set_var(&env_var_name, value);
             } else {
                 let msg = format!("{env_var_name} environment variable not found");
-                warn!("{}", msg);
+                warn!("{msg}");
                 return Err(msg);
             }
         } else {
-            debug!("Found environment variable: {}", env_var_name);
+            debug!("Found environment variable: {env_var_name}");
         }
     }
 
     // Check for infrastructure repository
     if env::var("INFRASTRUCTURE_REPOSITORY").is_err() {
         let msg = "INFRASTRUCTURE_REPOSITORY environment variable not found";
-        warn!("{}", msg);
+        warn!("{msg}");
         return Err(msg.to_string());
     }
 
-    info!("Environment variables loaded for: {}", environment);
+    info!("Environment variables loaded for: {environment}");
     Ok(())
 }

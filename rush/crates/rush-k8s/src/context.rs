@@ -51,7 +51,7 @@ impl ContextManager {
 
         // Try to load contexts immediately
         if let Err(e) = manager.refresh_contexts() {
-            warn!("Failed to load Kubernetes contexts: {}", e);
+            warn!("Failed to load Kubernetes contexts: {e}");
         }
 
         manager
@@ -87,12 +87,12 @@ impl ContextManager {
 
         if output.status.success() {
             let context = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            debug!("Current Kubernetes context: {}", context);
+            debug!("Current Kubernetes context: {context}");
             self.current_context = Some(context);
             Ok(())
         } else {
             let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            warn!("Failed to get current context: {}", error);
+            warn!("Failed to get current context: {error}");
             self.current_context = None;
             Err(Error::External(format!(
                 "Failed to get current context: {error}"
@@ -127,7 +127,7 @@ impl ContextManager {
             Ok(())
         } else {
             let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            warn!("Failed to get available contexts: {}", error);
+            warn!("Failed to get available contexts: {error}");
             self.available_contexts.clear();
             Err(Error::External(format!(
                 "Failed to get available contexts: {error}"
@@ -184,7 +184,7 @@ impl ContextManager {
     ///
     /// * `context_name` - The name of the context to set
     pub async fn set_context(&mut self, context_name: &str) -> Result<()> {
-        trace!("Setting Kubernetes context to: {}", context_name);
+        trace!("Setting Kubernetes context to: {context_name}");
 
         // Check if context exists
         if !self.context_exists(context_name) {
@@ -207,7 +207,7 @@ impl ContextManager {
             .map_err(|e| Error::External(format!("Failed to execute kubectl: {e}")))?;
 
         if output.status.success() {
-            debug!("Successfully set Kubernetes context to: {}", context_name);
+            debug!("Successfully set Kubernetes context to: {context_name}");
             self.current_context = Some(context_name.to_string());
             Ok(())
         } else {
@@ -258,10 +258,7 @@ impl ContextManager {
             .map_err(|e| Error::External(format!("Failed to execute kubectl: {e}")))?;
 
         if output.status.success() {
-            debug!(
-                "Successfully validated Kubernetes context: {}",
-                context_name
-            );
+            debug!("Successfully validated Kubernetes context: {context_name}");
             Ok(())
         } else {
             let error = String::from_utf8_lossy(&output.stderr).trim().to_string();

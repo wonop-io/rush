@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -27,7 +27,7 @@ impl ImageTagGenerator {
     /// Create a new ImageTagGenerator
     pub fn new(toolchain: Arc<ToolchainContext>, base_dir: PathBuf) -> Self {
         let gitignore_manager = GitignoreManager::new(&base_dir).unwrap_or_else(|e| {
-            log::warn!("Failed to initialize gitignore manager: {}", e);
+            log::warn!("Failed to initialize gitignore manager: {e}");
             GitignoreManager::default()
         });
 
@@ -177,7 +177,7 @@ impl ImageTagGenerator {
         // Main component directory
         let component_dir = self.get_component_directory(spec);
         if !component_dir.exists() {
-            log::warn!("Component directory does not exist: {:?}", component_dir);
+            log::warn!("Component directory does not exist: {component_dir:?}");
             return (files, dirs);
         }
 
@@ -201,7 +201,7 @@ impl ImageTagGenerator {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    log::debug!("Error walking directory: {}", e);
+                    log::debug!("Error walking directory: {e}");
                     continue;
                 }
             };
@@ -239,7 +239,7 @@ impl ImageTagGenerator {
                 let entry = match entry {
                     Ok(e) => e,
                     Err(e) => {
-                        log::debug!("Error walking base directory: {}", e);
+                        log::debug!("Error walking base directory: {e}");
                         continue;
                     }
                 };
@@ -480,7 +480,7 @@ impl ImageTagGenerator {
         for file in sorted_files {
             // Skip non-existent files
             if !file.exists() {
-                log::trace!("Skipping non-existent file: {:?}", file);
+                log::trace!("Skipping non-existent file: {file:?}");
                 continue;
             }
 
@@ -576,6 +576,7 @@ impl ImageTagGenerator {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
 
     use tempfile::TempDir;
 

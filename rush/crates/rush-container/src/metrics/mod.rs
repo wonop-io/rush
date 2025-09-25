@@ -88,10 +88,7 @@ impl MetricsCollector {
         let mut startup = self.startup_began.write().await;
         *startup = Instant::now();
 
-        info!(
-            "Metrics: Starting {} components in {} waves",
-            total_components, total_waves
-        );
+        info!("Metrics: Starting {total_components} components in {total_waves} waves");
     }
 
     /// Record component startup
@@ -124,10 +121,7 @@ impl MetricsCollector {
             },
         );
 
-        debug!(
-            "Metrics: Component {} starting in wave {}",
-            name, wave_number
-        );
+        debug!("Metrics: Component {name} starting in wave {wave_number}");
     }
 
     /// Record container creation
@@ -139,7 +133,7 @@ impl MetricsCollector {
         let mut components = self.components.write().await;
         if let Some(metrics) = components.get_mut(name) {
             metrics.container_created = Some(Instant::now());
-            debug!("Metrics: Container created for {}", name);
+            debug!("Metrics: Container created for {name}");
         }
     }
 
@@ -153,7 +147,7 @@ impl MetricsCollector {
         if let Some(metrics) = components.get_mut(name) {
             metrics.health_check_began = Some(Instant::now());
             metrics.status = ComponentStatus::WaitingForHealth;
-            debug!("Metrics: Health check started for {}", name);
+            debug!("Metrics: Health check started for {name}");
         }
     }
 
@@ -206,7 +200,7 @@ impl MetricsCollector {
         if let Some(metrics) = components.get_mut(name) {
             metrics.status = ComponentStatus::Failed;
             metrics.error = Some(error.clone());
-            info!("Metrics: Component {} failed: {}", name, error);
+            info!("Metrics: Component {name} failed: {error}");
         }
     }
 
@@ -229,7 +223,7 @@ impl MetricsCollector {
             return;
         }
 
-        info!("Metrics: Wave {} completed", wave_number);
+        info!("Metrics: Wave {wave_number} completed");
     }
 
     /// Record overall startup completion

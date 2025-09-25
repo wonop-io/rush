@@ -373,7 +373,7 @@ impl ToolHandler for BuildToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
-        info!("Building product: {}", product_name);
+        info!("Building product: {product_name}");
 
         // TODO: Integrate with actual Rush build system
         Ok(ToolResult {
@@ -402,7 +402,7 @@ impl ToolHandler for DevToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
-        info!("Starting dev environment for: {}", product_name);
+        info!("Starting dev environment for: {product_name}");
 
         // TODO: Integrate with actual Rush dev command
         Ok(ToolResult {
@@ -440,7 +440,7 @@ impl ToolHandler for DeployToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("environment required".into()))?;
 
-        info!("Deploying {} to {}", product_name, environment);
+        info!("Deploying {product_name} to {environment}");
 
         // TODO: Integrate with actual Rush deploy command
         Ok(ToolResult {
@@ -505,7 +505,7 @@ impl ToolHandler for StopToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
-        info!("Stopping containers for: {}", product_name);
+        info!("Stopping containers for: {product_name}");
 
         // TODO: Integrate with actual Rush stop
         Ok(ToolResult {
@@ -533,7 +533,7 @@ impl ToolHandler for RestartToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
-        info!("Restarting containers for: {}", product_name);
+        info!("Restarting containers for: {product_name}");
 
         // TODO: Integrate with actual Rush restart
         Ok(ToolResult {
@@ -563,7 +563,7 @@ impl ToolHandler for LogsToolHandler {
 
         let _lines = args.get("lines").and_then(|v| v.as_u64()).unwrap_or(100);
 
-        info!("Getting logs for: {}", product_name);
+        info!("Getting logs for: {product_name}");
 
         // TODO: Integrate with actual log retrieval
         Ok(ToolResult {
@@ -617,7 +617,7 @@ impl ToolHandler for SecretsInitToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
-        info!("Initializing secrets for: {}", product_name);
+        info!("Initializing secrets for: {product_name}");
 
         // TODO: Integrate with actual secrets init
         Ok(ToolResult {
@@ -645,7 +645,7 @@ impl ToolHandler for SecretsListToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
-        info!("Listing secrets for: {}", product_name);
+        info!("Listing secrets for: {product_name}");
 
         // TODO: Integrate with actual secrets list
         Ok(ToolResult {

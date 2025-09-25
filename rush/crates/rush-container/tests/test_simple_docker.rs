@@ -74,7 +74,9 @@ async fn test_run_options_building() {
     let args = options.to_args();
 
     // Check that all expected arguments are present
-    assert!(args.contains(&"-it".to_string()));
+    // Now we use -d -t instead of -it for detached with pseudo-TTY
+    assert!(args.contains(&"-d".to_string()));
+    assert!(args.contains(&"-t".to_string()));
     assert!(args.contains(&"--name".to_string()));
     assert!(args.contains(&"test".to_string()));
     assert!(args.contains(&"--network".to_string()));

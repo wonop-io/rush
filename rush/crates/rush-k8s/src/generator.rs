@@ -79,7 +79,7 @@ impl ManifestGenerator {
                     .output_dir
                     .join(format!("{}-deployment.yaml", component.component_name));
                 fs::write(&path, &deployment.content)?;
-                debug!("Generated deployment manifest: {:?}", path);
+                debug!("Generated deployment manifest: {path:?}");
                 manifests.push(deployment);
             }
 
@@ -89,7 +89,7 @@ impl ManifestGenerator {
                     .output_dir
                     .join(format!("{}-service.yaml", component.component_name));
                 fs::write(&path, &service.content)?;
-                debug!("Generated service manifest: {:?}", path);
+                debug!("Generated service manifest: {path:?}");
                 manifests.push(service);
             }
         }
@@ -98,7 +98,7 @@ impl ManifestGenerator {
         if let Some(ingress) = self.generate_ingress(components)? {
             let path = self.output_dir.join("ingress.yaml");
             fs::write(&path, &ingress.content)?;
-            debug!("Generated ingress manifest: {:?}", path);
+            debug!("Generated ingress manifest: {path:?}");
             manifests.push(ingress);
         }
 
@@ -107,7 +107,7 @@ impl ManifestGenerator {
             if let Some(secret) = self.generate_secret(secrets_data)? {
                 let path = self.output_dir.join("secrets.yaml");
                 fs::write(&path, &secret.content)?;
-                debug!("Generated secrets manifest: {:?}", path);
+                debug!("Generated secrets manifest: {path:?}");
                 manifests.push(secret);
             }
         }
@@ -374,7 +374,7 @@ impl ManifestGenerator {
             name: component.component_name.clone(),
             namespace: self.namespace.clone(),
             content: serde_yaml::to_string(&deployment)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize deployment: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Failed to serialize deployment: {e}"))?,
         };
 
         Ok(Some(manifest))
@@ -477,7 +477,7 @@ impl ManifestGenerator {
             name: component.component_name.clone(),
             namespace: self.namespace.clone(),
             content: serde_yaml::to_string(&service)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize service: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Failed to serialize service: {e}"))?,
         };
 
         Ok(Some(manifest))
@@ -612,7 +612,7 @@ impl ManifestGenerator {
             name: format!("{}-ingress", self.environment),
             namespace: self.namespace.clone(),
             content: serde_yaml::to_string(&ingress)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize ingress: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Failed to serialize ingress: {e}"))?,
         };
 
         Ok(Some(manifest))
@@ -662,7 +662,7 @@ impl ManifestGenerator {
             name,
             namespace: self.namespace.clone(),
             content: serde_yaml::to_string(&configmap)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize configmap: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Failed to serialize configmap: {e}"))?,
         })
     }
 
@@ -722,7 +722,7 @@ impl ManifestGenerator {
             name: format!("{}-secrets", self.environment),
             namespace: self.namespace.clone(),
             content: serde_yaml::to_string(&secret)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize secret: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Failed to serialize secret: {e}"))?,
         };
 
         Ok(Some(manifest))

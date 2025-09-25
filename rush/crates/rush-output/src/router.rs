@@ -90,7 +90,7 @@ impl OutputRouter for BroadcastRouter {
             for dest in &mut self.destinations {
                 if let Err(e) = dest.write(event.clone()).await {
                     self.stats.routing_errors += 1;
-                    log::warn!("Failed to write to destination: {}", e);
+                    log::warn!("Failed to write to destination: {e}");
                 }
             }
         }
@@ -161,7 +161,7 @@ impl OutputRouter for RuleBasedRouter {
             if rule.filter.should_pass(&event) {
                 if let Err(e) = rule.sink.write(event.clone()).await {
                     self.stats.routing_errors += 1;
-                    log::warn!("Failed to write to sink: {}", e);
+                    log::warn!("Failed to write to sink: {e}");
                 }
                 matched = true;
 
@@ -175,7 +175,7 @@ impl OutputRouter for RuleBasedRouter {
         if !matched {
             if let Err(e) = self.default_sink.write(event).await {
                 self.stats.routing_errors += 1;
-                log::warn!("Failed to write to default sink: {}", e);
+                log::warn!("Failed to write to default sink: {e}");
             }
         }
 

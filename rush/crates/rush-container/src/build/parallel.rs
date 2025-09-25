@@ -256,7 +256,7 @@ impl ParallelBuildExecutor {
                 let spec = match spec_map.get(component_name) {
                     Some(s) => s.clone(),
                     None => {
-                        warn!("Component {} not found in spec map", component_name);
+                        warn!("Component {component_name} not found in spec map");
                         continue;
                     }
                 };
@@ -282,7 +282,7 @@ impl ParallelBuildExecutor {
                             .tag_generator
                             .compute_tag(&spec)
                             .unwrap_or_else(|e| {
-                                warn!("Failed to compute tag for {}: {}", component_name, e);
+                                warn!("Failed to compute tag for {component_name}: {e}");
                                 "latest".to_string()
                             });
 
@@ -296,8 +296,7 @@ impl ParallelBuildExecutor {
                         {
                             if exists {
                                 info!(
-                                    "Component {} already built ({}), skipping",
-                                    component_name, full_image
+                                    "Component {component_name} already built ({full_image}), skipping"
                                 );
                                 return Ok((component_name, full_image));
                             }
@@ -308,7 +307,7 @@ impl ParallelBuildExecutor {
                     match orchestrator.build_single(spec, &all_specs).await {
                         Ok(image) => Ok((component_name, image)),
                         Err(e) => {
-                            warn!("Failed to build component {}: {}", component_name, e);
+                            warn!("Failed to build component {component_name}: {e}");
                             Err(e)
                         }
                     }

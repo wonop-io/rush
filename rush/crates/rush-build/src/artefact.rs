@@ -30,13 +30,13 @@ impl Artefact {
     ///
     /// A new Artefact instance or an error if the template cannot be loaded
     pub fn new(input_path: String, output_path: String) -> Result<Self, rush_core::error::Error> {
-        trace!("Creating new artefact from {}", input_path);
+        trace!("Creating new artefact from {input_path}");
         let template = match fs::read_to_string(&input_path) {
             Ok(content) => content,
             Err(e) => {
                 error!("\n=== Failed to Load Template File ===");
-                error!("Template path: {}", input_path);
-                error!("Error: {}", e);
+                error!("Template path: {input_path}");
+                error!("Error: {e}");
 
                 // Check if file exists and provide helpful information
                 let path = Path::new(&input_path);
@@ -51,7 +51,7 @@ impl Artefact {
                                 error!("   Files in parent directory:");
                                 for entry in entries.flatten().take(10) {
                                     if let Some(name) = entry.file_name().to_str() {
-                                        error!("     - {}", name);
+                                        error!("     - {name}");
                                     }
                                 }
                             }
@@ -60,7 +60,7 @@ impl Artefact {
                         }
                     }
                 } else if let Err(e) = fs::metadata(&input_path) {
-                    error!("\n⚠️  File exists but cannot read metadata: {}", e);
+                    error!("\n⚠️  File exists but cannot read metadata: {e}");
                     error!("   Possible permission issue?");
                 }
 
@@ -105,7 +105,7 @@ impl Artefact {
         let mut tera = Tera::default();
         tera.add_raw_templates(vec![(&self.input_path, template)])
             .unwrap_or_else(|e| {
-                error!("Failed to add template to Tera: {}", e);
+                error!("Failed to add template to Tera: {e}");
                 panic!("Failed to add template to Tera")
             });
 
@@ -121,13 +121,13 @@ impl Artefact {
                 error!("Template file: {}", self.input_path);
                 error!("Output path: {}", self.output_path);
                 // Show the actual Tera error details
-                error!("\nTera Error: {}", e);
+                error!("\nTera Error: {e}");
 
                 // Show the error chain if available
                 let mut source = e.source();
                 let mut depth = 1;
                 while let Some(err) = source {
-                    error!("  Caused by ({}): {}", depth, err);
+                    error!("  Caused by ({depth}): {err}");
                     source = err.source();
                     depth += 1;
                 }
@@ -141,7 +141,7 @@ impl Artefact {
                     if let Ok(json) = serde_json::to_string_pretty(context) {
                         for line in json.lines().take(50) {
                             // Show first 50 lines of context
-                            error!("     {}", line);
+                            error!("     {line}");
                         }
                         if json.lines().count() > 50 {
                             error!(
@@ -161,7 +161,7 @@ impl Artefact {
                     error!("   - Missing endif/endfor for conditionals/loops");
                 }
 
-                error!("\nContext (debug format): {:#?}", tera_context);
+                error!("\nContext (debug format): {tera_context:#?}");
                 return Err(rush_core::error::Error::Template(
                     e.to_string(), // Use the actual Tera error message instead of wrapping it
                 ));

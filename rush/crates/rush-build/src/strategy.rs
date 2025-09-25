@@ -70,12 +70,12 @@ impl BuildStrategy for RustBinaryStrategy {
             ..
         } = &spec.build_type
         {
-            log::info!("Building Rust binary at {}", location);
+            log::info!("Building Rust binary at {location}");
 
             // Run precompile commands if any
             if let Some(commands) = precompile_commands {
                 for cmd in commands {
-                    log::info!("Running precompile command: {}", cmd);
+                    log::info!("Running precompile command: {cmd}");
                     let parts: Vec<&str> = cmd.split_whitespace().collect();
                     if !parts.is_empty() {
                         let mut command = rush_utils::CommandConfig::new(parts[0]);
@@ -154,12 +154,12 @@ impl BuildStrategy for TrunkWasmStrategy {
             ..
         } = &spec.build_type
         {
-            log::info!("Building Trunk WASM at {}", location);
+            log::info!("Building Trunk WASM at {location}");
 
             // Run precompile commands if any
             if let Some(commands) = precompile_commands {
                 for cmd in commands {
-                    log::info!("Running precompile command: {}", cmd);
+                    log::info!("Running precompile command: {cmd}");
                     let parts: Vec<&str> = cmd.split_whitespace().collect();
                     if !parts.is_empty() {
                         let mut command = rush_utils::CommandConfig::new(parts[0]);
@@ -232,7 +232,7 @@ impl BuildStrategy for ScriptStrategy {
         if let BuildType::Script { location, .. } = &spec.build_type {
             // Check if there's a custom build command
             if let Some(build_cmd) = &spec.build {
-                log::info!("Running build script: {}", build_cmd);
+                log::info!("Running build script: {build_cmd}");
 
                 // Parse command
                 let parts: Vec<&str> = build_cmd.split_whitespace().collect();

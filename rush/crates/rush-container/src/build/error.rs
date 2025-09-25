@@ -139,7 +139,7 @@ where
     };
 
     // Log the error with appropriate formatting
-    error!("Build failed for {}: {}", component_name, error);
+    error!("Build failed for {component_name}: {error}");
 
     // Set up a check interval for file changes
     let mut check_interval = time::interval(Duration::from_millis(100));
@@ -150,7 +150,7 @@ where
     tokio::pin!(timeout);
 
     let start_time = Instant::now();
-    debug!("Starting error recovery for {}", component_name);
+    debug!("Starting error recovery for {component_name}");
 
     // Wait for file changes, timeout, or interruption
     loop {
@@ -167,16 +167,13 @@ where
             }
             _ = &mut timeout => {
                 warn!(
-                    "Build error recovery timeout reached for {} after {:?}",
-                    component_name,
-                    timeout_duration
+                    "Build error recovery timeout reached for {component_name} after {timeout_duration:?}"
                 );
                 return Err(error);
             }
             _ = tokio::signal::ctrl_c() => {
                 info!(
-                    "Termination signal received during build error recovery for {}",
-                    component_name
+                    "Termination signal received during build error recovery for {component_name}"
                 );
                 return Err(BuildError::GenericError {
                     component_name: component_name.to_string(),

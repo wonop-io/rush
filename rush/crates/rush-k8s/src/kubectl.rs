@@ -317,10 +317,10 @@ impl Kubectl {
 
         if self.config.verbose {
             if !stdout.is_empty() {
-                debug!("kubectl stdout: {}", stdout);
+                debug!("kubectl stdout: {stdout}");
             }
             if !stderr.is_empty() && !success {
-                debug!("kubectl stderr: {}", stderr);
+                debug!("kubectl stderr: {stderr}");
             }
         }
 

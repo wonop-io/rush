@@ -104,7 +104,7 @@ impl DockerExecutor {
                 return Err(Error::Docker("Image not found".to_string()));
             }
 
-            error!("Docker command failed: {}", stderr);
+            error!("Docker command failed: {stderr}");
             return Err(Error::Docker(format!("Docker command failed: {stderr}")));
         }
 
@@ -123,7 +123,7 @@ impl DockerClient for DockerExecutor {
             name.to_string(),
         ];
         self.execute(args).await?;
-        info!("Created Docker network: {}", name);
+        info!("Created Docker network: {name}");
         Ok(())
     }
 
@@ -131,7 +131,7 @@ impl DockerClient for DockerExecutor {
     async fn delete_network(&self, name: &str) -> Result<()> {
         let args = vec!["network".to_string(), "rm".to_string(), name.to_string()];
         self.execute(args).await?;
-        info!("Deleted Docker network: {}", name);
+        info!("Deleted Docker network: {name}");
         Ok(())
     }
 
@@ -145,10 +145,7 @@ impl DockerClient for DockerExecutor {
         ];
         let output = self.execute(args).await?;
         let exists = output.lines().any(|line| line.trim() == name);
-        warn!(
-            "network_exists check: searching for '{}', found: {}",
-            name, exists
-        );
+        warn!("network_exists check: searching for '{name}', found: {exists}");
         warn!(
             "Available networks: {}",
             output.lines().collect::<Vec<_>>().join(", ")
@@ -161,7 +158,7 @@ impl DockerClient for DockerExecutor {
     async fn pull_image(&self, image: &str) -> Result<()> {
         let args = vec!["pull".to_string(), image.to_string()];
         self.execute(args).await?;
-        info!("Pulled Docker image: {}", image);
+        info!("Pulled Docker image: {image}");
         Ok(())
     }
 
@@ -178,16 +175,16 @@ impl DockerClient for DockerExecutor {
         args.push(context.to_string());
 
         info!("Docker build command: docker {}", args.join(" "));
-        debug!("Building from context: {}", context);
+        debug!("Building from context: {context}");
 
         let output = self.execute(args).await?;
 
         // Log the build output for debugging
         if !output.trim().is_empty() {
-            debug!("Docker build output:\n{}", output);
+            debug!("Docker build output:\n{output}");
         }
 
-        info!("Built Docker image: {}", tag);
+        info!("Built Docker image: {tag}");
         Ok(())
     }
 
@@ -229,7 +226,7 @@ impl DockerClient for DockerExecutor {
 
         let output = self.execute(args).await?;
         let container_id = output.trim().to_string();
-        info!("Started container {} with ID: {}", name, container_id);
+        info!("Started container {name} with ID: {container_id}");
         Ok(container_id)
     }
 
@@ -275,7 +272,7 @@ impl DockerClient for DockerExecutor {
 
         let output = self.execute(args).await?;
         let container_id = output.trim().to_string();
-        info!("Started container {} with ID: {}", name, container_id);
+        info!("Started container {name} with ID: {container_id}");
         Ok(container_id)
     }
 
@@ -283,7 +280,7 @@ impl DockerClient for DockerExecutor {
     async fn stop_container(&self, container_id: &str) -> Result<()> {
         let args = vec!["stop".to_string(), container_id.to_string()];
         self.execute(args).await?;
-        info!("Stopped container: {}", container_id);
+        info!("Stopped container: {container_id}");
         Ok(())
     }
 
@@ -292,7 +289,7 @@ impl DockerClient for DockerExecutor {
         let args = vec!["kill".to_string(), container_id.to_string()];
         match self.execute(args).await {
             Ok(_) => {
-                info!("Killed container: {}", container_id);
+                info!("Killed container: {container_id}");
                 Ok(())
             }
             Err(e) => {
@@ -300,10 +297,7 @@ impl DockerClient for DockerExecutor {
                 if e.to_string().contains("No such container")
                     || e.to_string().contains("is not running")
                 {
-                    info!(
-                        "Container {} already stopped or doesn't exist",
-                        container_id
-                    );
+                    info!("Container {container_id} already stopped or doesn't exist");
                     Ok(())
                 } else {
                     Err(e)
@@ -316,7 +310,7 @@ impl DockerClient for DockerExecutor {
     async fn remove_container(&self, container_id: &str) -> Result<()> {
         let args = vec!["rm".to_string(), "-f".to_string(), container_id.to_string()];
         self.execute(args).await?;
-        info!("Removed container: {}", container_id);
+        info!("Removed container: {container_id}");
         Ok(())
     }
 
@@ -421,14 +415,14 @@ impl DockerClient for DockerExecutor {
         let id = output.trim();
 
         if id.is_empty() {
-            Err(Error::Docker(format!("Container {} not found", name)))
+            Err(Error::Docker(format!("Container {name} not found")))
         } else {
             Ok(id.to_string())
         }
     }
 
     async fn push_image(&self, image: &str) -> Result<()> {
-        info!("Pushing Docker image: {}", image);
+        info!("Pushing Docker image: {image}");
         let args = vec!["push".to_string(), image.to_string()];
 
         // Docker push can take a while, especially for large images
@@ -436,9 +430,9 @@ impl DockerClient for DockerExecutor {
         let output = self.execute(args).await?;
 
         // Log the output for debugging
-        debug!("Docker push output: {}", output);
+        debug!("Docker push output: {output}");
 
-        info!("Successfully pushed Docker image: {}", image);
+        info!("Successfully pushed Docker image: {image}");
         Ok(())
     }
 
@@ -452,13 +446,13 @@ impl DockerClient for DockerExecutor {
 
         match self.execute(args).await {
             Ok(_) => {
-                debug!("Image {} exists", image);
+                debug!("Image {image} exists");
                 Ok(true)
             }
             Err(e) => {
                 // Check if the error is because the image doesn't exist
                 if e.to_string().contains("Image not found") {
-                    debug!("Image {} does not exist", image);
+                    debug!("Image {image} does not exist");
                     Ok(false)
                 } else {
                     // Some other error occurred

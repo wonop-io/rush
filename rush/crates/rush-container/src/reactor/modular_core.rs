@@ -275,7 +275,7 @@ impl Reactor {
         // Setup and start file watching with watch patterns
         let watcher_start = std::time::Instant::now();
         if let Err(e) = self.setup_watchers().await {
-            warn!("Failed to setup file watchers: {}", e);
+            warn!("Failed to setup file watchers: {e}");
             // Continue anyway - file watching is optional
         }
         crate::profiling::global_tracker()
@@ -321,7 +321,7 @@ impl Reactor {
                         Ok(true) => break,  // Shutdown complete
                         Ok(false) => continue,  // Continue running
                         Err(e) => {
-                            error!("Error handling shutdown: {}", e);
+                            error!("Error handling shutdown: {e}");
                             break;
                         }
                     }
@@ -337,7 +337,7 @@ impl Reactor {
                 _ = tokio::time::sleep(Duration::from_secs(30)) => {
                     debug!("Performing periodic tag-based rebuild check");
                     if let Err(e) = self.trigger_tag_based_rebuild().await {
-                        warn!("Periodic rebuild check failed: {}", e);
+                        warn!("Periodic rebuild check failed: {e}");
                     }
                 }
 
@@ -358,7 +358,7 @@ impl Reactor {
                                 batch.affected_components.len());
 
                             if let Err(e) = self.handle_rebuild(batch).await {
-                                error!("Rebuild failed: {}", e);
+                                error!("Rebuild failed: {e}");
                                 // Build failure is handled in handle_rebuild - containers are stopped
                                 // Continue processing to maintain reactive behavior for future file changes
                             }
@@ -371,7 +371,7 @@ impl Reactor {
                             debug!("File changes detected but no rebuild needed");
                         }
                         WatchResult::Error(e) => {
-                            error!("Watcher error: {}", e);
+                            error!("Watcher error: {e}");
                             // Continue processing despite error
                         }
                     }
@@ -454,7 +454,7 @@ impl Reactor {
                 downstream_components.len()
             );
             for component in &downstream_components {
-                info!("  └─> {} will be restarted due to dependency", component);
+                info!("  └─> {component} will be restarted due to dependency");
             }
             batch.affected_components.extend(downstream_components);
         }
@@ -496,7 +496,7 @@ impl Reactor {
                 .invalidate_cache_for_files(&all_changed_files)
                 .await
             {
-                warn!("Failed to invalidate cache: {}", e);
+                warn!("Failed to invalidate cache: {e}");
                 // Continue with rebuild even if cache invalidation fails
             }
 
@@ -524,7 +524,7 @@ impl Reactor {
         );
         for component_name in &batch.affected_components {
             if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
-                warn!("Failed to stop component {}: {}", component_name, e);
+                warn!("Failed to stop component {component_name}: {e}");
             }
         }
 
@@ -627,7 +627,7 @@ impl Reactor {
                 Ok(())
             }
             Err(e) => {
-                error!("Build failed: {}", e);
+                error!("Build failed: {e}");
 
                 // Record error but stay in current state
                 {
@@ -658,8 +658,7 @@ impl Reactor {
                 for component_name in &batch.affected_components {
                     if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
                         warn!(
-                            "Failed to ensure component {} is stopped after build failure: {}",
-                            component_name, e
+                            "Failed to ensure component {component_name} is stopped after build failure: {e}"
                         );
                     }
                 }
@@ -702,7 +701,7 @@ impl Reactor {
         // Stop affected containers before rebuilding
         for component_name in &components {
             if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
-                warn!("Failed to stop component {}: {}", component_name, e);
+                warn!("Failed to stop component {component_name}: {e}");
             }
         }
 
@@ -791,7 +790,7 @@ impl Reactor {
                 Ok(())
             }
             Err(e) => {
-                error!("Manual build failed: {}", e);
+                error!("Manual build failed: {e}");
 
                 // Publish build failure event
                 let _ = self
@@ -842,7 +841,7 @@ impl Reactor {
         let current_phase = {
             let state = self.state.read().await;
             let phase = state.phase().clone();
-            info!("Current reactor phase: {:?}", phase);
+            info!("Current reactor phase: {phase:?}");
             phase
         };
 
@@ -857,7 +856,7 @@ impl Reactor {
                     .await
             }
             _ => {
-                warn!("Cannot rebuild in current phase: {:?}", current_phase);
+                warn!("Cannot rebuild in current phase: {current_phase:?}");
                 Ok(())
             }
         }
@@ -942,7 +941,7 @@ impl Reactor {
                 Ok(())
             }
             Err(e) => {
-                error!("Initial build failed: {}", e);
+                error!("Initial build failed: {e}");
 
                 // Record error and transition to Error state
                 {
@@ -1017,7 +1016,7 @@ impl Reactor {
     async fn handle_shutdown_event(&mut self, event: ShutdownEvent) -> Result<bool> {
         match event.phase {
             ShutdownPhase::Graceful { deadline } => {
-                info!("Initiating shutdown, deadline: {:?}", deadline);
+                info!("Initiating shutdown, deadline: {deadline:?}");
 
                 // Cancel all builds immediately
                 self.build_orchestrator.cancel_all_builds().await;
@@ -1128,7 +1127,7 @@ impl Reactor {
                 .stop_services(&services_to_stop)
                 .await
             {
-                warn!("Failed to stop services during cleanup: {}", e);
+                warn!("Failed to stop services during cleanup: {e}");
             }
         }
 
@@ -1144,7 +1143,7 @@ impl Reactor {
                 &self.config.base.product_name,
                 &container_name,
             );
-            info!("Explicitly stopping container: {}", docker_container_name);
+            info!("Explicitly stopping container: {docker_container_name}");
 
             if let Some(docker_client) = &service.docker_client {
                 // First try to get the container ID by name
@@ -1153,10 +1152,7 @@ impl Reactor {
                     .await
                 {
                     Ok(container_id) => {
-                        info!(
-                            "Found container {} with ID: {}",
-                            docker_container_name, container_id
-                        );
+                        info!("Found container {docker_container_name} with ID: {container_id}");
 
                         // Try graceful stop first
                         match tokio::time::timeout(
@@ -1166,32 +1162,24 @@ impl Reactor {
                         .await
                         {
                             Ok(Ok(_)) => {
-                                info!("Container {} stopped gracefully", docker_container_name)
+                                info!("Container {docker_container_name} stopped gracefully")
                             }
                             Ok(Err(e)) => {
                                 warn!(
-                                    "Failed to stop container {}: {}, attempting force kill",
-                                    docker_container_name, e
+                                    "Failed to stop container {docker_container_name}: {e}, attempting force kill"
                                 );
                                 // Try force kill
                                 if let Err(e) = docker_client.kill_container(&container_id).await {
-                                    error!(
-                                        "Failed to kill container {}: {}",
-                                        docker_container_name, e
-                                    );
+                                    error!("Failed to kill container {docker_container_name}: {e}");
                                 }
                             }
                             Err(_) => {
                                 warn!(
-                                    "Timeout stopping container {}, attempting force kill",
-                                    docker_container_name
+                                    "Timeout stopping container {docker_container_name}, attempting force kill"
                                 );
                                 // Try force kill
                                 if let Err(e) = docker_client.kill_container(&container_id).await {
-                                    error!(
-                                        "Failed to kill container {}: {}",
-                                        docker_container_name, e
-                                    );
+                                    error!("Failed to kill container {docker_container_name}: {e}");
                                 }
                             }
                         }
@@ -1199,20 +1187,15 @@ impl Reactor {
                         // Remove container
                         if let Err(e) = docker_client.remove_container(&container_id).await {
                             debug!(
-                                "Failed to remove container {} (may not exist): {}",
-                                docker_container_name, e
+                                "Failed to remove container {docker_container_name} (may not exist): {e}"
                             );
                         }
                     }
                     Err(e) => {
-                        debug!(
-                            "Container {} not found by name lookup: {}",
-                            docker_container_name, e
-                        );
+                        debug!("Container {docker_container_name} not found by name lookup: {e}");
                         // Fallback: try to stop by name directly
                         info!(
-                            "Attempting to stop container by name directly: {}",
-                            docker_container_name
+                            "Attempting to stop container by name directly: {docker_container_name}"
                         );
 
                         // Try to stop using docker CLI directly by name
@@ -1224,8 +1207,7 @@ impl Reactor {
                         match stop_result {
                             Ok(output) if output.status.success() => {
                                 info!(
-                                    "Successfully stopped container {} via docker CLI",
-                                    docker_container_name
+                                    "Successfully stopped container {docker_container_name} via docker CLI"
                                 );
 
                                 // Remove the container
@@ -1236,8 +1218,7 @@ impl Reactor {
                             }
                             _ => {
                                 debug!(
-                                    "Container {} may not exist or already stopped",
-                                    docker_container_name
+                                    "Container {docker_container_name} may not exist or already stopped"
                                 );
                             }
                         }
@@ -1266,7 +1247,7 @@ impl Reactor {
             let container_ids = String::from_utf8_lossy(&output.stdout);
             for container_id in container_ids.lines() {
                 if !container_id.is_empty() {
-                    info!("Force stopping container: {}", container_id);
+                    info!("Force stopping container: {container_id}");
                     let _ = tokio::process::Command::new("docker")
                         .args(["rm", "-f", container_id])
                         .output()
@@ -1350,14 +1331,14 @@ impl Reactor {
     pub fn set_verbose(&mut self, verbose: bool) {
         // Update configuration for verbose logging
         // This would typically be handled through the configuration system
-        info!("Verbose mode set to: {}", verbose);
+        info!("Verbose mode set to: {verbose}");
     }
 
     /// Set force rebuild flag
     pub fn set_force_rebuild(&mut self, force: bool) {
         // Store the force rebuild setting for use in build operations
         // This affects the behavior of build_components method
-        info!("Force rebuild set to: {}", force);
+        info!("Force rebuild set to: {force}");
         self.force_rebuild = force;
     }
 
@@ -1424,7 +1405,7 @@ impl Reactor {
                 // The watcher is already initialized with component specs
                 // Just ensure it's watching the product directory (recursive)
                 if let Err(e) = watcher.watch_directory(&self.config.base.product_dir) {
-                    warn!("Failed to start file watcher: {}", e);
+                    warn!("Failed to start file watcher: {e}");
                 }
                 info!(
                     "File watcher active, monitoring {} unique directories",
@@ -1532,10 +1513,7 @@ impl Reactor {
         {
             // Container exists, try to get its image tag
             // We'll just use the container ID as a proxy for now
-            debug!(
-                "Found running container for '{}': {}",
-                component_name, container_id
-            );
+            debug!("Found running container for '{component_name}': {container_id}");
             // In a real implementation, we'd need to inspect the container to get its image tag
             // For now, we'll skip this and check other sources
         }
@@ -1544,10 +1522,7 @@ impl Reactor {
         if let Some(image_name) = self.built_images.get(component_name) {
             if let Some(tag_pos) = image_name.rfind(':') {
                 let tag = &image_name[tag_pos + 1..];
-                debug!(
-                    "Found built image for '{}' with tag: {}",
-                    component_name, tag
-                );
+                debug!("Found built image for '{component_name}' with tag: {tag}");
                 return Ok(tag.to_string());
             }
         }
@@ -1557,16 +1532,13 @@ impl Reactor {
         if let Some(cached_entry) = cache_guard.get_raw_entry(component_name).await {
             if let Some(tag_pos) = cached_entry.image_name.rfind(':') {
                 let tag = &cached_entry.image_name[tag_pos + 1..];
-                debug!(
-                    "Found cached image for '{}' with tag: {}",
-                    component_name, tag
-                );
+                debug!("Found cached image for '{component_name}' with tag: {tag}");
                 return Ok(tag.to_string());
             }
         }
 
         // No existing deployment or cached image
-        debug!("No deployed or cached image found for '{}'", component_name);
+        debug!("No deployed or cached image found for '{component_name}'");
         Ok(String::new())
     }
 
@@ -1812,7 +1784,7 @@ impl Reactor {
         for (component_name, image_name) in &self.built_images {
             // Get the full registry tag
             let registry_tag = self.get_registry_tag(image_name);
-            info!("Pushing image: {} -> {}", component_name, registry_tag);
+            info!("Pushing image: {component_name} -> {registry_tag}");
 
             // Tag the image for the registry if needed
             if registry_tag != *image_name {
@@ -1831,14 +1803,11 @@ impl Reactor {
 
             // Use the Docker client to push the image
             if let Err(e) = self.docker_client().push_image(&registry_tag).await {
-                error!(
-                    "Failed to push image {} for component {}: {}",
-                    registry_tag, component_name, e
-                );
+                error!("Failed to push image {registry_tag} for component {component_name}: {e}");
                 return Err(e);
             }
 
-            info!("Successfully pushed image: {}", registry_tag);
+            info!("Successfully pushed image: {registry_tag}");
         }
 
         info!("Build and push completed successfully");
@@ -1862,14 +1831,11 @@ impl Reactor {
 
     /// Select Kubernetes context for deployment
     pub async fn select_kubernetes_context(&self, context: &str) -> Result<()> {
-        info!("Selecting Kubernetes context: {}", context);
+        info!("Selecting Kubernetes context: {context}");
 
         // Kubectl context selection implementation would go here
         // This would typically run: kubectl config use-context <context>
-        debug!(
-            "Kubernetes context selection not implemented yet: {}",
-            context
-        );
+        debug!("Kubernetes context selection not implemented yet: {context}");
 
         Ok(())
     }
@@ -2292,7 +2258,7 @@ impl Reactor {
                 }
 
                 let file_name = path.file_name().unwrap().to_str().unwrap();
-                debug!("Processing template: {}", file_name);
+                debug!("Processing template: {file_name}");
 
                 // Read template content
                 let template_content = std::fs::read_to_string(&path).map_err(|e| {
@@ -2320,10 +2286,10 @@ impl Reactor {
                         == "true";
 
                     if use_sealed_secrets {
-                        debug!("Applying SealedSecrets encoder to {}", file_name);
+                        debug!("Applying SealedSecrets encoder to {file_name}");
                         let encoder = rush_k8s::encoder::create_encoder("kubeseal");
                         if let Err(e) = encoder.encode_file(output_path.to_str().unwrap()) {
-                            warn!("Failed to encode secrets with kubeseal: {}. Secrets will remain unencrypted.", e);
+                            warn!("Failed to encode secrets with kubeseal: {e}. Secrets will remain unencrypted.");
                         }
                     }
                 }
@@ -2381,10 +2347,10 @@ impl Reactor {
         let mut state = self.state.write().await;
         if in_progress {
             if let Err(e) = state.transition_to(ReactorPhase::Rebuilding) {
-                debug!("Could not transition to rebuilding state: {}", e);
+                debug!("Could not transition to rebuilding state: {e}");
             }
         } else if let Err(e) = state.transition_to(ReactorPhase::Idle) {
-            debug!("Could not transition to idle state: {}", e);
+            debug!("Could not transition to idle state: {e}");
         }
     }
 
@@ -2402,14 +2368,14 @@ impl Reactor {
             .await;
 
         if !network_exists {
-            info!("Creating Docker network: {}", network_name);
+            info!("Creating Docker network: {network_name}");
             let create_start = std::time::Instant::now();
             self.docker_client().create_network(network_name).await?;
             crate::profiling::global_tracker()
                 .record_with_component("network_setup", "create_network", create_start.elapsed())
                 .await;
         } else {
-            debug!("Network {} already exists", network_name);
+            debug!("Network {network_name} already exists");
         }
 
         crate::profiling::global_tracker()
@@ -2446,7 +2412,7 @@ impl Reactor {
         // Build and start all containers initially
         let initial_build_start = std::time::Instant::now();
         if let Err(e) = self.rebuild_all().await {
-            error!("Initial build failed: {}", e);
+            error!("Initial build failed: {e}");
             // Continue anyway - the reactor will handle file watching and rebuilds
             info!("Waiting for file changes to retry build...");
             info!("💡 Tip: Fix the build error and save a file to trigger rebuild");
@@ -2539,10 +2505,7 @@ impl Reactor {
                     );
                     // Compute deterministic tag for this component
                     let tag = tag_generator.compute_tag(&spec).unwrap_or_else(|e| {
-                        warn!(
-                            "Failed to compute tag for {}: {}, using 'latest'",
-                            name_str, e
-                        );
+                        warn!("Failed to compute tag for {name_str}: {e}, using 'latest'");
                         "latest".to_string()
                     });
                     spec.tagged_image_name = Some(format!("{name_str}:{tag}"));

@@ -406,13 +406,13 @@ impl ConfigWatcher for LoggingWatcher {
     async fn on_change(&self, change: ConfigChange, entry: Option<&ConfigEntry>) {
         match change {
             ConfigChange::Added(key) => {
-                log::info!("Configuration added: {}", key);
+                log::info!("Configuration added: {key}");
             }
             ConfigChange::Updated(key) => {
-                log::info!("Configuration updated: {}", key);
+                log::info!("Configuration updated: {key}");
             }
             ConfigChange::Removed(key) => {
-                log::info!("Configuration removed: {}", key);
+                log::info!("Configuration removed: {key}");
             }
             ConfigChange::Reloaded => {
                 log::info!("Configuration reloaded");

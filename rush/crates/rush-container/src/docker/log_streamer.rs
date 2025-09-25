@@ -222,7 +222,7 @@ impl LogStream {
 
             // Send to channel
             if let Err(e) = self.sender.send(entry) {
-                debug!("Failed to send log entry: {}", e);
+                debug!("Failed to send log entry: {e}");
             }
         }
 
@@ -395,7 +395,7 @@ impl LogStreamManager {
         let mut streams = self.streams.write().await;
         streams.retain(|s| s.container_id != container_id);
 
-        info!("Stopped log streaming for container {}", container_id);
+        info!("Stopped log streaming for container {container_id}");
     }
 
     /// Get all active streams

@@ -38,10 +38,7 @@ impl BuildProcessor {
         let needs_rebuild = match image.evaluate_rebuild_needed().await {
             Ok(needed) => needed,
             Err(e) => {
-                warn!(
-                    "Failed to evaluate cache status: {}, proceeding with build",
-                    e
-                );
+                warn!("Failed to evaluate cache status: {e}, proceeding with build");
                 true
             }
         };
@@ -56,14 +53,11 @@ impl BuildProcessor {
 
         let component_name = image.component_name().to_string();
 
-        info!("Building {}", component_name);
+        info!("Building {component_name}");
 
         // Check for shutdown again before expensive operations
         if shutdown_token.is_cancelled() {
-            info!(
-                "Build cancelled for {} due to shutdown signal",
-                component_name
-            );
+            info!("Build cancelled for {component_name} due to shutdown signal");
             return Err(Error::Terminated("Build cancelled due to shutdown".into()));
         }
 
@@ -76,7 +70,7 @@ impl BuildProcessor {
                 }
             }
             _ = shutdown_token.cancelled() => {
-                info!("Build context generation cancelled for {} due to shutdown", component_name);
+                info!("Build context generation cancelled for {component_name} due to shutdown");
                 return Err(Error::Terminated("Build cancelled due to shutdown".into()));
             }
         };
@@ -85,20 +79,20 @@ impl BuildProcessor {
         let build_result = tokio::select! {
             result = image.build() => result,
             _ = shutdown_token.cancelled() => {
-                info!("Build cancelled for {} due to shutdown signal", component_name);
+                info!("Build cancelled for {component_name} due to shutdown signal");
                 return Err(Error::Terminated("Build cancelled due to shutdown".into()));
             }
         };
 
         match build_result {
             Ok(_) => {
-                info!("Successfully built {}", component_name);
+                info!("Successfully built {component_name}");
                 // Mark that the image was recently rebuilt
                 image.set_was_recently_rebuilt(true);
                 Ok(())
             }
             Err(e) => {
-                error!("Build failed for {}: {}", component_name, e);
+                error!("Build failed for {component_name}: {e}");
                 Err(e)
             }
         }
@@ -138,10 +132,7 @@ impl BuildProcessor {
 
         // Check if shutdown was initiated before handling the error
         if shutdown_token.is_cancelled() {
-            info!(
-                "Build error recovery cancelled for {} due to shutdown",
-                component_name
-            );
+            info!("Build error recovery cancelled for {component_name} due to shutdown");
             return Err(Error::Terminated(
                 "Build error recovery cancelled due to shutdown".into(),
             ));
@@ -153,11 +144,8 @@ impl BuildProcessor {
             .replace("error[", &format!("{}[", "error".red().bold()))
             .replace("warning:", &format!("{}:", "warning".yellow().bold()));
 
-        error!("Build failed for {}: {}", component_name, colorized_error);
-        info!(
-            "Waiting for file changes or termination signal to retry build for {}",
-            component_name
-        );
+        error!("Build failed for {component_name}: {colorized_error}");
+        info!("Waiting for file changes or termination signal to retry build for {component_name}");
 
         // Check for file changes while waiting
         let mut check_interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
@@ -175,11 +163,11 @@ impl BuildProcessor {
                     }
                 }
                 _ = &mut timeout => {
-                    warn!("Build error recovery timeout reached for {}", component_name);
+                    warn!("Build error recovery timeout reached for {component_name}");
                     return Err(format!("Build failed for {component_name} and recovery timeout reached").into());
                 }
                 _ = shutdown_token.cancelled() => {
-                    info!("Build error recovery terminated for {} due to shutdown signal", component_name);
+                    info!("Build error recovery terminated for {component_name} due to shutdown signal");
                     return Err(Error::Terminated("Build process terminated by user".into()));
                 }
             }

@@ -138,7 +138,7 @@ impl SmartWatcher {
                 .watch(path, mode)
                 .map_err(|e| Error::External(format!("Failed to watch path: {e}")))?;
 
-            info!("Added watch path: {:?}", path);
+            info!("Added watch path: {path:?}");
         }
 
         Ok(())
@@ -182,7 +182,7 @@ impl SmartWatcher {
                     }
                     Err(errors) => {
                         for error in errors {
-                            error!("File watch error: {:?}", error);
+                            error!("File watch error: {error:?}");
                         }
                     }
                 }
@@ -256,7 +256,7 @@ impl SmartWatcher {
                     // Check ignore patterns
                     for pattern in ignore_patterns {
                         if pattern.is_match(&path_str) {
-                            debug!("Ignoring path: {}", path_str);
+                            debug!("Ignoring path: {path_str}");
                             return None;
                         }
                     }
@@ -271,7 +271,7 @@ impl SmartWatcher {
                             }
                         }
                         if !included {
-                            debug!("Path not in include list: {}", path_str);
+                            debug!("Path not in include list: {path_str}");
                             return None;
                         }
                     }

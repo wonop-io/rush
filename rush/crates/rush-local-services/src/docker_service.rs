@@ -59,7 +59,7 @@ impl DockerLocalService {
         {
             Ok(child) => child,
             Err(e) => {
-                log::error!("Failed to follow container logs: {}", e);
+                log::error!("Failed to follow container logs: {e}");
                 return;
             }
         };

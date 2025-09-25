@@ -204,7 +204,7 @@ impl BuildCache {
                 self.stats.total_entries = self.entries.len();
             }
             Err(e) => {
-                warn!("Failed to parse cache file: {}", e);
+                warn!("Failed to parse cache file: {e}");
                 // Start with empty cache on parse error
             }
         }
@@ -238,16 +238,12 @@ impl BuildCache {
                 Some(entry.image_name.clone())
             } else {
                 info!(
-                    "[CACHE MISS] Component '{}': Cache entry invalid (spec or source changed)",
-                    component
+                    "[CACHE MISS] Component '{component}': Cache entry invalid (spec or source changed)"
                 );
                 None
             }
         } else {
-            info!(
-                "[CACHE MISS] Component '{}': No cached image found",
-                component
-            );
+            info!("[CACHE MISS] Component '{component}': No cached image found");
             None
         }
     }
@@ -272,7 +268,7 @@ impl BuildCache {
 
         // Save cache periodically
         if let Err(e) = self.save().await {
-            warn!("Failed to save cache: {}", e);
+            warn!("Failed to save cache: {e}");
         }
     }
 
@@ -294,7 +290,7 @@ impl BuildCache {
             let expired = age > chrono::Duration::from_std(self.expiry).unwrap();
 
             if expired {
-                debug!("Cache entry for {} is expired", component);
+                debug!("Cache entry for {component} is expired");
             }
 
             expired
@@ -318,10 +314,7 @@ impl BuildCache {
         for (component, entry) in &self.entries {
             // Check if any changed file affects this component
             if let Some(spec) = &entry.spec {
-                debug!(
-                    "[CACHE] Checking component '{}' with spec for invalidation",
-                    component
-                );
+                debug!("[CACHE] Checking component '{component}' with spec for invalidation");
                 let mut should_invalidate = false;
 
                 // Get location from build_type if available
@@ -373,8 +366,7 @@ impl BuildCache {
 
                             for file in changed_files {
                                 if file == &abs_artifact_path || file.ends_with(source_path) {
-                                    info!("[CACHE INVALIDATE] Component '{}': Artifact template '{}' changed",
-                                        component, source_path);
+                                    info!("[CACHE INVALIDATE] Component '{component}': Artifact template '{source_path}' changed");
                                     should_invalidate = true;
                                     break;
                                 }
@@ -394,8 +386,7 @@ impl BuildCache {
                     for file in changed_files {
                         if file == &rendered_nginx {
                             info!(
-                                "[CACHE INVALIDATE] Component '{}': Rendered nginx.conf changed",
-                                component
+                                "[CACHE INVALIDATE] Component '{component}': Rendered nginx.conf changed"
                             );
                             should_invalidate = true;
                             break;
@@ -406,13 +397,10 @@ impl BuildCache {
                 if should_invalidate {
                     invalidated.push(component.clone());
                 } else {
-                    debug!(
-                        "[CACHE] Component '{}' not affected by file changes",
-                        component
-                    );
+                    debug!("[CACHE] Component '{component}' not affected by file changes");
                 }
             } else {
-                warn!("[CACHE] Component '{}' has no build spec - cannot check for invalidation! This is a bug.", component);
+                warn!("[CACHE] Component '{component}' has no build spec - cannot check for invalidation! This is a bug.");
             }
         }
 
@@ -445,7 +433,7 @@ impl BuildCache {
         let cache_file = self.cache_dir.join("cache.json");
         if cache_file.exists() {
             if let Err(e) = tokio::fs::remove_file(&cache_file).await {
-                warn!("Failed to remove cache file: {}", e);
+                warn!("Failed to remove cache file: {e}");
             }
         }
     }
@@ -471,7 +459,7 @@ impl BuildCache {
 
             // Save updated cache
             if let Err(e) = self.save().await {
-                warn!("Failed to save cache after cleanup: {}", e);
+                warn!("Failed to save cache after cleanup: {e}");
             }
         }
 

@@ -107,7 +107,7 @@ impl EventBus {
 
         for handler in handlers.iter() {
             if let Err(e) = handler.handle(&event).await {
-                log::warn!("Event handler error: {}", e);
+                log::warn!("Event handler error: {e}");
                 // Continue processing other handlers even if one fails
             }
         }
@@ -167,7 +167,7 @@ impl LoggingEventHandler {
 #[async_trait::async_trait]
 impl EventHandler for LoggingEventHandler {
     async fn handle(&self, event: &SystemEvent) -> crate::Result<()> {
-        log::log!(self.level, "Event: {:?}", event);
+        log::log!(self.level, "Event: {event:?}");
         Ok(())
     }
 }

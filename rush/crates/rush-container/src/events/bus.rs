@@ -64,7 +64,7 @@ impl EventBus {
                         // Handle events in parallel
                         tokio::spawn(async move {
                             if let Err(e) = handler.handle(event).await {
-                                log::error!("Event handler error: {}", e);
+                                log::error!("Event handler error: {e}");
                             }
                         });
                     }

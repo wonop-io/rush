@@ -102,10 +102,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
         working_dir,
     } = options;
 
-    debug!(
-        "Starting process: {} {:?} for component {}",
-        command, args, component_name
-    );
+    debug!("Starting process: {command} {args:?} for component {component_name}");
 
     let shutdown_token = if respect_shutdown {
         Some(shutdown::global_shutdown().cancellation_token())
@@ -133,7 +130,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
 
     // Set working directory if provided
     if let Some(dir) = working_dir {
-        debug!("Setting working directory to: {:?}", dir);
+        debug!("Setting working directory to: {dir:?}");
         cmd.current_dir(dir);
     }
 
@@ -159,7 +156,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
     let sink_clone = sink.clone();
     let shutdown_clone = shutdown_token.clone();
     let stdout_handle = tokio::spawn(async move {
-        debug!("Starting stdout reader for {}", component_clone);
+        debug!("Starting stdout reader for {component_clone}");
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
 
@@ -172,7 +169,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
                         }
                     }
                     _ = token.cancelled() => {
-                        debug!("Stdout reader for {} shutting down", component_clone);
+                        debug!("Stdout reader for {component_clone} shutting down");
                         break;
                     }
                 }
@@ -193,13 +190,13 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
             let mut sink_guard = sink_clone.lock().await;
             if let Err(e) = sink_guard.write(entry).await {
                 if shutdown_clone.as_ref().is_none_or(|t| !t.is_cancelled()) {
-                    error!("Failed to write stdout: {}", e);
+                    error!("Failed to write stdout: {e}");
                 }
             }
 
             line.clear();
         }
-        debug!("Stdout reader finished for {}", component_clone);
+        debug!("Stdout reader finished for {component_clone}");
     });
     handles.push(stdout_handle);
 
@@ -208,7 +205,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
     let sink_clone = sink.clone();
     let shutdown_clone = shutdown_token.clone();
     let stderr_handle = tokio::spawn(async move {
-        debug!("Starting stderr reader for {}", component_clone);
+        debug!("Starting stderr reader for {component_clone}");
         let mut reader = BufReader::new(stderr);
         let mut line = String::new();
 
@@ -221,7 +218,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
                         }
                     }
                     _ = token.cancelled() => {
-                        debug!("Stderr reader for {} shutting down", component_clone);
+                        debug!("Stderr reader for {component_clone} shutting down");
                         break;
                     }
                 }
@@ -245,13 +242,13 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
             let mut sink_guard = sink_clone.lock().await;
             if let Err(e) = sink_guard.write(entry).await {
                 if shutdown_clone.as_ref().is_none_or(|t| !t.is_cancelled()) {
-                    error!("Failed to write stderr: {}", e);
+                    error!("Failed to write stderr: {e}");
                 }
             }
 
             line.clear();
         }
-        debug!("Stderr reader finished for {}", component_clone);
+        debug!("Stderr reader finished for {component_clone}");
     });
     handles.push(stderr_handle);
 
@@ -262,15 +259,15 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
                 for handle in handles {
                     if let Err(e) = handle.await {
                         if !token.is_cancelled() {
-                            error!("Reader task failed: {}", e);
+                            error!("Reader task failed: {e}");
                         }
                     }
                 }
             } => {
-                debug!("All readers finished for {}", component_name);
+                debug!("All readers finished for {component_name}");
             }
             _ = token.cancelled() => {
-                debug!("Shutting down capture for {}", component_name);
+                debug!("Shutting down capture for {component_name}");
                 // Kill the child process on shutdown
                 let _ = child.kill().await;
                 return Ok(());
@@ -279,7 +276,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
     } else {
         for handle in handles {
             if let Err(e) = handle.await {
-                error!("Reader task failed: {}", e);
+                error!("Reader task failed: {e}");
             }
         }
     }
@@ -301,8 +298,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
             let exit_code = status.code().unwrap_or(-1);
             if exit_code == 255 || exit_code == 1 || exit_code == 125 {
                 debug!(
-                    "{} process for {} exited with code {} (likely due to container stop)",
-                    command, component_name, exit_code
+                    "{command} process for {component_name} exited with code {exit_code} (likely due to container stop)"
                 );
                 return Ok(());
             }
@@ -350,7 +346,7 @@ pub async fn follow_container_logs_from_start(
     component_name: String,
     sink: Arc<Mutex<Box<dyn Sink>>>,
 ) -> Result<()> {
-    debug!("Following logs for container {} from start", container_id);
+    debug!("Following logs for container {container_id} from start");
 
     let args = vec![
         "logs".to_string(),
@@ -382,8 +378,7 @@ pub async fn follow_build_output_simple(
     working_dir: Option<PathBuf>,
 ) -> Result<()> {
     debug!(
-        "Starting build command for {}: {:?} in dir: {:?}",
-        component_name, build_command, working_dir
+        "Starting build command for {component_name}: {build_command:?} in dir: {working_dir:?}"
     );
 
     if build_command.is_empty() {
@@ -414,7 +409,7 @@ pub async fn capture_docker_build(
     sink: Arc<Mutex<Box<dyn Sink>>>,
     platform: Option<&str>,
 ) -> Result<()> {
-    debug!("Building Docker image {} for {}", tag, component_name);
+    debug!("Building Docker image {tag} for {component_name}");
 
     let mut args = vec!["build".to_string()];
 

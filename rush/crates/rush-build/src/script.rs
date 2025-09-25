@@ -25,7 +25,7 @@ impl BuildScript {
     ///
     /// * `build_type` - The build type to generate a script for
     pub fn new(build_type: BuildType) -> Self {
-        trace!("Creating new BuildScript for {:?}", build_type);
+        trace!("Creating new BuildScript for {build_type:?}");
         BuildScript { build_type }
     }
 
@@ -82,12 +82,12 @@ impl BuildScript {
         match TEMPLATES.render(template_name, context) {
             Ok(script) => script,
             Err(e) => {
-                log::error!("Error rendering build script template: {}", e);
+                log::error!("Error rendering build script template: {e}");
 
                 // Log detailed error information for debugging
                 let mut cause = e.source();
                 while let Some(err) = cause {
-                    log::error!("Caused by: {}", err);
+                    log::error!("Caused by: {err}");
                     cause = err.source();
                 }
 

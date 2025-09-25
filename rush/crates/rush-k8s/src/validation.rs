@@ -33,9 +33,7 @@ pub struct KubeconformValidator;
 impl K8sValidator for KubeconformValidator {
     fn validate(&self, path: &str, kubernetes_version: &str) -> Result<()> {
         trace!(
-            "Validating manifests at {} with kubeconform (K8s version: {})",
-            path,
-            kubernetes_version
+            "Validating manifests at {path} with kubeconform (K8s version: {kubernetes_version})"
         );
 
         let output = Command::new("kubeconform")
@@ -55,7 +53,7 @@ impl K8sValidator for KubeconformValidator {
             )));
         }
 
-        info!("Successfully validated manifests at {}", path);
+        info!("Successfully validated manifests at {path}");
         Ok(())
     }
 
@@ -72,11 +70,7 @@ pub struct KubevalValidator;
 
 impl K8sValidator for KubevalValidator {
     fn validate(&self, path: &str, kubernetes_version: &str) -> Result<()> {
-        trace!(
-            "Validating manifests at {} with kubeval (K8s version: {})",
-            path,
-            kubernetes_version
-        );
+        trace!("Validating manifests at {path} with kubeval (K8s version: {kubernetes_version})");
 
         let output = Command::new("kubeval")
             .arg("--strict")
@@ -95,7 +89,7 @@ impl K8sValidator for KubevalValidator {
             )));
         }
 
-        info!("Successfully validated manifests at {}", path);
+        info!("Successfully validated manifests at {path}");
         Ok(())
     }
 
@@ -121,7 +115,7 @@ impl K8sValidator for KubevalValidator {
             )));
         }
 
-        debug!("No deprecated APIs found in manifests at {}", path);
+        debug!("No deprecated APIs found in manifests at {path}");
         Ok(())
     }
 }
@@ -146,10 +140,7 @@ pub fn create_validator(validator_type: &str) -> Box<dyn K8sValidator> {
             Box::new(KubevalValidator)
         }
         _ => {
-            warn!(
-                "Unknown validator type '{}', defaulting to Kubeconform",
-                validator_type
-            );
+            warn!("Unknown validator type '{validator_type}', defaulting to Kubeconform");
             Box::new(KubeconformValidator)
         }
     }

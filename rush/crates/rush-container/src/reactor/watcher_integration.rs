@@ -113,7 +113,7 @@ impl WatcherIntegration {
                     None
                 }
                 WatchResult::Error(e) => {
-                    error!("Watcher error: {}", e);
+                    error!("Watcher error: {e}");
                     None
                 }
             }

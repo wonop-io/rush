@@ -21,7 +21,7 @@ impl NetworkManager {
     pub async fn new(docker_client: Arc<dyn DockerClient>, product_name: &str) -> Result<Self> {
         let network_name = Self::compute_network_name(product_name);
 
-        info!("Setting up network: {}", network_name);
+        info!("Setting up network: {network_name}");
 
         let mut manager = Self {
             docker_client,
@@ -62,10 +62,7 @@ impl NetworkManager {
                 info!("Successfully created network: {}", self.network_name);
             }
             Err(e) => {
-                warn!(
-                    "Failed to check network existence, attempting to create: {}",
-                    e
-                );
+                warn!("Failed to check network existence, attempting to create: {e}");
                 // Try to create anyway - if it exists, Docker will return an error
                 match self.docker_client.create_network(&self.network_name).await {
                     Ok(()) => {

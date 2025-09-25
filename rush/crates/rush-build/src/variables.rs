@@ -73,7 +73,7 @@ impl Variables {
                 content
             }
             Err(e) => {
-                debug!("Failed to read variables file: {}", e);
+                debug!("Failed to read variables file: {e}");
                 return Arc::new(Variables {
                     values: VariablesFile {
                         dev: HashMap::new(),
@@ -93,7 +93,7 @@ impl Variables {
                 vars
             }
             Err(e) => {
-                debug!("Failed to parse variables YAML file: {}", e);
+                debug!("Failed to parse variables YAML file: {e}");
                 VariablesFile {
                     dev: HashMap::new(),
                     staging: HashMap::new(),

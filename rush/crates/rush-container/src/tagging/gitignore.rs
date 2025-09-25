@@ -25,7 +25,7 @@ impl GitignoreCache {
         // Check cache first
         if let Ok(cache) = self.cache.read() {
             if let Some(gitignore) = cache.get(gitignore_path) {
-                trace!("Using cached gitignore for {:?}", gitignore_path);
+                trace!("Using cached gitignore for {gitignore_path:?}");
                 return Some(gitignore.clone());
             }
         }
@@ -35,11 +35,11 @@ impl GitignoreCache {
             return None;
         }
 
-        debug!("Parsing gitignore at {:?}", gitignore_path);
+        debug!("Parsing gitignore at {gitignore_path:?}");
         let mut builder = GitignoreBuilder::new(base_dir);
 
         if let Some(e) = builder.add(gitignore_path) {
-            warn!("Failed to parse gitignore at {:?}: {}", gitignore_path, e);
+            warn!("Failed to parse gitignore at {gitignore_path:?}: {e}");
             return None;
         }
 
@@ -53,7 +53,7 @@ impl GitignoreCache {
                 Some(gitignore)
             }
             Err(e) => {
-                warn!("Failed to build gitignore for {:?}: {}", gitignore_path, e);
+                warn!("Failed to build gitignore for {gitignore_path:?}: {e}");
                 None
             }
         }
@@ -131,18 +131,12 @@ impl GitignoreManager {
         let gitignore_path = component_dir.join(".gitignore");
 
         if let Some(gitignore) = self.cache.get_or_create(&gitignore_path, component_dir) {
-            debug!(
-                "Successfully loaded component .gitignore from {:?}",
-                gitignore_path
-            );
+            debug!("Successfully loaded component .gitignore from {gitignore_path:?}");
             self.component_gitignores.push(gitignore);
         } else if gitignore_path.exists() {
-            warn!(
-                "Component .gitignore exists at {:?} but could not be parsed",
-                gitignore_path
-            );
+            warn!("Component .gitignore exists at {gitignore_path:?} but could not be parsed");
         } else {
-            trace!("No component .gitignore found at {:?}", gitignore_path);
+            trace!("No component .gitignore found at {gitignore_path:?}");
         }
 
         // Also check for nested .gitignore files in subdirectories
@@ -169,7 +163,7 @@ impl GitignoreManager {
 
                     if !already_loaded {
                         if let Some(gitignore) = self.cache.get_or_create(&gitignore_path, parent) {
-                            trace!("Loaded parent .gitignore from {:?}", gitignore_path);
+                            trace!("Loaded parent .gitignore from {gitignore_path:?}");
                             self.component_gitignores.push(gitignore);
                         }
                     }
@@ -188,7 +182,7 @@ impl GitignoreManager {
         if let Some(ref root_ignore) = self.root_gitignore {
             let matched = root_ignore.matched(path, is_dir);
             if matched.is_ignore() {
-                trace!("Path {:?} ignored by root .gitignore", path);
+                trace!("Path {path:?} ignored by root .gitignore");
                 return true;
             }
         }
@@ -197,7 +191,7 @@ impl GitignoreManager {
         for gitignore in &self.component_gitignores {
             let matched = gitignore.matched(path, is_dir);
             if matched.is_ignore() {
-                trace!("Path {:?} ignored by component .gitignore", path);
+                trace!("Path {path:?} ignored by component .gitignore");
                 return true;
             }
         }

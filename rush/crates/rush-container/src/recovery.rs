@@ -125,18 +125,15 @@ impl RecoveryManager {
         // Determine recovery action based on strategy and criticality
         let action = match (strategy, criticality) {
             (RecoveryStrategy::FailFast, Criticality::Critical) => {
-                error!("Critical component {} failed, stopping all", component_name);
+                error!("Critical component {component_name} failed, stopping all");
                 RecoveryAction::StopAll
             }
             (RecoveryStrategy::Graceful, Criticality::Optional) => {
-                warn!(
-                    "Optional component {} failed, continuing without it",
-                    component_name
-                );
+                warn!("Optional component {component_name} failed, continuing without it");
                 RecoveryAction::Skip
             }
             (RecoveryStrategy::SkipNonCritical, Criticality::Optional) => {
-                warn!("Skipping non-critical component {}", component_name);
+                warn!("Skipping non-critical component {component_name}");
                 RecoveryAction::Skip
             }
             (RecoveryStrategy::Fallback, _) if is_network_error => {
@@ -146,7 +143,7 @@ impl RecoveryManager {
             (RecoveryStrategy::Graceful, _) => {
                 // Check if we can continue in degraded mode
                 if self.can_run_degraded(total_components).await {
-                    warn!("Running in degraded mode without {}", component_name);
+                    warn!("Running in degraded mode without {component_name}");
                     RecoveryAction::ContinueDegraded
                 } else {
                     error!("Too many failures, cannot continue in degraded mode");
@@ -165,7 +162,7 @@ impl RecoveryManager {
                     self.increment_recovery_attempts(component_name).await;
                     RecoveryAction::Retry(Duration::from_secs(5))
                 } else {
-                    error!("Component {} failed after retry", component_name);
+                    error!("Component {component_name} failed after retry");
                     RecoveryAction::StopAll
                 }
             }
@@ -268,7 +265,7 @@ impl RecoveryManager {
     pub async fn mark_degraded(&self, component_name: &str) {
         let mut degraded = self.degraded_components.write().await;
         degraded.insert(component_name.to_string());
-        warn!("Component {} marked as degraded", component_name);
+        warn!("Component {component_name} marked as degraded");
     }
 
     /// Get system status

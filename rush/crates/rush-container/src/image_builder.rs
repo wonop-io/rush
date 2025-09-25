@@ -269,7 +269,7 @@ impl ImageBuilder {
 
         let tagged_name = self.tagged_image_name();
 
-        log::debug!("Checking if image exists: {}", tagged_name);
+        log::debug!("Checking if image exists: {tagged_name}");
 
         // First check if the image exists at all
         let inspect_output = Command::new("docker")
@@ -287,7 +287,7 @@ impl ImageBuilder {
         if !inspect_output.status.success() {
             // Image doesn't exist
             self.image_exists_in_cache = false;
-            log::debug!("Image {} not found in cache", tagged_name);
+            log::debug!("Image {tagged_name} not found in cache");
             return Ok(false);
         }
 
@@ -301,20 +301,14 @@ impl ImageBuilder {
 
         if arch != expected_arch {
             log::warn!(
-                "Image {} exists but has wrong architecture: {} (expected {})",
-                tagged_name,
-                arch,
-                expected_arch
+                "Image {tagged_name} exists but has wrong architecture: {arch} (expected {expected_arch})"
             );
             self.image_exists_in_cache = false;
             return Ok(false);
         }
 
         self.image_exists_in_cache = true;
-        log::info!(
-            "Image {} already exists in cache with correct architecture",
-            tagged_name
-        );
+        log::info!("Image {tagged_name} already exists in cache with correct architecture");
 
         Ok(self.image_exists_in_cache)
     }
@@ -343,7 +337,7 @@ impl ImageBuilder {
             {
                 Ok(secrets) => secrets,
                 Err(e) => {
-                    warn!("Failed to get secrets: {}", e);
+                    warn!("Failed to get secrets: {e}");
                     HashMap::new()
                 }
             };
@@ -418,7 +412,7 @@ impl ImageBuilder {
 
         // Use the tagged image name with git hash
         let image_tag = self.tagged_image_name();
-        info!("Building Docker image: {}", image_tag);
+        info!("Building Docker image: {image_tag}");
 
         // Set up cross-compilation environment if needed
         let (cross_compile, target) = if let Some(spec_arc) = &self.spec {
@@ -457,13 +451,13 @@ impl ImageBuilder {
             .as_ref()
             .unwrap_or(&default_context);
 
-        info!("Build config context dir: {}", context_path);
+        info!("Build config context dir: {context_path}");
         // Use the docker client to build the image
         self.docker_client
             .build_image(&image_tag, dockerfile_path, context_path)
             .await?;
 
-        info!("Successfully built Docker image: {}", image_tag);
+        info!("Successfully built Docker image: {image_tag}");
         Ok(())
     }
 

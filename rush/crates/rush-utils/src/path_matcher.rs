@@ -208,13 +208,13 @@ impl PathMatcher {
                                 }
                             }
                             Err(e) => {
-                                log::debug!("Error processing path during glob expansion: {}", e);
+                                log::debug!("Error processing path during glob expansion: {e}");
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed to expand glob pattern '{}': {}", pattern_str, e);
+                    log::warn!("Failed to expand glob pattern '{pattern_str}': {e}");
                 }
             }
         }

@@ -121,8 +121,7 @@ impl DependencyGraph {
 
                     if is_local_service {
                         debug!(
-                            "Filtering out local service dependency '{}' for component '{}'",
-                            dep, name
+                            "Filtering out local service dependency '{dep}' for component '{name}'"
                         );
                         false
                     } else {
@@ -145,7 +144,7 @@ impl DependencyGraph {
 
         // Log available nodes
         let available_nodes: Vec<String> = graph.nodes.keys().cloned().collect();
-        debug!("Available nodes in graph: {:?}", available_nodes);
+        debug!("Available nodes in graph: {available_nodes:?}");
 
         // Build forward edges from reverse edges
         for (dependent, dependencies) in &graph.reverse_edges {
@@ -154,12 +153,9 @@ impl DependencyGraph {
                 if !graph.nodes.contains_key(dep) {
                     // Log detailed error with available components
                     error!("Dependency validation failed:");
-                    error!("  Component '{}' depends on '{}'", dependent, dep);
-                    error!(
-                        "  '{}' does not exist in available components: {:?}",
-                        dep, available_nodes
-                    );
-                    error!("  Hint: Check if '{}' is a LocalService that might have a different name in stack.spec.yaml", dep);
+                    error!("  Component '{dependent}' depends on '{dep}'");
+                    error!("  '{dep}' does not exist in available components: {available_nodes:?}");
+                    error!("  Hint: Check if '{dep}' is a LocalService that might have a different name in stack.spec.yaml");
 
                     return Err(Error::Config(format!(
                         "Component '{dependent}' depends on '{dep}', which does not exist. Available components: {available_nodes:?}"
@@ -276,7 +272,7 @@ impl DependencyGraph {
                     );
                 }
                 node.state = NodeState::Starting;
-                debug!("Component {} marked as starting", name);
+                debug!("Component {name} marked as starting");
                 Ok(())
             }
             None => Err(Error::Internal(format!("Component {name} not found"))),
@@ -288,7 +284,7 @@ impl DependencyGraph {
         match self.nodes.get_mut(name) {
             Some(node) => {
                 node.state = NodeState::WaitingForHealth;
-                debug!("Component {} marked as waiting for health", name);
+                debug!("Component {name} marked as waiting for health");
                 Ok(())
             }
             None => Err(Error::Internal(format!("Component {name} not found"))),
@@ -300,7 +296,7 @@ impl DependencyGraph {
         match self.nodes.get_mut(name) {
             Some(node) => {
                 node.state = NodeState::Healthy;
-                info!("Component {} marked as healthy", name);
+                info!("Component {name} marked as healthy");
                 Ok(())
             }
             None => Err(Error::Internal(format!("Component {name} not found"))),
@@ -312,7 +308,7 @@ impl DependencyGraph {
         match self.nodes.get_mut(name) {
             Some(node) => {
                 node.state = NodeState::Failed(error.clone());
-                warn!("Component {} marked as failed: {}", name, error);
+                warn!("Component {name} marked as failed: {error}");
                 Ok(())
             }
             None => Err(Error::Internal(format!("Component {name} not found"))),
@@ -368,7 +364,7 @@ impl DependencyGraph {
             )));
         }
 
-        info!("Topological sort complete: {:?}", result);
+        info!("Topological sort complete: {result:?}");
         Ok(result)
     }
 
@@ -450,7 +446,7 @@ impl DependencyGraph {
                 }
             } else if rec_stack.contains(&dep) {
                 // Found a back edge - cycle detected
-                warn!("Cycle detected: {} -> {}", node, dep);
+                warn!("Cycle detected: {node} -> {dep}");
                 return Ok(true);
             }
         }

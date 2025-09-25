@@ -103,11 +103,11 @@ pub fn setup_file_watcher(config: WatcherConfig) -> Result<(RecommendedWatcher, 
         while let Ok(event) = rx.recv() {
             match event {
                 Ok(event) => {
-                    trace!("File event: {:?}", event);
+                    trace!("File event: {event:?}");
                     process_file_event(event, &processor_clone);
                 }
                 Err(e) => {
-                    error!("File watcher error: {}", e);
+                    error!("File watcher error: {e}");
                 }
             }
         }

@@ -205,12 +205,12 @@ impl DevEnvironment {
 
         // Add environment variables to reactor
         for (key, value) in env_vars {
-            info!("Adding environment variable: {}=...", key);
+            info!("Adding environment variable: {key}=...");
             self.reactor.add_env_var(key.clone(), value.clone());
         }
 
         for (key, value) in env_secrets {
-            info!("Adding secret: {}=...", key);
+            info!("Adding secret: {key}=...");
             self.reactor.add_env_var(key.clone(), value.clone());
         }
 
@@ -236,7 +236,7 @@ impl DevEnvironment {
         info!("Calling local_services.stop_all()...");
         match self.local_services.stop_all().await {
             Ok(()) => info!("Local services stopped successfully"),
-            Err(e) => error!("Failed to stop local services: {}", e),
+            Err(e) => error!("Failed to stop local services: {e}"),
         }
 
         info!("DevEnvironment::stop() completed");

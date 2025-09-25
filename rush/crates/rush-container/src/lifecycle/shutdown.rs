@@ -110,7 +110,7 @@ impl ShutdownManager {
             ))
             .await
         {
-            debug!("Failed to publish shutdown event: {}", e);
+            debug!("Failed to publish shutdown event: {e}");
         }
 
         // Shutdown each service
@@ -118,7 +118,7 @@ impl ShutdownManager {
             let service_name = service.name().unwrap_or_else(|| "unknown".to_string());
             match self.shutdown_service(service, strategy).await {
                 Ok(_) => {
-                    debug!("Successfully shut down {}", service_name);
+                    debug!("Successfully shut down {service_name}");
 
                     // Update state
                     {
@@ -134,7 +134,7 @@ impl ShutdownManager {
                     }
                 }
                 Err(e) => {
-                    error!("Failed to shut down {}: {}", service_name, e);
+                    error!("Failed to shut down {service_name}: {e}");
                     // Continue with other services
                 }
             }
@@ -166,10 +166,7 @@ impl ShutdownManager {
                     Ok(Ok(_)) => Ok(()),
                     _ => {
                         let service_name = service.name().unwrap_or_else(|| "unknown".to_string());
-                        warn!(
-                            "Graceful shutdown timed out for {}, forcing stop",
-                            service_name
-                        );
+                        warn!("Graceful shutdown timed out for {service_name}, forcing stop");
                         self.force_stop(service.id()).await
                     }
                 }
@@ -180,7 +177,7 @@ impl ShutdownManager {
     /// Stop a service gracefully
     async fn stop_gracefully(&self, service: &DockerService) -> Result<()> {
         let service_name = service.name().unwrap_or_else(|| "unknown".to_string());
-        debug!("Stopping {} gracefully", service_name);
+        debug!("Stopping {service_name} gracefully");
 
         // Send stop signal
         service.stop().await?;
@@ -217,7 +214,7 @@ impl ShutdownManager {
             ))
             .await
         {
-            debug!("Failed to publish container stopped event: {}", e);
+            debug!("Failed to publish container stopped event: {e}");
         }
 
         Ok(())
@@ -225,14 +222,14 @@ impl ShutdownManager {
 
     /// Force stop a container with retries
     pub async fn force_stop(&self, container_id: &str) -> Result<()> {
-        warn!("Force stopping container {}", container_id);
+        warn!("Force stopping container {container_id}");
 
         let mut retries = 0;
         while retries < self.config.max_retries {
             // Try to stop the container
             match self.docker_client.stop_container(container_id).await {
                 Ok(_) => {
-                    debug!("Container {} stopped", container_id);
+                    debug!("Container {container_id} stopped");
                 }
                 Err(e) if retries < self.config.max_retries - 1 => {
                     warn!(
@@ -255,7 +252,7 @@ impl ShutdownManager {
             // Try to remove the container
             match self.docker_client.remove_container(container_id).await {
                 Ok(_) => {
-                    info!("Container {} removed", container_id);
+                    info!("Container {container_id} removed");
 
                     // Publish event
                     if let Err(e) = self
@@ -271,7 +268,7 @@ impl ShutdownManager {
                         ))
                         .await
                     {
-                        debug!("Failed to publish container stopped event: {}", e);
+                        debug!("Failed to publish container stopped event: {e}");
                     }
 
                     return Ok(());
@@ -326,7 +323,7 @@ impl ShutdownManager {
             // Check if container exists
             match self.docker_client.container_exists(&container_name).await {
                 Ok(true) => {
-                    info!("Cleaning up container {}", container_name);
+                    info!("Cleaning up container {container_name}");
 
                     // Get container ID
                     match self
@@ -338,15 +335,15 @@ impl ShutdownManager {
                             self.force_stop(&container_id).await?;
                         }
                         Err(e) => {
-                            warn!("Failed to get container ID for {}: {}", container_name, e);
+                            warn!("Failed to get container ID for {container_name}: {e}");
                         }
                     }
                 }
                 Ok(false) => {
-                    debug!("Container {} does not exist", container_name);
+                    debug!("Container {container_name} does not exist");
                 }
                 Err(e) => {
-                    warn!("Failed to check container {}: {}", container_name, e);
+                    warn!("Failed to check container {container_name}: {e}");
                 }
             }
         }
@@ -370,7 +367,7 @@ impl ShutdownManager {
             ))
             .await
         {
-            debug!("Failed to publish emergency shutdown event: {}", e);
+            debug!("Failed to publish emergency shutdown event: {e}");
         }
 
         // Force stop all containers in parallel

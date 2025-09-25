@@ -66,7 +66,7 @@ impl Vault for DotenvVault {
         component_name: &str,
         _environment: &str,
     ) -> Result<HashMap<String, String>, Box<dyn Error>> {
-        debug!("Getting secrets for component: {}", component_name);
+        debug!("Getting secrets for component: {component_name}");
 
         if let Some(env_path) = self.get_env_path(component_name) {
             if env_path.exists() {
@@ -74,7 +74,7 @@ impl Vault for DotenvVault {
                 debug!("Loaded {} secrets for {}", env_map.len(), component_name);
                 Ok(env_map)
             } else {
-                debug!("No .env.secrets file found for {}", component_name);
+                debug!("No .env.secrets file found for {component_name}");
                 Ok(HashMap::new())
             }
         } else {
@@ -126,14 +126,14 @@ impl Vault for DotenvVault {
         component_name: &str,
         _environment: &str,
     ) -> Result<(), Box<dyn Error>> {
-        debug!("Removing secrets for component: {}", component_name);
+        debug!("Removing secrets for component: {component_name}");
 
         if let Some(env_path) = self.get_env_path(component_name) {
             if env_path.exists() {
                 fs::remove_file(&env_path)?;
                 debug!("Removed secrets file: {}", env_path.display());
             } else {
-                debug!("No secrets file to remove for {}", component_name);
+                debug!("No secrets file to remove for {component_name}");
             }
             Ok(())
         } else {

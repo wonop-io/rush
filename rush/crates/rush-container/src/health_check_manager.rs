@@ -44,7 +44,7 @@ impl HealthCheckManager {
         component_name: &str,
         config: &HealthCheckConfig,
     ) -> Result<()> {
-        info!("🏥 Starting health checks for {}", component_name);
+        info!("🏥 Starting health checks for {component_name}");
 
         // Apply initial delay if configured
         if config.initial_delay > 0 {
@@ -87,8 +87,7 @@ impl HealthCheckManager {
                     if consecutive_successes >= config.success_threshold {
                         let elapsed = start_time.elapsed();
                         info!(
-                            "✅ {} is healthy after {:?} ({} checks)",
-                            component_name, elapsed, total_attempts
+                            "✅ {component_name} is healthy after {elapsed:?} ({total_attempts} checks)"
                         );
                         return Ok(());
                     }
@@ -104,18 +103,14 @@ impl HealthCheckManager {
 
                     if consecutive_failures >= config.failure_threshold {
                         warn!(
-                            "⚠️  {} failed {} consecutive health checks",
-                            component_name, consecutive_failures
+                            "⚠️  {component_name} failed {consecutive_failures} consecutive health checks"
                         );
                         // Reset failure count to allow continued retries
                         consecutive_failures = 0;
                     }
                 }
                 HealthCheckResult::Fatal(reason) => {
-                    error!(
-                        "❌ {} health check encountered fatal error: {}",
-                        component_name, reason
-                    );
+                    error!("❌ {component_name} health check encountered fatal error: {reason}");
                     return Err(Error::HealthCheckFailed(
                         component_name.to_string(),
                         format!("Fatal error: {reason}"),
@@ -127,8 +122,7 @@ impl HealthCheckManager {
             if total_attempts >= config.max_retries {
                 let elapsed = start_time.elapsed();
                 error!(
-                    "❌ {} health check timeout after {} attempts ({:?})",
-                    component_name, total_attempts, elapsed
+                    "❌ {component_name} health check timeout after {total_attempts} attempts ({elapsed:?})"
                 );
                 return Err(Error::HealthCheckFailed(
                     component_name.to_string(),
@@ -197,11 +191,7 @@ impl HealthCheckManager {
         path: &str,
         expected_status: u16,
     ) -> Result<bool> {
-        trace!(
-            "Performing HTTP health check on {} path: {}",
-            container_id,
-            path
-        );
+        trace!("Performing HTTP health check on {container_id} path: {path}");
 
         // Try curl first, then wget as fallback
         let cmd_string = format!(
@@ -218,15 +208,11 @@ impl HealthCheckManager {
         {
             Ok(output) => {
                 let status_code = output.trim().parse::<u16>().unwrap_or(0);
-                trace!(
-                    "HTTP check returned status: {} (expected: {})",
-                    status_code,
-                    expected_status
-                );
+                trace!("HTTP check returned status: {status_code} (expected: {expected_status})");
                 Ok(status_code == expected_status)
             }
             Err(e) => {
-                debug!("HTTP health check failed: {}", e);
+                debug!("HTTP health check failed: {e}");
                 Ok(false)
             }
         }
@@ -234,11 +220,7 @@ impl HealthCheckManager {
 
     /// Perform TCP port check
     async fn check_tcp(&self, container_id: &str, port: u16) -> Result<bool> {
-        trace!(
-            "Performing TCP health check on {} port: {}",
-            container_id,
-            port
-        );
+        trace!("Performing TCP health check on {container_id} port: {port}");
 
         // Try multiple tools for better compatibility
         let cmd_string = format!(
@@ -254,11 +236,11 @@ impl HealthCheckManager {
             .await
         {
             Ok(_) => {
-                trace!("TCP port {} is open", port);
+                trace!("TCP port {port} is open");
                 Ok(true)
             }
             Err(_) => {
-                trace!("TCP port {} is not reachable", port);
+                trace!("TCP port {port} is not reachable");
                 Ok(false)
             }
         }
@@ -266,11 +248,7 @@ impl HealthCheckManager {
 
     /// Perform command execution health check
     async fn check_exec(&self, container_id: &str, command: &[String]) -> Result<bool> {
-        trace!(
-            "Performing exec health check on {}: {:?}",
-            container_id,
-            command
-        );
+        trace!("Performing exec health check on {container_id}: {command:?}");
 
         // Convert &[String] to Vec<&str>
         let cmd_refs: Vec<&str> = command.iter().map(|s| s.as_str()).collect();
@@ -285,7 +263,7 @@ impl HealthCheckManager {
                 Ok(true)
             }
             Err(e) => {
-                debug!("Exec health check failed: {}", e);
+                debug!("Exec health check failed: {e}");
                 Ok(false)
             }
         }
@@ -293,11 +271,7 @@ impl HealthCheckManager {
 
     /// Perform DNS resolution check
     async fn check_dns(&self, container_id: &str, hosts: &[String]) -> Result<bool> {
-        trace!(
-            "Performing DNS health check on {} for hosts: {:?}",
-            container_id,
-            hosts
-        );
+        trace!("Performing DNS health check on {container_id} for hosts: {hosts:?}");
 
         for host in hosts {
             // Try multiple DNS resolution methods
@@ -315,10 +289,10 @@ impl HealthCheckManager {
                 .await
             {
                 Ok(_) => {
-                    trace!("DNS resolution successful for {}", host);
+                    trace!("DNS resolution successful for {host}");
                 }
                 Err(_) => {
-                    debug!("DNS resolution failed for {}", host);
+                    debug!("DNS resolution failed for {host}");
                     return Ok(false);
                 }
             }
