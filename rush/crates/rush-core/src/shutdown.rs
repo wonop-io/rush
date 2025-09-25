@@ -4,11 +4,31 @@
 //! the entire application to coordinate graceful shutdown of builds, containers,
 //! and other long-running operations.
 
+use log::error;
 use log::{debug, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, Notify};
 use tokio_util::sync::CancellationToken;
+
+/// Phase of the shutdown process
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ShutdownPhase {
+    /// Graceful shutdown with a deadline
+    Graceful { deadline: Instant },
+    /// Forced shutdown - immediate termination
+    Forced,
+}
+
+/// Shutdown event with phase information
+#[derive(Debug, Clone)]
+pub struct ShutdownEvent {
+    /// Reason for shutdown
+    pub reason: ShutdownReason,
+    /// Phase of shutdown (graceful or forced)
+    pub phase: ShutdownPhase,
+}
 
 /// Global shutdown coordinator that manages graceful termination
 /// of all application components including builds and container operations.
@@ -18,7 +38,7 @@ pub struct ShutdownCoordinator {
     cancellation_token: CancellationToken,
 
     /// Broadcast channel for sending shutdown signals to multiple listeners
-    shutdown_sender: broadcast::Sender<ShutdownReason>,
+    shutdown_sender: broadcast::Sender<ShutdownEvent>,
 
     /// Flag to indicate if shutdown has been initiated
     shutdown_initiated: Arc<AtomicBool>,
@@ -35,12 +55,16 @@ pub struct ShutdownCoordinator {
 pub enum ShutdownReason {
     /// User initiated shutdown (Ctrl+C, SIGTERM, etc.)
     UserRequested,
+    /// User initiated immediate shutdown (second Ctrl+C)
+    Signal,
     /// Shutdown due to unrecoverable error
     Error(String),
     /// Graceful shutdown after successful completion
     Completed,
     /// Shutdown due to container exit or crash
     ContainerExit,
+    /// Shutdown due to timeout during graceful phase
+    Timeout,
 }
 
 impl Default for ShutdownCoordinator {
@@ -71,36 +95,166 @@ impl ShutdownCoordinator {
 
     /// Subscribe to shutdown notifications
     /// Returns a receiver that will be notified when shutdown is initiated
-    pub fn subscribe(&self) -> broadcast::Receiver<ShutdownReason> {
+    pub fn subscribe(&self) -> broadcast::Receiver<ShutdownEvent> {
         self.shutdown_sender.subscribe()
     }
 
-    /// Initiate shutdown with the specified reason
+    /// Initiate shutdown with the specified reason (backwards compatibility)
     /// This will cancel all operations and notify all listeners
     pub fn shutdown(&self, reason: ShutdownReason) {
+        self.initiate(reason);
+    }
+
+    /// Initiate graceful shutdown with default timeout
+    pub fn initiate(&self, reason: ShutdownReason) {
+        self.initiate_with_timeout(reason, Duration::from_secs(5));
+    }
+
+    /// Initiate immediate shutdown with cancellation and escalation
+    pub fn initiate_immediate(&self, reason: ShutdownReason) {
         if self
             .shutdown_initiated
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
         {
-            info!("Initiating graceful shutdown: {:?}", reason);
+            info!(
+                "Initiating immediate shutdown with escalation: {:?}",
+                reason
+            );
 
-            // Cancel all operations
+            // Cancel all operations immediately
             self.cancellation_token.cancel();
 
-            // Notify all listeners
-            if self.shutdown_sender.send(reason.clone()).is_err() {
+            // Send graceful shutdown event with deadline
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let event = ShutdownEvent {
+                reason: reason.clone(),
+                phase: ShutdownPhase::Graceful { deadline },
+            };
+
+            if self.shutdown_sender.send(event).is_err() {
                 debug!("No shutdown listeners to notify");
             }
+
+            // Schedule forced shutdown after timeout
+            self.schedule_forced_shutdown();
 
             // Mark shutdown as complete
             self.shutdown_complete.notify_waiters();
         }
     }
 
+    /// Initiate shutdown with custom timeout
+    pub fn initiate_with_timeout(&self, reason: ShutdownReason, timeout: Duration) {
+        if self
+            .shutdown_initiated
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            info!(
+                "Initiating shutdown with {}s timeout: {:?}",
+                timeout.as_secs(),
+                reason
+            );
+
+            // Cancel all operations
+            self.cancellation_token.cancel();
+
+            // Send graceful shutdown event
+            let deadline = Instant::now() + timeout;
+            let event = ShutdownEvent {
+                reason: reason.clone(),
+                phase: ShutdownPhase::Graceful { deadline },
+            };
+
+            if self.shutdown_sender.send(event).is_err() {
+                debug!("No shutdown listeners to notify");
+            }
+
+            // Schedule forced shutdown
+            self.schedule_forced_shutdown_with_delay(timeout);
+
+            // Mark shutdown as complete
+            self.shutdown_complete.notify_waiters();
+        }
+    }
+
+    /// Force immediate shutdown
+    pub fn force_shutdown(&self) {
+        info!("Forcing immediate shutdown");
+
+        // Cancel if not already done
+        self.cancellation_token.cancel();
+
+        // Send forced shutdown event
+        let event = ShutdownEvent {
+            reason: ShutdownReason::Timeout,
+            phase: ShutdownPhase::Forced,
+        };
+
+        if self.shutdown_sender.send(event).is_err() {
+            debug!("No shutdown listeners to notify");
+        }
+    }
+
+    /// Schedule forced shutdown after default timeout (5 seconds)
+    fn schedule_forced_shutdown(&self) {
+        self.schedule_forced_shutdown_with_delay(Duration::from_secs(5));
+    }
+
+    /// Schedule forced shutdown after specified delay
+    fn schedule_forced_shutdown_with_delay(&self, delay: Duration) {
+        let sender = self.shutdown_sender.clone();
+
+        // Try to spawn on existing runtime, or use std::thread if no runtime available
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                tokio::time::sleep(delay).await;
+
+                let event = ShutdownEvent {
+                    reason: ShutdownReason::Timeout,
+                    phase: ShutdownPhase::Forced,
+                };
+
+                if sender.send(event).is_err() {
+                    debug!("Failed to send forced shutdown event");
+                }
+
+                // If we still haven't exited after another delay, force exit
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                error!("Shutdown timeout exceeded - forcing process exit");
+                std::process::exit(1);
+            });
+        } else {
+            // Fallback to std::thread if no runtime available
+            std::thread::spawn(move || {
+                std::thread::sleep(delay);
+
+                let event = ShutdownEvent {
+                    reason: ShutdownReason::Timeout,
+                    phase: ShutdownPhase::Forced,
+                };
+
+                if sender.send(event).is_err() {
+                    debug!("Failed to send forced shutdown event");
+                }
+
+                // If we still haven't exited after another delay, force exit
+                std::thread::sleep(Duration::from_secs(5));
+                error!("Shutdown timeout exceeded - forcing process exit");
+                std::process::exit(1);
+            });
+        }
+    }
+
     /// Check if shutdown has been initiated
     pub fn is_shutdown_initiated(&self) -> bool {
         self.shutdown_initiated.load(Ordering::SeqCst)
+    }
+
+    /// Alias for is_shutdown_initiated for backwards compatibility
+    pub fn is_shutting_down(&self) -> bool {
+        self.is_shutdown_initiated()
     }
 
     /// Wait for shutdown to complete
@@ -190,8 +344,8 @@ mod tests {
         assert!(token.is_cancelled());
 
         // Test that subscribers are notified
-        let reason = receiver.recv().await.unwrap();
-        match reason {
+        let event = receiver.recv().await.unwrap();
+        match event.reason {
             ShutdownReason::UserRequested => {}
             _ => panic!("Expected UserRequested shutdown reason"),
         }
@@ -231,12 +385,12 @@ mod tests {
 
         // All subscribers should receive the shutdown reason
         for mut receiver in receivers {
-            let reason = timeout(Duration::from_secs(1), receiver.recv())
+            let event = timeout(Duration::from_secs(1), receiver.recv())
                 .await
                 .expect("Should receive within timeout")
                 .expect("Should receive value");
 
-            match reason {
+            match event.reason {
                 ShutdownReason::Error(sig) => assert_eq!(sig, "SIGTERM"),
                 _ => panic!("Wrong shutdown reason"),
             }
@@ -291,8 +445,8 @@ mod tests {
         let error_msg = "Critical system error";
         coordinator.shutdown(ShutdownReason::Error(error_msg.to_string()));
 
-        let reason = receiver.recv().await.unwrap();
-        match reason {
+        let event = receiver.recv().await.unwrap();
+        match event.reason {
             ShutdownReason::Error(msg) => assert_eq!(msg, error_msg),
             _ => panic!("Expected Error shutdown reason"),
         }
@@ -321,7 +475,7 @@ mod tests {
         // Spawn task that shuts down after delay
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
-            coord2.shutdown(ShutdownReason::Error("SIGINT".to_string()));
+            coord2.shutdown(ShutdownReason::Signal);
         });
 
         // Wait should complete after shutdown
@@ -330,5 +484,34 @@ mod tests {
             result.is_ok(),
             "Should complete after shutdown is initiated"
         );
+    }
+
+    #[tokio::test]
+    async fn test_phased_shutdown() {
+        let coordinator = ShutdownCoordinator::new();
+        let mut receiver = coordinator.subscribe();
+
+        // Initiate immediate shutdown
+        coordinator.initiate_immediate(ShutdownReason::UserRequested);
+
+        // Should receive graceful phase first
+        let event = receiver.recv().await.unwrap();
+        match event.phase {
+            ShutdownPhase::Graceful { deadline } => {
+                // Deadline should be about 5 seconds from now
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                assert!(remaining <= Duration::from_secs(5));
+                assert!(remaining >= Duration::from_secs(4));
+            }
+            _ => panic!("Expected graceful phase first"),
+        }
+
+        // Wait for forced phase
+        tokio::time::sleep(Duration::from_secs(6)).await;
+        let event = receiver.recv().await.unwrap();
+        match event.phase {
+            ShutdownPhase::Forced => {}
+            _ => panic!("Expected forced phase after timeout"),
+        }
     }
 }

@@ -8,6 +8,8 @@ use rush_output::{OutputDirector, OutputSource, OutputStream};
 use std::collections::HashMap;
 use std::fmt;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use std::sync::Arc;
 use tokio::process::Command;
 
@@ -406,6 +408,32 @@ impl DockerClient for DockerCliClient {
         Ok(())
     }
 
+    async fn kill_container(&self, container_id: &str) -> Result<()> {
+        trace!("Force killing Docker container: {}", container_id);
+
+        let output = Command::new(&self.docker_path)
+            .args(["kill", container_id])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to kill container: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Don't treat as error if container doesn't exist or is already stopped
+            if stderr.contains("No such container") || stderr.contains("is not running") {
+                debug!("Container {} already stopped or doesn't exist", container_id);
+                return Ok(());
+            }
+            error!("Failed to kill Docker container: {}", stderr);
+            return Err(Error::Docker(format!("Container kill failed: {stderr}")));
+        }
+
+        debug!("Successfully killed Docker container: {}", container_id);
+        Ok(())
+    }
+
     async fn remove_container(&self, container_id: &str) -> Result<()> {
         trace!("Removing Docker container: {}", container_id);
 
@@ -449,8 +477,11 @@ impl DockerClient for DockerCliClient {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("No such container") {
-                warn!("Container {} not found", container_id);
+            // Handle various "not found" errors from Docker
+            if stderr.contains("No such container") ||
+               stderr.contains("No such object") ||
+               stderr.contains("not found") {
+                debug!("Container {} not found (may have been removed)", container_id);
                 return Ok(ContainerStatus::Unknown);
             }
             error!("Failed to inspect Docker container: {}", stderr);
@@ -1025,6 +1056,9 @@ mod tests {
                 *called = true;
                 Ok(())
             }
+            async fn kill_container(&self, _container_id: &str) -> Result<()> {
+                unimplemented!()
+            }
             async fn remove_container(&self, _container_id: &str) -> Result<()> {
                 unimplemented!()
             }
@@ -1157,6 +1191,9 @@ mod tests {
             async fn stop_container(&self, _container_id: &str) -> Result<()> {
                 unimplemented!()
             }
+            async fn kill_container(&self, _container_id: &str) -> Result<()> {
+                unimplemented!()
+            }
             async fn remove_container(&self, _container_id: &str) -> Result<()> {
                 unimplemented!()
             }
@@ -1230,5 +1267,128 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ContainerStatus::Running);
         assert!(*mock.container_status_called.lock().unwrap());
+    }
+}
+
+/// RAII wrapper for Docker containers that ensures cleanup on drop
+pub struct ManagedDockerService {
+    inner: DockerService,
+    cleanup_on_drop: Arc<AtomicBool>,
+    docker_client: Arc<dyn DockerClient>,
+}
+
+impl ManagedDockerService {
+    /// Create a new managed Docker service
+    pub fn new(service: DockerService, docker_client: Arc<dyn DockerClient>) -> Self {
+        Self {
+            inner: service,
+            cleanup_on_drop: Arc::new(AtomicBool::new(true)),
+            docker_client,
+        }
+    }
+
+    /// Create from container ID and config
+    pub fn from_container(
+        id: String,
+        config: DockerServiceConfig,
+        docker_client: Arc<dyn DockerClient>,
+    ) -> Self {
+        let service = DockerService::new(id, config, docker_client.clone());
+        Self::new(service, docker_client)
+    }
+
+    /// Disable automatic cleanup (for graceful shutdown)
+    pub fn disable_cleanup(&self) {
+        self.cleanup_on_drop.store(false, Ordering::SeqCst);
+    }
+
+    /// Enable automatic cleanup
+    pub fn enable_cleanup(&self) {
+        self.cleanup_on_drop.store(true, Ordering::SeqCst);
+    }
+
+    /// Check if cleanup is enabled
+    pub fn cleanup_enabled(&self) -> bool {
+        self.cleanup_on_drop.load(Ordering::SeqCst)
+    }
+
+    /// Get the inner DockerService
+    pub fn inner(&self) -> &DockerService {
+        &self.inner
+    }
+
+    /// Get container ID
+    pub fn id(&self) -> &str {
+        self.inner.id()
+    }
+
+    /// Get service name
+    pub fn name(&self) -> Option<String> {
+        self.inner.name()
+    }
+}
+
+impl Drop for ManagedDockerService {
+    fn drop(&mut self) {
+        if self.cleanup_on_drop.load(Ordering::SeqCst) {
+            let container_id = self.inner.id().to_string();
+            let docker_client = self.docker_client.clone();
+
+            // Spawn cleanup task if runtime is available
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    warn!("RAII cleanup: Force stopping container {}", container_id);
+
+                    // Try graceful stop first (1 second timeout)
+                    match tokio::time::timeout(
+                        Duration::from_secs(1),
+                        docker_client.stop_container(&container_id)
+                    ).await {
+                        Ok(Ok(_)) => debug!("Container {} stopped gracefully during cleanup", container_id),
+                        _ => {
+                            // Force kill if graceful fails
+                            match docker_client.kill_container(&container_id).await {
+                                Ok(_) => warn!("Container {} force killed during cleanup", container_id),
+                                Err(e) => error!("Failed to kill container {} during cleanup: {}", container_id, e),
+                            }
+                        }
+                    }
+
+                    // Always try to remove
+                    match docker_client.remove_container(&container_id).await {
+                        Ok(_) => debug!("Container {} removed during cleanup", container_id),
+                        Err(e) => debug!("Failed to remove container {} during cleanup: {}", container_id, e),
+                    }
+                });
+            } else {
+                // If no runtime available, try to create one for cleanup
+                if let Ok(rt) = tokio::runtime::Runtime::new() {
+                    let container_id = self.inner.id().to_string();
+                    let docker_client = self.docker_client.clone();
+
+                    rt.block_on(async move {
+                        warn!("RAII cleanup (new runtime): Force stopping container {}", container_id);
+
+                        // Best effort cleanup
+                        let _ = docker_client.kill_container(&container_id).await;
+                        let _ = docker_client.remove_container(&container_id).await;
+                    });
+                }
+            }
+        }
+    }
+}
+
+impl std::ops::Deref for ManagedDockerService {
+    type Target = DockerService;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl std::ops::DerefMut for ManagedDockerService {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }

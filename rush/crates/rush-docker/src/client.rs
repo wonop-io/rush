@@ -288,6 +288,26 @@ impl DockerClient for DockerExecutor {
     }
 
     #[instrument(level = "info", skip(self), fields(container_id = %container_id))]
+    async fn kill_container(&self, container_id: &str) -> Result<()> {
+        let args = vec!["kill".to_string(), container_id.to_string()];
+        match self.execute(args).await {
+            Ok(_) => {
+                info!("Killed container: {}", container_id);
+                Ok(())
+            }
+            Err(e) => {
+                // Don't fail if container doesn't exist or is already stopped
+                if e.to_string().contains("No such container") || e.to_string().contains("is not running") {
+                    info!("Container {} already stopped or doesn't exist", container_id);
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    #[instrument(level = "info", skip(self), fields(container_id = %container_id))]
     async fn remove_container(&self, container_id: &str) -> Result<()> {
         let args = vec!["rm".to_string(), "-f".to_string(), container_id.to_string()];
         self.execute(args).await?;

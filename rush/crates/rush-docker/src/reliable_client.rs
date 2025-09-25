@@ -224,6 +224,21 @@ impl DockerClient for ReliableDockerClient {
         .await
     }
 
+    async fn kill_container(&self, container_id: &str) -> Result<()> {
+        let container_id = container_id.to_string();
+        let inner = Arc::clone(&self.inner);
+
+        with_retry(
+            || {
+                let inner = Arc::clone(&inner);
+                let container_id = container_id.clone();
+                async move { inner.kill_container(&container_id).await }
+            },
+            self.retry_config.clone(),
+        )
+        .await
+    }
+
     async fn remove_container(&self, container_id: &str) -> Result<()> {
         let container_id = container_id.to_string();
         let inner = Arc::clone(&self.inner);

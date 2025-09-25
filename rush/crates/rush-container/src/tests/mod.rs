@@ -30,3 +30,6 @@ pub mod docker_push_test;
 
 #[cfg(test)]
 pub mod registry_config_test;
+
+#[cfg(test)]
+pub mod raii_cleanup_test;

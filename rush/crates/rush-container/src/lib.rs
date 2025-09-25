@@ -19,6 +19,8 @@ pub mod profiling;
 pub mod reactor;
 pub mod recovery;
 pub mod service;
+pub mod simple_docker;
+pub mod simple_lifecycle;
 pub mod simple_output;
 pub mod status;
 pub mod stripe_handler;
@@ -41,15 +43,18 @@ pub mod tests;
 mod naming_test;
 
 pub use dev_environment::DevEnvironment;
-pub use docker::{DockerCliClient, DockerClient, DockerImage, DockerService};
+pub use docker::{DockerCliClient, DockerClient, DockerImage, DockerService, ManagedDockerService};
 pub use image_builder::{BuildConfig, ImageBuilder};
 // Primary reactor export
 pub use reactor::modular_core::Reactor;
 pub use reactor::ContainerReactorConfig;
+// Simple Docker implementation
+pub use simple_docker::{SimpleDocker, RunOptions};
+pub use simple_lifecycle::{SimpleLifecycleManager, SimpleLifecycleConfig};
 
 // Type alias for backward compatibility
 pub type ContainerReactor = Reactor;
-pub use service::{ContainerService, ServiceCollection, ServiceConfig, ServicesSpec};
+pub use service::{ContainerService, ManagedContainerService, ServiceCollection, ServiceConfig, ServicesSpec};
 pub use status::Status;
 
 // Type aliases

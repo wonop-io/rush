@@ -32,11 +32,11 @@ pub struct ShutdownConfig {
 impl Default for ShutdownConfig {
     fn default() -> Self {
         Self {
-            grace_period: Duration::from_secs(10),
-            max_retries: 3,
-            retry_delay: Duration::from_secs(1),
+            grace_period: Duration::from_secs(5),  // Reduced from 10
+            max_retries: 2,                        // Reduced from 3
+            retry_delay: Duration::from_millis(500), // Reduced from 1 sec
             preserve_local_services: true,
-            operation_timeout: Duration::from_secs(30),
+            operation_timeout: Duration::from_secs(5), // Reduced from 30
         }
     }
 }
@@ -84,11 +84,13 @@ impl ShutdownManager {
         strategy: ShutdownStrategy,
     ) -> Result<()> {
         info!("Initiating shutdown of {} services: {:?}", services.len(), reason);
-        
-        // Update state
+
+        // Update state - only transition if not already shutting down
         {
             let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::ShuttingDown)?;
+            if *state.phase() != ReactorPhase::ShuttingDown && *state.phase() != ReactorPhase::Terminated {
+                state.transition_to(ReactorPhase::ShuttingDown)?;
+            }
         }
         
         // Publish shutdown event
@@ -365,11 +367,11 @@ mod tests {
     #[test]
     fn test_shutdown_config_default() {
         let config = ShutdownConfig::default();
-        assert_eq!(config.grace_period, Duration::from_secs(10));
-        assert_eq!(config.max_retries, 3);
-        assert_eq!(config.retry_delay, Duration::from_secs(1));
+        assert_eq!(config.grace_period, Duration::from_secs(5));
+        assert_eq!(config.max_retries, 2);
+        assert_eq!(config.retry_delay, Duration::from_millis(500));
         assert!(config.preserve_local_services);
-        assert_eq!(config.operation_timeout, Duration::from_secs(30));
+        assert_eq!(config.operation_timeout, Duration::from_secs(5));
     }
     
     #[test]

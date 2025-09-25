@@ -7,6 +7,7 @@ pub use rush_build::ServiceSpec;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Represents runtime configuration for a container service
 #[derive(Debug, Clone)]
@@ -154,5 +155,145 @@ mod tests {
         let service = ContainerService::from_config("container456".to_string(), &config);
 
         assert_eq!(service.url(), "http://localhost:9000");
+    }
+}
+
+/// RAII wrapper for ContainerService that ensures cleanup on drop
+pub struct ManagedContainerService {
+    inner: ContainerService,
+    cleanup_on_drop: Arc<AtomicBool>,
+    pub(crate) docker_client: Option<Arc<dyn crate::docker::DockerClient>>,
+}
+
+impl ManagedContainerService {
+    /// Create a new managed container service
+    pub fn new(service: ContainerService) -> Self {
+        Self {
+            inner: service,
+            cleanup_on_drop: Arc::new(AtomicBool::new(true)),
+            docker_client: None,
+        }
+    }
+
+    /// Create with a docker client for cleanup
+    pub fn with_docker_client(
+        service: ContainerService,
+        docker_client: Arc<dyn crate::docker::DockerClient>,
+    ) -> Self {
+        Self {
+            inner: service,
+            cleanup_on_drop: Arc::new(AtomicBool::new(true)),
+            docker_client: Some(docker_client),
+        }
+    }
+
+    /// Disable automatic cleanup (for graceful shutdown)
+    pub fn disable_cleanup(&self) {
+        self.cleanup_on_drop.store(false, Ordering::SeqCst);
+    }
+
+    /// Enable automatic cleanup
+    pub fn enable_cleanup(&self) {
+        self.cleanup_on_drop.store(true, Ordering::SeqCst);
+    }
+
+    /// Check if cleanup is enabled
+    pub fn cleanup_enabled(&self) -> bool {
+        self.cleanup_on_drop.load(Ordering::SeqCst)
+    }
+
+    /// Get the inner ContainerService
+    pub fn inner(&self) -> &ContainerService {
+        &self.inner
+    }
+
+    /// Get container ID
+    pub fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    /// Get service name
+    pub fn name(&self) -> &str {
+        &self.inner.name
+    }
+}
+
+impl Drop for ManagedContainerService {
+    fn drop(&mut self) {
+        if self.cleanup_on_drop.load(Ordering::SeqCst) {
+            if let Some(docker_client) = &self.docker_client {
+                let container_id = self.inner.id.clone();
+                let client = docker_client.clone();
+
+                // Spawn cleanup task if runtime is available
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(async move {
+                        log::warn!("RAII cleanup: Force stopping container {}", container_id);
+
+                        // Try graceful stop first (1 second timeout)
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(1),
+                            client.stop_container(&container_id)
+                        ).await {
+                            Ok(Ok(_)) => log::debug!("Container {} stopped gracefully during cleanup", container_id),
+                            _ => {
+                                // Force kill if graceful fails
+                                match client.kill_container(&container_id).await {
+                                    Ok(_) => log::warn!("Container {} force killed during cleanup", container_id),
+                                    Err(e) => log::error!("Failed to kill container {} during cleanup: {}", container_id, e),
+                                }
+                            }
+                        }
+
+                        // Always try to remove
+                        match client.remove_container(&container_id).await {
+                            Ok(_) => log::debug!("Container {} removed during cleanup", container_id),
+                            Err(e) => log::debug!("Failed to remove container {} during cleanup: {}", container_id, e),
+                        }
+                    });
+                } else {
+                    // If no runtime available, try to create one for cleanup
+                    if let Ok(rt) = tokio::runtime::Runtime::new() {
+                        let container_id = self.inner.id.clone();
+                        let client = client.clone();
+
+                        rt.block_on(async move {
+                            log::warn!("RAII cleanup (new runtime): Force stopping container {}", container_id);
+
+                            // Best effort cleanup
+                            let _ = client.kill_container(&container_id).await;
+                            let _ = client.remove_container(&container_id).await;
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl std::ops::Deref for ManagedContainerService {
+    type Target = ContainerService;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl std::ops::DerefMut for ManagedContainerService {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl Clone for ManagedContainerService {
+    fn clone(&self) -> Self {
+        // When cloning, disable cleanup on the clone by default
+        // to avoid double cleanup
+        let cloned = Self {
+            inner: self.inner.clone(),
+            cleanup_on_drop: Arc::new(AtomicBool::new(false)),
+            docker_client: self.docker_client.clone(),
+        };
+        cloned
     }
 }

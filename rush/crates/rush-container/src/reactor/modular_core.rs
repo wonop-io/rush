@@ -4,9 +4,10 @@
 //! extracted components from previous phases.
 
 use crate::{
+    ContainerService,
     docker::{DockerClient, DockerService},
     events::{EventBus, Event, ContainerEvent},
-    lifecycle::{LifecycleManager, LifecycleConfig},
+    simple_lifecycle::{SimpleLifecycleManager, SimpleLifecycleConfig},
     build::{BuildOrchestrator, BuildOrchestratorConfig},
     watcher::{WatcherCoordinator, CoordinatorConfig, WatchResult},
     dependency_graph::DependencyGraph,
@@ -19,7 +20,7 @@ use crate::{
 };
 use rush_build::{ComponentBuildSpec, BuildType};
 use rush_core::error::{Error, Result};
-use rush_core::shutdown;
+use rush_core::shutdown::{self, ShutdownEvent, ShutdownPhase, ShutdownReason};
 use rush_config::Config;
 use std::sync::Arc;
 use std::time::Duration;
@@ -62,7 +63,7 @@ pub struct ModularReactorConfig {
     /// Base reactor configuration
     pub base: ContainerReactorConfig,
     /// Lifecycle management configuration
-    pub lifecycle: LifecycleConfig,
+    pub lifecycle: SimpleLifecycleConfig,
     /// Build orchestration configuration
     pub build: BuildOrchestratorConfig,
     /// File watcher configuration
@@ -77,7 +78,7 @@ impl Default for ModularReactorConfig {
     fn default() -> Self {
         Self {
             base: ContainerReactorConfig::default(),
-            lifecycle: LifecycleConfig::default(),
+            lifecycle: SimpleLifecycleConfig::default(),
             build: BuildOrchestratorConfig::default(),
             watcher: CoordinatorConfig::default(),
             docker: DockerIntegrationConfig::default(),
@@ -95,7 +96,7 @@ pub struct Reactor {
     /// Shared reactor state
     state: SharedReactorState,
     /// Lifecycle manager for container operations
-    lifecycle_manager: LifecycleManager,
+    lifecycle_manager: SimpleLifecycleManager,
     /// Build orchestrator for builds
     build_orchestrator: Arc<BuildOrchestrator>,
     /// File watcher coordinator
@@ -105,8 +106,8 @@ pub struct Reactor {
     /// Shutdown coordination
     shutdown_sender: broadcast::Sender<()>,
     shutdown_receiver: broadcast::Receiver<()>,
-    /// Services to run (set after build)
-    services: Vec<crate::ContainerService>,
+    /// Services to run (set after build) - using RAII management
+    services: Vec<crate::service::ManagedContainerService>,
     /// Component specs for building
     component_specs: Vec<ComponentBuildSpec>,
     /// Built images mapping
@@ -170,9 +171,8 @@ impl Reactor {
                 None
             )));
 
-        let lifecycle_manager = LifecycleManager::new(
+        let lifecycle_manager = SimpleLifecycleManager::new(
             config.lifecycle.clone(),
-            docker_integration.client(),
             vault,
             event_bus.clone(),
             state.clone(),
@@ -327,19 +327,25 @@ impl Reactor {
     /// Main processing loop
     pub async fn run(&mut self) -> Result<()> {
         info!("Modular reactor entering main processing loop");
-        
-        // Get the global shutdown token for Ctrl-C handling
-        let shutdown_token = shutdown::global_shutdown().cancellation_token();
-        
+
+        // Subscribe to phased shutdown events
+        let mut shutdown_rx = shutdown::global_shutdown().subscribe();
+
         loop {
             tokio::select! {
-                // Handle Ctrl-C and other termination signals
-                _ = shutdown_token.cancelled() => {
-                    info!("Termination signal received (Ctrl-C)");
-                    break;
+                // Handle phased shutdown events
+                Ok(event) = shutdown_rx.recv() => {
+                    match self.handle_shutdown_event(event).await {
+                        Ok(true) => break,  // Shutdown complete
+                        Ok(false) => continue,  // Continue running
+                        Err(e) => {
+                            error!("Error handling shutdown: {}", e);
+                            break;
+                        }
+                    }
                 }
-                
-                // Handle shutdown signal from internal broadcasts
+
+                // Handle internal shutdown signal
                 _ = self.shutdown_receiver.recv() => {
                     info!("Internal shutdown signal received");
                     break;
@@ -544,11 +550,11 @@ impl Reactor {
                 
                 // Start the rebuilt components using start_services
                 // This will actually create the Docker containers
-                let services_to_start: Vec<_> = self.services.iter()
+                let services_to_start: Vec<ContainerService> = self.services.iter()
                     .filter(|s| successful_builds.contains_key(&s.name))
-                    .cloned()
+                    .map(|s| s.inner().clone())
                     .collect();
-                
+
                 if !services_to_start.is_empty() {
                     let running_services = self.lifecycle_manager.start_services_with_dependencies(
                         services_to_start,
@@ -557,6 +563,9 @@ impl Reactor {
                     ).await?;
 
                     info!("Started {} rebuilt containers", running_services.len());
+
+                    // Update our services with the actual container IDs
+                    self.update_service_container_ids(&running_services);
                 }
                 
                 // Clear invalidated components after successful build
@@ -681,9 +690,9 @@ impl Reactor {
                 self.create_services_from_specs()?;
 
                 // Start only the rebuilt components
-                let services_to_start: Vec<_> = self.services.iter()
+                let services_to_start: Vec<ContainerService> = self.services.iter()
                     .filter(|s| successful_builds.contains_key(&s.name))
-                    .cloned()
+                    .map(|s| s.inner().clone())
                     .collect();
 
                 if !services_to_start.is_empty() {
@@ -695,6 +704,9 @@ impl Reactor {
                     ).await?;
 
                     info!("Started {} rebuilt containers", running_services.len());
+
+                    // Update our services with the actual container IDs
+                    self.update_service_container_ids(&running_services);
                 }
                 
                 // Publish build success event
@@ -818,12 +830,15 @@ impl Reactor {
                 
                 // Start the services using lifecycle manager with dependency awareness
                 let running_services = self.lifecycle_manager.start_services_with_dependencies(
-                    self.services.clone(),
+                    self.services.iter().map(|s| s.inner().clone()).collect(),
                     &self.component_specs,
                     &self.built_images,
                 ).await?;
-                
+
                 info!("Started {} services", running_services.len());
+
+                // Update our services with the actual container IDs
+                self.update_service_container_ids(&running_services);
                 
                 // Transition to Starting (not directly to Running)
                 {
@@ -890,24 +905,40 @@ impl Reactor {
     /// Initiate graceful shutdown
     pub async fn shutdown(&mut self) -> Result<()> {
         info!("Initiating graceful reactor shutdown");
-        
+
+        // IMPORTANT: Always cleanup containers first, even if already terminated
+        // This ensures containers are stopped regardless of reactor state
+        self.cleanup_all_containers().await;
+
+        // Check if already shut down or shutting down
+        {
+            let state = self.state.read().await;
+            match state.phase() {
+                ReactorPhase::Terminated => {
+                    info!("Reactor already terminated, cleanup complete");
+                    return Ok(());
+                }
+                ReactorPhase::ShuttingDown => {
+                    info!("Reactor already shutting down");
+                    // Continue with shutdown process
+                }
+                _ => {}
+            }
+        }
+
         // Transition to shutting down phase
         {
             let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::ShuttingDown)?;
+            // Only transition if we're not already in a shutdown state
+            if *state.phase() != ReactorPhase::Terminated && *state.phase() != ReactorPhase::ShuttingDown {
+                state.transition_to(ReactorPhase::ShuttingDown)?;
+            }
         }
         
-        // Stop all running Docker services
-        let services_to_stop = {
-            let state_guard = self.state.read().await;
-            state_guard.running_services().to_vec()
-        };
-        
-        if !services_to_stop.is_empty() {
-            info!("Stopping {} Docker services", services_to_stop.len());
-            if let Err(e) = self.lifecycle_manager.stop_services(&services_to_stop).await {
-                warn!("Failed to stop services during shutdown: {}", e);
-            }
+        // Container cleanup is now done in cleanup_all_containers() at the start of shutdown()
+        // Disable RAII cleanup since we've already handled it explicitly
+        for service in &self.services {
+            service.disable_cleanup();
         }
         
         // Also update component states
@@ -928,7 +959,9 @@ impl Reactor {
         }
         
         // Stop lifecycle manager
-        self.lifecycle_manager.stop().await;
+        if let Err(e) = self.lifecycle_manager.stop().await {
+            warn!("Failed to stop lifecycle manager during shutdown: {}", e);
+        }
         
         // Shutdown Docker integration
         self.docker_integration.shutdown().await;
@@ -939,13 +972,136 @@ impl Reactor {
         // Transition to shutdown phase
         {
             let mut state = self.state.write().await;
-            state.transition_to(ReactorPhase::Terminated)?;
+            // Only transition to Terminated if we're in ShuttingDown state
+            if *state.phase() == ReactorPhase::ShuttingDown {
+                state.transition_to(ReactorPhase::Terminated)?;
+            }
         }
         
         info!("Reactor shutdown complete");
         Ok(())
     }
-    
+
+    /// Handle phased shutdown events
+    /// Returns Ok(true) if shutdown is complete, Ok(false) to continue running
+    async fn handle_shutdown_event(&mut self, event: ShutdownEvent) -> Result<bool> {
+        match event.phase {
+            ShutdownPhase::Graceful { deadline } => {
+                info!("Initiating graceful shutdown, deadline: {:?}", deadline);
+
+                // Check if we're already shutting down
+                {
+                    let state = self.state.read().await;
+                    if *state.phase() == ReactorPhase::Terminated || *state.phase() == ReactorPhase::ShuttingDown {
+                        info!("Already in shutdown state, continuing graceful shutdown");
+                        // Don't try to transition again, just proceed with cleanup
+                    } else {
+                        // Try to transition to shutting down
+                        drop(state);
+                        let mut state = self.state.write().await;
+                        if let Err(e) = state.transition_to(ReactorPhase::ShuttingDown) {
+                            warn!("Failed to transition to ShuttingDown: {}", e);
+                        }
+                    }
+                }
+
+                // Cancel all builds immediately
+                if let Some(orchestrator) = Arc::get_mut(&mut self.build_orchestrator) {
+                    orchestrator.cancel_all_builds().await;
+                } else {
+                    // If we can't get mutable access, clone and cancel
+                    self.build_orchestrator.cancel_all_builds().await;
+                }
+
+                // Disable RAII cleanup since we're handling shutdown gracefully
+                for service in &self.services {
+                    service.disable_cleanup();
+                }
+
+                // Start graceful shutdown
+                let shutdown_manager = self.lifecycle_manager.shutdown_manager();
+
+                // Get all running services as DockerService
+                let services: Vec<crate::docker::DockerService> = self.services
+                    .iter()
+                    .map(|svc| {
+                        let config = crate::docker::DockerServiceConfig {
+                            name: svc.name.clone(),
+                            image: svc.image.clone(),
+                            network: self.config.base.network_name.clone(),
+                            env_vars: std::collections::HashMap::new(),
+                            ports: vec![],
+                            volumes: vec![],
+                        };
+                        crate::docker::DockerService::new(
+                            svc.id.clone(),
+                            config,
+                            self.lifecycle_manager.docker_client().clone()
+                        )
+                    })
+                    .collect();
+
+                // Convert shutdown reason to container events type
+                let container_shutdown_reason = match &event.reason {
+                    ShutdownReason::UserRequested | ShutdownReason::Signal => {
+                        crate::events::ShutdownReason::UserRequested
+                    }
+                    ShutdownReason::Error(msg) => {
+                        crate::events::ShutdownReason::Error(msg.clone())
+                    }
+                    ShutdownReason::Timeout => {
+                        crate::events::ShutdownReason::Timeout
+                    }
+                    _ => crate::events::ShutdownReason::UserRequested,
+                };
+
+                // Start graceful shutdown with deadline awareness
+                let shutdown_task = shutdown_manager.shutdown_all(
+                    &services,
+                    container_shutdown_reason,
+                    crate::lifecycle::shutdown::ShutdownStrategy::Graceful,
+                );
+
+                // Wait until deadline
+                let now = std::time::Instant::now();
+                let remaining = deadline.saturating_duration_since(now);
+
+                match tokio::time::timeout(remaining, shutdown_task).await {
+                    Ok(Ok(_)) => {
+                        info!("Graceful shutdown completed within deadline");
+                        Ok(true)
+                    }
+                    Ok(Err(e)) => {
+                        error!("Graceful shutdown failed: {}", e);
+                        Ok(false) // Wait for forced phase
+                    }
+                    Err(_) => {
+                        warn!("Graceful shutdown incomplete at deadline");
+                        Ok(false) // Wait for forced phase
+                    }
+                }
+            }
+            ShutdownPhase::Forced => {
+                error!("Forcing immediate shutdown");
+
+                // CRITICAL: Always cleanup containers during forced shutdown
+                self.cleanup_all_containers().await;
+
+                // Also try emergency shutdown as backup (though IDs might be UUIDs)
+                let container_ids: Vec<String> = self.services
+                    .iter()
+                    .map(|svc| svc.id.clone())
+                    .collect();
+
+                // Force shutdown (but don't fail if it errors, we've already done cleanup)
+                let shutdown_manager = self.lifecycle_manager.shutdown_manager();
+                let _ = shutdown_manager.emergency_shutdown(&container_ids).await;
+
+                Ok(true)
+            }
+        }
+    }
+
     /// Get event bus for external subscribers
     pub fn event_bus(&self) -> &EventBus {
         &self.event_bus
@@ -990,16 +1146,163 @@ impl Reactor {
                 domain: spec.domain.clone(),
                 docker_host: format!("{}.docker", spec.component_name),
             };
-            
-            self.services.push(service);
+
+            // Wrap in ManagedContainerService with docker client
+            let managed_service = crate::service::ManagedContainerService::with_docker_client(
+                service,
+                self.lifecycle_manager.docker_client().clone()
+            );
+
+            self.services.push(managed_service);
         }
         
         Ok(())
     }
-    
-    /// Set services (for external configuration)
+
+    /// Cleanup all containers - always called during shutdown regardless of state
+    async fn cleanup_all_containers(&mut self) {
+        error!("CRITICAL: Starting forced container cleanup for product: {}", self.config.base.product_name);
+        info!("Starting container cleanup for product: {}", self.config.base.product_name);
+
+        // Stop all running Docker services via lifecycle manager
+        let services_to_stop = {
+            let state_guard = self.state.read().await;
+            state_guard.running_services().to_vec()
+        };
+
+        if !services_to_stop.is_empty() {
+            info!("Stopping {} Docker services via lifecycle manager", services_to_stop.len());
+            if let Err(e) = self.lifecycle_manager.stop_services(&services_to_stop).await {
+                warn!("Failed to stop services during cleanup: {}", e);
+            }
+        }
+
+        // Also explicitly stop containers in our services vector
+        info!("Stopping {} services from self.services", self.services.len());
+        for service in &self.services {
+            let container_name = service.name().to_string();
+            // Generate the actual container name using naming convention
+            let docker_container_name = rush_core::naming::NamingConvention::container_name(
+                &self.config.base.product_name,
+                &container_name
+            );
+            info!("Explicitly stopping container: {}", docker_container_name);
+
+            if let Some(docker_client) = &service.docker_client {
+                // First try to get the container ID by name
+                match docker_client.get_container_by_name(&docker_container_name).await {
+                    Ok(container_id) => {
+                        info!("Found container {} with ID: {}", docker_container_name, container_id);
+
+                        // Try graceful stop first
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            docker_client.stop_container(&container_id)
+                        ).await {
+                            Ok(Ok(_)) => info!("Container {} stopped gracefully", docker_container_name),
+                            Ok(Err(e)) => {
+                                warn!("Failed to stop container {}: {}, attempting force kill", docker_container_name, e);
+                                // Try force kill
+                                if let Err(e) = docker_client.kill_container(&container_id).await {
+                                    error!("Failed to kill container {}: {}", docker_container_name, e);
+                                }
+                            }
+                            Err(_) => {
+                                warn!("Timeout stopping container {}, attempting force kill", docker_container_name);
+                                // Try force kill
+                                if let Err(e) = docker_client.kill_container(&container_id).await {
+                                    error!("Failed to kill container {}: {}", docker_container_name, e);
+                                }
+                            }
+                        }
+
+                        // Remove container
+                        if let Err(e) = docker_client.remove_container(&container_id).await {
+                            debug!("Failed to remove container {} (may not exist): {}", docker_container_name, e);
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Container {} not found by name lookup: {}", docker_container_name, e);
+                        // Fallback: try to stop by name directly
+                        info!("Attempting to stop container by name directly: {}", docker_container_name);
+
+                        // Try to stop using docker CLI directly by name
+                        let stop_result = tokio::process::Command::new("docker")
+                            .args(&["stop", &docker_container_name])
+                            .output()
+                            .await;
+
+                        match stop_result {
+                            Ok(output) if output.status.success() => {
+                                info!("Successfully stopped container {} via docker CLI", docker_container_name);
+
+                                // Remove the container
+                                let _ = tokio::process::Command::new("docker")
+                                    .args(&["rm", "-f", &docker_container_name])
+                                    .output()
+                                    .await;
+                            }
+                            _ => {
+                                debug!("Container {} may not exist or already stopped", docker_container_name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Final cleanup: stop ALL containers matching our product name pattern
+        // This is a safety net in case the above logic missed any containers
+        info!("Final cleanup: stopping all containers for product {}", self.config.base.product_name);
+        let ps_output = tokio::process::Command::new("docker")
+            .args(&["ps", "-q", "--filter", &format!("name={}", self.config.base.product_name)])
+            .output()
+            .await;
+
+        if let Ok(output) = ps_output {
+            let container_ids = String::from_utf8_lossy(&output.stdout);
+            for container_id in container_ids.lines() {
+                if !container_id.is_empty() {
+                    info!("Force stopping container: {}", container_id);
+                    let _ = tokio::process::Command::new("docker")
+                        .args(&["rm", "-f", container_id])
+                        .output()
+                        .await;
+                }
+            }
+        }
+
+        info!("Container cleanup complete");
+    }
+
+    /// Update service container IDs with actual Docker container IDs
+    fn update_service_container_ids(&mut self, docker_services: &[crate::docker::DockerService]) {
+        info!("Updating {} service container IDs from Docker services", docker_services.len());
+
+        for docker_service in docker_services {
+            // Find the matching service by name
+            for managed_service in &mut self.services {
+                if managed_service.name() == docker_service.name().unwrap_or_else(|| "unknown".to_string()) {
+                    // Update the container ID to the actual Docker container ID
+                    let old_id = managed_service.id.clone();
+                    managed_service.id = docker_service.id().to_string();
+                    info!("Updated service {} container ID from {} to {}",
+                        managed_service.name(), old_id, docker_service.id());
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Set services (for external configuration) - wraps in RAII management
     pub fn set_services(&mut self, services: Vec<crate::ContainerService>) {
-        self.services = services;
+        // Wrap each service in ManagedContainerService with docker client
+        self.services = services.into_iter()
+            .map(|svc| crate::service::ManagedContainerService::with_docker_client(
+                svc,
+                self.lifecycle_manager.docker_client().clone()
+            ))
+            .collect();
     }
     
     /// Set output sink for capturing container and build logs

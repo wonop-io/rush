@@ -26,6 +26,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 console-subscriber = { workspace = true }
+ctrlc = "3.4"
 directories = { workspace = true }
 dotenv = { workspace = true }
 env_logger = { workspace = true }

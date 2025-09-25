@@ -82,8 +82,9 @@ async fn test_container_exit_reason() -> Result<()> {
 
     // Verify it's received correctly
     match receiver.try_recv() {
-        Ok(ShutdownReason::ContainerExit) => {
-            // Expected
+        Ok(event) => {
+            // Check if the event contains the expected reason
+            assert!(matches!(event.reason, ShutdownReason::ContainerExit));
         }
         _ => {
             // Also acceptable if no receiver is set up

@@ -229,6 +229,17 @@ impl DockerClient for MockDockerClient {
         Ok(())
     }
 
+    async fn kill_container(&self, container_id: &str) -> Result<()> {
+        self.record_call(format!("kill_container({container_id})"))
+            .await;
+
+        let mut containers = self.containers.lock().await;
+        if let Some(container) = containers.get_mut(container_id) {
+            container.status = ContainerStatus::Exited(137); // Exit code for SIGKILL
+        }
+        Ok(())
+    }
+
     async fn remove_container(&self, container_id: &str) -> Result<()> {
         self.record_call(format!("remove_container({container_id})"))
             .await;

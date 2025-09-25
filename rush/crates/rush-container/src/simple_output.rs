@@ -2,6 +2,8 @@
 //!
 //! This module properly captures stdout/stderr directly from spawned processes
 //! instead of using docker logs, ensuring real-time output and color preservation.
+//!
+//! Now also supports interactive container execution with direct subprocess streaming.
 
 use crate::DockerClient;
 use log::{debug, error};
@@ -14,6 +16,42 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
+
+/// Simple output line structure for compatibility with simple_docker
+#[derive(Debug, Clone)]
+pub struct OutputLine {
+    /// Component name that generated this line
+    pub component: String,
+    /// The actual line content
+    pub line: String,
+    /// Whether this came from stderr
+    pub is_error: bool,
+}
+
+impl OutputLine {
+    /// Convert to LogEntry for sink writing
+    pub fn to_log_entry(&self) -> LogEntry {
+        // Use docker origin since these are container outputs
+        let mut entry = LogEntry::docker(&self.component, &self.line);
+        entry.is_error = self.is_error;
+        entry
+    }
+}
+
+/// Extension trait for Sink to handle OutputLine
+#[async_trait::async_trait]
+pub trait SinkExt: Sink {
+    /// Write an OutputLine to the sink
+    async fn write_output_line(&mut self, line: OutputLine) -> Result<()>;
+}
+
+// Implement for all types that implement Sink
+#[async_trait::async_trait]
+impl<T: Sink + ?Sized> SinkExt for T {
+    async fn write_output_line(&mut self, line: OutputLine) -> Result<()> {
+        self.write(line.to_log_entry()).await
+    }
+}
 
 /// Options for capturing process output
 pub struct CaptureOptions {

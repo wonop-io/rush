@@ -136,6 +136,21 @@ impl LifecycleManager {
         self.metrics.export_prometheus().await
     }
 
+    /// Create a shutdown manager for handling container shutdown
+    pub fn shutdown_manager(&self) -> super::shutdown::ShutdownManager {
+        super::shutdown::ShutdownManager::new(
+            super::shutdown::ShutdownConfig::default(),
+            self.docker_client.clone(),
+            self.event_bus.clone(),
+            self.state.clone(),
+        )
+    }
+
+    /// Get the docker client
+    pub fn docker_client(&self) -> &Arc<dyn DockerClient> {
+        &self.docker_client
+    }
+
     /// Start log streaming for a container if not already active
     async fn start_log_streaming_if_needed(&self, container_id: &str, component_name: &str) {
         // Check if logging is already active for this container

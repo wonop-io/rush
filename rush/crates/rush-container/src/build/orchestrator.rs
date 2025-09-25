@@ -14,14 +14,17 @@ use crate::{
 };
 use rush_build::{BuildType, ComponentBuildSpec};
 use rush_core::error::Result;
+use rush_core::shutdown::global_shutdown;
 use rush_output::simple::Sink;
 use rush_toolchain::ToolchainContext;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use log::{debug, error, info, warn};
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{instrument, info_span};
 
 /// Configuration for the build orchestrator
@@ -80,6 +83,10 @@ pub struct BuildOrchestrator {
     pub(crate) tag_generator: Arc<ImageTagGenerator>,
     /// Output sink for build logs
     output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
+    /// Track active build containers for cancellation
+    active_builds: Arc<Mutex<HashSet<String>>>,
+    /// Flag to indicate builds are being cancelled
+    cancelling: Arc<AtomicBool>,
 }
 
 impl BuildOrchestrator {
@@ -109,6 +116,8 @@ impl BuildOrchestrator {
             build_processor,
             tag_generator,
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
+            active_builds: Arc::new(Mutex::new(HashSet::new())),
+            cancelling: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -138,6 +147,8 @@ impl BuildOrchestrator {
             build_processor,
             tag_generator,
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
+            active_builds: Arc::new(Mutex::new(HashSet::new())),
+            cancelling: Arc::new(AtomicBool::new(false)),
         }
     }
     
@@ -155,6 +166,34 @@ impl BuildOrchestrator {
     /// Get the docker client
     pub fn docker_client(&self) -> &Arc<dyn DockerClient> {
         &self.docker_client
+    }
+
+    /// Cancel all active builds
+    pub async fn cancel_all_builds(&self) {
+        info!("Cancelling all active builds");
+        self.cancelling.store(true, Ordering::SeqCst);
+
+        // Get and kill all active build containers
+        let active_builds = {
+            let builds = self.active_builds.lock().await;
+            builds.clone()
+        };
+
+        for container_id in active_builds {
+            info!("Killing build container: {}", container_id);
+            if let Err(e) = self.docker_client.kill_container(&container_id).await {
+                warn!("Failed to kill build container {}: {}", container_id, e);
+            }
+        }
+
+        // Clear the active builds set
+        let mut builds = self.active_builds.lock().await;
+        builds.clear();
+    }
+
+    /// Check if builds are being cancelled
+    pub fn is_cancelling(&self) -> bool {
+        self.cancelling.load(Ordering::SeqCst)
     }
 
     /// Build all components with parallel execution if enabled
@@ -214,6 +253,12 @@ impl BuildOrchestrator {
         
         // Build each component
         for spec in &component_specs {
+            // Check for cancellation
+            if self.is_cancelling() || global_shutdown().is_shutting_down() {
+                info!("Build cancelled by shutdown signal");
+                return Err(rush_core::error::Error::Cancelled("Build cancelled by user".to_string()));
+            }
+
             let component_span = info_span!(
                 "build_component",
                 component = %spec.component_name,

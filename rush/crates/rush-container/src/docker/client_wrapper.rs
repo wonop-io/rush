@@ -343,12 +343,24 @@ impl DockerClient for DockerClientWrapper {
 
     async fn stop_container(&self, id: &str) -> Result<()> {
         let id = id.to_string();
-        
+
         self.execute_with_retry("stop_container", || {
             let client = self.inner.clone();
             let id = id.clone();
             Box::pin(async move {
                 client.stop_container(&id).await
+            })
+        }).await
+    }
+
+    async fn kill_container(&self, id: &str) -> Result<()> {
+        let id = id.to_string();
+
+        self.execute_with_retry("kill_container", || {
+            let client = self.inner.clone();
+            let id = id.clone();
+            Box::pin(async move {
+                client.kill_container(&id).await
             })
         }).await
     }

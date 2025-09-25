@@ -1,11 +1,35 @@
 use colored::Colorize;
 use rush_cli::{args, context_builder, execute, init, logging};
-use rush_core::shutdown;
+use rush_core::shutdown::{self, ShutdownReason};
 use rush_helper::{run_preflight_checks, HelperError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    // Set up signal handlers for graceful shutdown
+    // Track if we've received a signal
+    let signal_received = Arc::new(AtomicBool::new(false));
+    let signal_clone = signal_received.clone();
+
+    // Set up custom Ctrl+C handler with immediate feedback
+    ctrlc::set_handler(move || {
+        if signal_clone.load(Ordering::SeqCst) {
+            // Second Ctrl+C - force immediate shutdown
+            eprintln!("\n🔴 FORCE SHUTDOWN - Killing all processes immediately!");
+            std::process::exit(130); // Standard exit code for SIGINT
+        } else {
+            // First Ctrl+C - initiate graceful shutdown with feedback
+            println!("\n📛 Interrupt received! Shutting down...");
+            println!("   • Cancelling builds immediately");
+            println!("   • Stopping containers gracefully (5s timeout)");
+            println!("   • Press Ctrl+C again to force immediate shutdown");
+
+            signal_clone.store(true, Ordering::SeqCst);
+            shutdown::global_shutdown().initiate_immediate(ShutdownReason::Signal);
+        }
+    }).expect("Error setting Ctrl+C handler");
+
+    // Also set up the default signal handlers for other signals
     shutdown::setup_signal_handlers();
 
     // Parse command line arguments

@@ -154,16 +154,20 @@ async fn test_shutdown_reason_propagation() -> Result<()> {
             ShutdownReason::ContainerExit => ShutdownReason::ContainerExit,
             ShutdownReason::Error(s) => ShutdownReason::Error(s.clone()),
             ShutdownReason::Completed => ShutdownReason::Completed,
+            ShutdownReason::Signal => ShutdownReason::Signal,
+            ShutdownReason::Timeout => ShutdownReason::Timeout,
         };
 
         shutdown_coord.shutdown(reason);
 
         // Try to receive the reason
         match receiver.try_recv() {
-            Ok(received) => match (expected_reason, received) {
+            Ok(event) => match (expected_reason, event.reason) {
                 (ShutdownReason::UserRequested, ShutdownReason::UserRequested) => {}
                 (ShutdownReason::ContainerExit, ShutdownReason::ContainerExit) => {}
                 (ShutdownReason::Completed, ShutdownReason::Completed) => {}
+                (ShutdownReason::Signal, ShutdownReason::Signal) => {}
+                (ShutdownReason::Timeout, ShutdownReason::Timeout) => {}
                 (ShutdownReason::Error(e1), ShutdownReason::Error(e2)) if e1 == e2 => {}
                 _ => panic!("Shutdown reason mismatch"),
             },

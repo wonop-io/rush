@@ -443,6 +443,11 @@ impl DockerClient for PooledDockerClient {
         guard.client().stop_container(id).await
     }
 
+    async fn kill_container(&self, id: &str) -> Result<()> {
+        let guard = self.pool.clone().acquire().await?;
+        guard.client().kill_container(id).await
+    }
+
     async fn remove_container(&self, id: &str) -> Result<()> {
         let guard = self.pool.clone().acquire().await?;
         guard.client().remove_container(id).await

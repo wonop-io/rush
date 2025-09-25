@@ -431,6 +431,7 @@ mod tests {
             Ok("container-id".to_string())
         }
         async fn stop_container(&self, _container_id: &str) -> Result<()> { Ok(()) }
+        async fn kill_container(&self, _container_id: &str) -> Result<()> { Ok(()) }
         async fn remove_container(&self, _container_id: &str) -> Result<()> { Ok(()) }
         async fn container_status(&self, _container_id: &str) -> Result<rush_docker::ContainerStatus> {
             Ok(rush_docker::ContainerStatus::Running)

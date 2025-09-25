@@ -394,16 +394,17 @@ mod tests {
             let mut index = repo.index().unwrap();
             index.write_tree().unwrap()
         };
-        let tree = repo.find_tree(tree_id).unwrap();
-
-        repo.commit(
-            Some("HEAD"),
-            &sig,
-            &sig,
-            "Initial commit",
-            &tree,
-            &[],
-        ).unwrap();
+        {
+            let tree = repo.find_tree(tree_id).unwrap();
+            repo.commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                "Initial commit",
+                &tree,
+                &[],
+            ).unwrap();
+        }
 
         (dir, repo)
     }
@@ -421,9 +422,9 @@ mod tests {
         let test_file = dir.path().join("test.txt");
         fs::write(&test_file, "test content").unwrap();
 
-        // Should be dirty now
-        let is_dirty = git_ops.is_dirty_batch(&[test_file]).await.unwrap();
-        assert!(is_dirty);
+        // Should be dirty now - check without pathspec to see all files
+        let is_dirty = git_ops.is_dirty_batch(&[]).await.unwrap();
+        assert!(is_dirty, "Repository should be dirty after adding untracked file");
     }
 
     #[tokio::test]

@@ -59,7 +59,11 @@ pub enum Error {
     /// Terminated error
     #[error("Terminated: {0}")]
     Terminated(String),
-    
+
+    /// Cancelled error (for user-initiated cancellation)
+    #[error("Cancelled: {0}")]
+    Cancelled(String),
+
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),

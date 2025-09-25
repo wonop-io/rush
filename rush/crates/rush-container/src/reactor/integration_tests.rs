@@ -112,6 +112,11 @@ mod tests {
             Ok(())
         }
 
+        async fn kill_container(&self, id: &str) -> Result<()> {
+            self.record_operation(&format!("kill_container:{}", id));
+            Ok(())
+        }
+
         async fn remove_container(&self, id: &str) -> Result<()> {
             self.record_operation(&format!("remove_container:{}", id));
             Ok(())

@@ -49,6 +49,9 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
     /// Stops a running container
     async fn stop_container(&self, container_id: &str) -> Result<()>;
 
+    /// Forcefully kills a running container
+    async fn kill_container(&self, container_id: &str) -> Result<()>;
+
     /// Removes a container
     async fn remove_container(&self, container_id: &str) -> Result<()>;
 

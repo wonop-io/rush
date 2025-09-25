@@ -42,6 +42,7 @@ tempfile = { workspace = true }
 tera = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "chrono"] }
 uuid = { workspace = true }
