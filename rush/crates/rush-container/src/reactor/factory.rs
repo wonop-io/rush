@@ -10,9 +10,8 @@ use crate::{
     },
 };
 use rush_build::ComponentBuildSpec;
-use rush_core::error::{Error, Result};
-use std::sync::Arc;
-use log::{info, warn};
+use rush_core::error::Result;
+use log::info;
 
 /// Reactor implementation variants
 pub enum ReactorImplementation {

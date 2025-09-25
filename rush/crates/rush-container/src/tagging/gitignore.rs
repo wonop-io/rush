@@ -155,7 +155,7 @@ impl GitignoreManager {
                 let gitignore_path = parent.join(".gitignore");
                 if gitignore_path.exists() && gitignore_path != self.base_dir.join(".gitignore") {
                     // Check if we already have this gitignore
-                    let already_loaded = self.component_gitignores.iter().any(|g| {
+                    let already_loaded = self.component_gitignores.iter().any(|_g| {
                         // This is a simple heuristic; in practice, the cache prevents duplicates
                         false
                     });

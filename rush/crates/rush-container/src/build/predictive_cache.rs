@@ -5,14 +5,13 @@
 //! prepare resources to minimize build time.
 
 use crate::build::cache::CacheEntry;
-use rush_build::ComponentBuildSpec;
-use rush_core::{Error, Result};
+use rush_core::Result;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 use tokio::sync::{RwLock, Semaphore};
-use log::{debug, info, warn};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use chrono::{Local, Timelike};
 
@@ -308,9 +307,9 @@ impl PredictiveCache {
         let predictions = patterns.predict_next(current, 3);
 
         for component in predictions {
-            let queue = Arc::clone(&self.prefetch_queue);
+            let _queue = Arc::clone(&self.prefetch_queue);
             let semaphore = Arc::clone(&self.prefetch_semaphore);
-            let cache_dir = self.cache_dir.clone();
+            let _cache_dir = self.cache_dir.clone();
 
             // Spawn prefetch task
             tokio::spawn(async move {

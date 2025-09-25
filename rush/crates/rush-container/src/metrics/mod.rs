@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
 use log::{info, debug};
@@ -230,7 +230,7 @@ impl MetricsCollector {
 
         let components = self.components.read().await;
         let successful = components.values().filter(|m| m.status == ComponentStatus::Healthy).count();
-        let failed = components.values().filter(|m| m.status == ComponentStatus::Failed).count();
+        let _failed = components.values().filter(|m| m.status == ComponentStatus::Failed).count();
 
         let success_rate = if !components.is_empty() {
             successful as f64 / components.len() as f64

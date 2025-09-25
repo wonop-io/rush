@@ -3,13 +3,12 @@
 //! This module provides support for deploying to multiple Kubernetes clusters,
 //! with cluster selection, health checking, and failover capabilities.
 
-use async_trait::async_trait;
 use rush_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::process::Command;
-use log::{debug, info, warn, error};
+use log::info;
 
 /// Cluster configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use log::{debug, info, warn, error};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -64,7 +64,7 @@ pub struct BuildArtifactMetadata {
 #[derive(Debug, Clone)]
 struct LruEntry {
     key: String,
-    size: u64,
+    _size: u64,
     last_accessed: Instant,
 }
 
@@ -135,7 +135,7 @@ impl PersistentBuildCache {
                 total_size += metadata.size;
                 lru_queue.push_back(LruEntry {
                     key: key.clone(),
-                    size: metadata.size,
+                    _size: metadata.size,
                     last_accessed: Instant::now(),
                 });
                 index.insert(key, metadata);
@@ -285,7 +285,7 @@ impl PersistentBuildCache {
         let mut lru_queue = self.lru_queue.write().await;
         lru_queue.push_back(LruEntry {
             key: key.clone(),
-            size,
+            _size: size,
             last_accessed: Instant::now(),
         });
 

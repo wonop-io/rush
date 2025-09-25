@@ -4,7 +4,7 @@
 //! managing rebuilds based on file changes.
 
 use crate::{
-    events::{Event, EventBus, ContainerEvent},
+    events::EventBus,
     reactor::state::{SharedReactorState, ReactorPhase},
     watcher::handler::{ChangeBatch, FileChangeHandler, HandlerConfig},
 };
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, RwLock};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 
 /// Configuration for the watcher coordinator
 #[derive(Debug, Clone)]
@@ -57,7 +57,7 @@ pub enum WatchResult {
 pub struct WatcherCoordinator {
     config: CoordinatorConfig,
     handler: Arc<FileChangeHandler>,
-    event_bus: EventBus,
+    _event_bus: EventBus,
     state: SharedReactorState,
     shutdown_receiver: broadcast::Receiver<()>,
     last_rebuild_time: Arc<RwLock<std::time::Instant>>,
@@ -101,7 +101,7 @@ impl WatcherCoordinator {
         Self {
             config,
             handler,
-            event_bus,
+            _event_bus: event_bus,
             state,
             shutdown_receiver,
             // Initialize to a time in the past to allow immediate first rebuild

@@ -4,13 +4,10 @@
 //! critical path identification, parallel group optimization, and
 //! build time estimation.
 
-use crate::build::orchestrator::BuildOrchestrator;
 use rush_build::ComponentBuildSpec;
 use rush_core::{Error, Result};
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
-use log::{debug, info, warn};
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::algo::{toposort, is_cyclic_directed, all_simple_paths};
 use petgraph::Direction;
@@ -314,7 +311,7 @@ impl DependencyResolver {
 
     /// Optimize build order for resource constraints
     pub fn optimize_for_resources(&self, max_parallel: usize) -> Result<Vec<Vec<String>>> {
-        let mut groups = self.optimize_build_order()?;
+        let groups = self.optimize_build_order()?;
 
         // Split groups that exceed max_parallel
         let mut optimized = Vec::new();

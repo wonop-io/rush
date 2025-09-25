@@ -4,7 +4,7 @@
 //! handling dependencies and parallel builds where possible.
 
 use crate::{
-    build::{BuildProcessor, BuildCache, CacheEntry, CacheStats, ParallelBuildExecutor},
+    build::{BuildProcessor, BuildCache, CacheStats, ParallelBuildExecutor},
     docker::DockerClient,
     events::{Event, EventBus, ContainerEvent},
     profiling,
@@ -24,7 +24,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use log::{debug, error, info, warn};
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 use tracing::{instrument, info_span};
 
 /// Configuration for the build orchestrator
@@ -79,7 +78,7 @@ pub struct BuildOrchestrator {
     event_bus: EventBus,
     state: SharedReactorState,
     pub(crate) cache: Arc<Mutex<BuildCache>>,
-    build_processor: Arc<BuildProcessor>,
+    _build_processor: Arc<BuildProcessor>,
     pub(crate) tag_generator: Arc<ImageTagGenerator>,
     /// Output sink for build logs
     output_sink: Arc<tokio::sync::RwLock<Option<Arc<tokio::sync::Mutex<Box<dyn Sink>>>>>>,
@@ -113,7 +112,7 @@ impl BuildOrchestrator {
             event_bus,
             state,
             cache,
-            build_processor,
+            _build_processor: build_processor,
             tag_generator,
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
             active_builds: Arc::new(Mutex::new(HashSet::new())),
@@ -144,7 +143,7 @@ impl BuildOrchestrator {
             event_bus,
             state,
             cache,
-            build_processor,
+            _build_processor: build_processor,
             tag_generator,
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
             active_builds: Arc::new(Mutex::new(HashSet::new())),
@@ -442,17 +441,17 @@ impl BuildOrchestrator {
     pub async fn build_single(&self, spec: ComponentBuildSpec, all_specs: &[ComponentBuildSpec]) -> Result<String> {
         debug!("Building component: {}", spec.component_name);
         let start_time = Instant::now();
-        let total_build_start = std::time::Instant::now();
+        let _total_build_start = std::time::Instant::now();
 
         // Prepare build artifacts
         let artifacts_start = std::time::Instant::now();
-        let artifacts_dir = self.prepare_artifacts(&spec).await?;
+        let _artifacts_dir = self.prepare_artifacts(&spec).await?;
         crate::profiling::global_tracker()
             .record_with_component("build_single", "prepare_artifacts", artifacts_start.elapsed())
             .await;
 
         // Determine image name and tag
-        let tag_start = std::time::Instant::now();
+        let _tag_start = std::time::Instant::now();
         let image_name = format!(
             "{}/{}",
             self.config.product_name,

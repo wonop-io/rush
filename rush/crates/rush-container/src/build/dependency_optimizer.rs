@@ -3,13 +3,12 @@
 //! This module provides advanced dependency graph analysis and optimization
 //! to maximize parallel build throughput and minimize total build time.
 
-use crate::dependency_graph::{DependencyGraph, Node, NodeState};
-use rush_build::ComponentBuildSpec;
+use crate::dependency_graph::DependencyGraph;
 use rush_core::Result;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use log::{debug, info, warn};
+use std::time::Duration;
+use log::info;
 use tokio::sync::RwLock;
 
 /// Build statistics for performance tracking
@@ -194,7 +193,7 @@ impl DependencyOptimizer {
             // Get all components ready to build
             let ready: Vec<String> = graph.nodes()
                 .iter()
-                .filter_map(|(name, node)| {
+                .filter_map(|(name, _node)| {
                     if completed.contains(name) || in_progress.contains(name) {
                         return None;
                     }
@@ -429,7 +428,7 @@ impl DependencyOptimizer {
         let mut recommendations = Vec::new();
 
         // Check for unnecessary dependencies
-        for (name, node) in graph.nodes() {
+        for (name, _node) in graph.nodes() {
             let deps = graph.get_dependencies(name);
             if deps.len() > 5 {
                 recommendations.push(format!(

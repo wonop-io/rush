@@ -4,11 +4,9 @@ use crate::{ContainerStatus, DockerClient};
 use async_trait::async_trait;
 use rush_core::{Error, Result};
 use std::process::Stdio;
-use std::time::Duration;
 use tokio::process::Command;
-use tokio::time::timeout;
 use log::{debug, error, info, warn};
-use tracing::{instrument, span, Level};
+use tracing::instrument;
 
 /// Docker executor that implements DockerClient using command-line interface
 #[derive(Debug, Clone)]
@@ -65,7 +63,7 @@ impl DockerExecutor {
     /// Execute a docker command with arguments
     #[instrument(level = "debug", skip(self), fields(command = args.get(0).map(|s| s.as_str()).unwrap_or("unknown"), args_count = args.len()))]
     async fn execute(&self, args: Vec<String>) -> Result<String> {
-        let total_start = std::time::Instant::now();
+        let _total_start = std::time::Instant::now();
         let docker_cmd = args.get(0).map(|s| s.as_str()).unwrap_or("unknown");
 
         let program = if self.use_sudo { "sudo" } else { "docker" };

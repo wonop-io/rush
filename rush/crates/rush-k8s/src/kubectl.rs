@@ -111,7 +111,7 @@ impl Kubectl {
         let order = ["configmap", "secret", "service", "deployment", "ingress"];
         
         for kind in &order {
-            let pattern = format!("*-{}.yaml", kind);
+            let _pattern = format!("*-{}.yaml", kind);
             let entries = std::fs::read_dir(dir_path)?;
             
             for entry in entries {

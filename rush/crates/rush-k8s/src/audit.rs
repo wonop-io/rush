@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use log::{debug, info, warn};
+use log::{debug, info};
 
 /// Audit event types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -447,7 +447,7 @@ impl MonitoringIntegration {
     }
     
     /// Send metrics to Prometheus
-    pub async fn send_prometheus_metrics(&self, entry: &AuditEntry) -> Result<()> {
+    pub async fn send_prometheus_metrics(&self, _entry: &AuditEntry) -> Result<()> {
         if let Some(ref url) = self.prometheus_url {
             // TODO: Implement Prometheus metrics push
             info!("Would send metrics to Prometheus: {}", url);
@@ -456,7 +456,7 @@ impl MonitoringIntegration {
     }
     
     /// Send events to DataDog
-    pub async fn send_datadog_event(&self, entry: &AuditEntry) -> Result<()> {
+    pub async fn send_datadog_event(&self, _entry: &AuditEntry) -> Result<()> {
         if let Some(ref api_key) = self.datadog_api_key {
             // TODO: Implement DataDog event sending
             info!("Would send event to DataDog with key: {}...", &api_key[..8]);

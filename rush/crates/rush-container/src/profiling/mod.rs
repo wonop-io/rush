@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use serde::{Serialize, Deserialize};
-use tracing::{info, warn};
+use tracing::info;
 use log::debug;
 
 /// A single timing entry in the performance tracker

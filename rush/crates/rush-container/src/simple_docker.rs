@@ -10,7 +10,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::simple_output::{OutputLine, SinkExt};

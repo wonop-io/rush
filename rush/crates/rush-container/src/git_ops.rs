@@ -3,14 +3,14 @@
 //! This module provides fast Git operations using libgit2-rs
 //! for improved performance over command-line git.
 
-use git2::{Repository, Status, StatusOptions, Oid, Tree, DiffOptions};
+use git2::{Repository, Status, StatusOptions, Oid, DiffOptions};
 use rush_core::{Error, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use log::{debug, info, trace, warn};
+use log::debug;
 use rayon::prelude::*;
 use sha2::{Sha256, Digest};
 
@@ -203,7 +203,7 @@ impl GitOperations {
     }
 
     /// Get the hash for a specific path
-    fn get_path_hash(&self, repo: &Repository, commit: &git2::Commit, path: &Path) -> Result<String> {
+    fn get_path_hash(&self, _repo: &Repository, commit: &git2::Commit, path: &Path) -> Result<String> {
         let tree = commit.tree()
             .map_err(|e| Error::Internal(format!("Git: Failed to get tree: {}", e)))?;
 

@@ -15,7 +15,6 @@ use crate::{
 };
 use rush_core::error::Result;
 use std::sync::Arc;
-use std::time::Duration;
 use log::{info, debug};
 
 /// Configuration for Docker integration

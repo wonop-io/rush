@@ -3,10 +3,7 @@
 //! This module provides incremental build capabilities by tracking
 //! content changes and only rebuilding what's necessary.
 
-use crate::build::{
-    orchestrator::BuildOrchestrator,
-    cache::{BuildCache, CacheEntry},
-};
+use crate::build::cache::BuildCache;
 use rush_build::ComponentBuildSpec;
 use rush_core::{Error, Result};
 use sha2::{Sha256, Digest};
@@ -16,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
-use log::{debug, info, warn};
+use log::{debug, info};
 use serde::{Serialize, Deserialize};
 use walkdir::WalkDir;
 
@@ -46,7 +43,7 @@ pub struct ContentHasher {
     /// Ignore patterns
     ignore_patterns: Vec<String>,
     /// Hash algorithm
-    hasher: Sha256,
+    _hasher: Sha256,
 }
 
 impl ContentHasher {
@@ -55,7 +52,7 @@ impl ContentHasher {
         Self {
             file_cache: Arc::new(RwLock::new(HashMap::new())),
             ignore_patterns,
-            hasher: Sha256::new(),
+            _hasher: Sha256::new(),
         }
     }
 
@@ -216,7 +213,7 @@ pub struct IncrementalBuilder {
     /// Content hasher
     hasher: Arc<ContentHasher>,
     /// Build cache
-    cache: Arc<RwLock<BuildCache>>,
+    _cache: Arc<RwLock<BuildCache>>,
     /// State file path
     state_file: PathBuf,
 }
@@ -236,7 +233,7 @@ impl IncrementalBuilder {
                 "node_modules".to_string(),
                 ".rush".to_string(),
             ])),
-            cache: Arc::new(RwLock::new(BuildCache::new(cache_dir, cache_dir))),
+            _cache: Arc::new(RwLock::new(BuildCache::new(cache_dir, cache_dir))),
             state_file,
         }
     }

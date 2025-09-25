@@ -118,7 +118,7 @@ pub async fn create_context(
     let toolchain = create_toolchain(&target_os, &target_arch);
 
     // Create reactor only for commands that need it
-    let mut reactor = if needs_container_support {
+    let reactor = if needs_container_support {
         let net_manager = network_manager.ok_or_else(|| 
             rush_core::Error::Setup("Network manager required but not initialized".to_string())
         )?;

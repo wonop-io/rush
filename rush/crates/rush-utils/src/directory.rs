@@ -1,4 +1,4 @@
-use log::{debug, trace, error};
+use log::{debug, trace};
 use std::env;
 use std::path::{Path, PathBuf};
 use rush_core::{Error, Result};

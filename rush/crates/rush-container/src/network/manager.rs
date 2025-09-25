@@ -3,7 +3,7 @@
 //! This module provides centralized network management with automatic cleanup.
 
 use crate::docker::DockerClient;
-use rush_core::error::{Error, Result};
+use rush_core::error::Result;
 use log::{debug, info, warn};
 use std::sync::Arc;
 

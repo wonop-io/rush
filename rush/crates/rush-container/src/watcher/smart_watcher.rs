@@ -3,15 +3,15 @@
 //! This module provides an optimized file watcher that reduces
 //! unnecessary rebuilds through debouncing and pattern matching.
 
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, FileIdMap};
 use rush_core::{Error, Result};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
-use log::{debug, info, warn, error};
+use log::{debug, info, error};
 use regex::Regex;
 
 /// Configuration for smart file watching
@@ -282,8 +282,8 @@ impl SmartWatcher {
         let mut created = HashSet::new();
         let mut modified = HashSet::new();
         let mut removed = HashSet::new();
-        let mut renamed_from = Vec::new();
-        let mut renamed_to = Vec::new();
+        let renamed_from = Vec::new();
+        let renamed_to = Vec::new();
 
         for event in events {
             match event.kind {

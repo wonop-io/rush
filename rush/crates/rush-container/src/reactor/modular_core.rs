@@ -12,21 +12,19 @@ use crate::{
     dependency_graph::DependencyGraph,
     reactor::{
         config::ContainerReactorConfig,
-        state::{SharedReactorState, ReactorState, ReactorPhase},
-        errors::ReactorError,
+        state::{SharedReactorState, ReactorPhase},
     },
 };
 use rush_build::{ComponentBuildSpec, BuildType};
 use rush_core::error::{Error, Result};
-use rush_core::shutdown::{self, ShutdownEvent, ShutdownPhase, ShutdownReason};
-use rush_config::Config;
+use rush_core::shutdown::{self, ShutdownEvent, ShutdownPhase};
 use std::sync::Arc;
 use std::time::Duration;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::broadcast;
 use log::{info, debug, error, warn};
 use tera;
-use tracing::{instrument, span, Level};
+use tracing::instrument;
 
 /// Docker registry configuration
 #[derive(Debug, Clone)]
@@ -2160,7 +2158,7 @@ impl Reactor {
     ) -> Result<Self> {
         use std::collections::HashSet;
         use std::fs;
-        use rush_build::{ComponentBuildSpec, BuildType};
+        
         use crate::tagging::ImageTagGenerator;
 
         // Create toolchain and tag generator
@@ -2171,7 +2169,7 @@ impl Reactor {
         ));
         
         let product_path = config.product_path();
-        let docker_client = Arc::new(crate::docker::DockerCliClient::new("docker".to_string()));
+        let _docker_client = Arc::new(crate::docker::DockerCliClient::new("docker".to_string()));
         
         // Create set of silenced components
         let silenced_components = silence_components.into_iter().collect::<HashSet<_>>();

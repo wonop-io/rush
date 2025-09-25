@@ -4,10 +4,8 @@
 //! identifying bottlenecks and suggesting optimizations.
 
 // Performance metrics are tracked internally
-use rush_core::Result;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
-use log::{debug, info, warn};
 
 /// Build performance analyzer
 pub struct BuildPerformanceAnalyzer {
@@ -358,7 +356,7 @@ impl BuildPerformanceAnalyzer {
 
     /// Trace a dependency chain
     fn trace_chain(&self, start: &str, visited: &mut HashSet<String>) -> Vec<String> {
-        let mut chain = vec![start.to_string()];
+        let chain = vec![start.to_string()];
         visited.insert(start.to_string());
 
         // This is simplified - would need actual dependency graph

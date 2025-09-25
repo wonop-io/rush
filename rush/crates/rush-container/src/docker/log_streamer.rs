@@ -5,15 +5,15 @@
 
 use crate::{
     docker::DockerClient,
-    events::{Event, EventBus, ContainerEvent},
+    events::{Event, EventBus},
 };
-use rush_core::error::{Error, Result};
+use rush_core::error::Result;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-use log::{debug, info, warn, error};
+use log::{debug, info, error};
 
 /// Configuration for log streaming
 #[derive(Debug, Clone)]

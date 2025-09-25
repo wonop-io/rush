@@ -185,7 +185,7 @@ impl DockerClient for DockerCliClient {
         let build_start = std::time::Instant::now();
 
         // Convert paths to PathBuf for manipulation
-        let path_calc_start = std::time::Instant::now();
+        let _path_calc_start = std::time::Instant::now();
         let context_path = Path::new(context);
         let dockerfile_path = Path::new(dockerfile);
 

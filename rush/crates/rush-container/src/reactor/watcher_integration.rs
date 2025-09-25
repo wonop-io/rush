@@ -9,9 +9,8 @@ use crate::{
     watcher::{CoordinatorBuilder, CoordinatorConfig, WatcherCoordinator, WatchResult, ChangeBatch},
 };
 use std::path::Path;
-use std::sync::Arc;
 use tokio::sync::broadcast;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 
 /// Integration configuration
 #[derive(Debug, Clone)]

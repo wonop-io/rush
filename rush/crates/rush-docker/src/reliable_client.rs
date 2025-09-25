@@ -3,19 +3,17 @@
 use crate::{ContainerStatus, DockerClient};
 use async_trait::async_trait;
 use rush_core::{
-    reliability::{CircuitBreaker, RetryConfig, with_retry, with_timeout},
-    Error, Result,
+    reliability::{CircuitBreaker, RetryConfig, with_retry, with_timeout}, Result,
 };
 use std::sync::Arc;
 use std::time::Duration;
-use log::{debug, warn};
 
 /// Docker client wrapper with reliability features
 pub struct ReliableDockerClient {
     inner: Arc<dyn DockerClient>,
     retry_config: RetryConfig,
-    circuit_breaker: CircuitBreaker,
-    operation_timeout: Duration,
+    _circuit_breaker: CircuitBreaker,
+    _operation_timeout: Duration,
 }
 
 impl ReliableDockerClient {
@@ -29,8 +27,8 @@ impl ReliableDockerClient {
                 max_backoff: Duration::from_secs(10),
                 backoff_multiplier: 2.0,
             },
-            circuit_breaker: CircuitBreaker::new(5, Duration::from_secs(60)),
-            operation_timeout: Duration::from_secs(120),
+            _circuit_breaker: CircuitBreaker::new(5, Duration::from_secs(60)),
+            _operation_timeout: Duration::from_secs(120),
         }
     }
 
@@ -45,8 +43,8 @@ impl ReliableDockerClient {
         Self {
             inner,
             retry_config,
-            circuit_breaker: CircuitBreaker::new(circuit_threshold, circuit_reset_timeout),
-            operation_timeout,
+            _circuit_breaker: CircuitBreaker::new(circuit_threshold, circuit_reset_timeout),
+            _operation_timeout: operation_timeout,
         }
     }
 }
