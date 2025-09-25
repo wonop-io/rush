@@ -8,7 +8,6 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-chrono = { workspace = true }
 log = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true }
@@ -22,4 +21,3 @@ toml = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio-test = { workspace = true }

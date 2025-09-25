@@ -7,12 +7,9 @@ license.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
-bollard = { workspace = true }
-futures = { workspace = true }
 log = { workspace = true }
 rush-core = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-tokio-test = { workspace = true }

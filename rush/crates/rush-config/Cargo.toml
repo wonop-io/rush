@@ -6,18 +6,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
-directories = { workspace = true }
 log = { workspace = true }
 rush-core = { workspace = true }
 rush-utils = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 slug = { workspace = true }
 tera = { workspace = true }
-thiserror = { workspace = true }
-toml = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

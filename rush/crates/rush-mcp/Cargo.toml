@@ -6,24 +6,15 @@ edition = "2021"
 [features]
 default = ["stdio"]
 stdio = []
-network = ["axum", "tower"]
+network = []
 
 [dependencies]
-
-# Error handling
-anyhow = { workspace = true }
 async-trait = { workspace = true }
-
-# HTTP/WebSocket for future network transport
-axum = { workspace = true, optional = true }
 
 # Logging
 log = { workspace = true }
-rush-config = { workspace = true }
-rush-container = { workspace = true }
 rush-core = { workspace = true }
 rush-output = { workspace = true }
-rush-security = { workspace = true }
 
 # Serialization
 serde = { workspace = true, features = ["derive"] }
@@ -32,10 +23,8 @@ thiserror = { workspace = true }
 
 # MCP and async
 tokio = { workspace = true, features = ["full"] }
-tower = { workspace = true, optional = true }
 
 # UUID for session management
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 [dev-dependencies]
-tokio-test = { workspace = true }

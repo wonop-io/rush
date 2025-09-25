@@ -6,9 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 async-trait = { workspace = true }
-bollard = { workspace = true }
 chrono = { workspace = true }
 colored = { workspace = true }
 futures = { workspace = true }
@@ -42,13 +40,10 @@ tempfile = { workspace = true }
 tera = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true, features = ["rt"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json", "fmt", "chrono"] }
 uuid = { workspace = true }
 walkdir.workspace = true
 
 [dev-dependencies]
-mockall = { workspace = true }
 serial_test = { workspace = true }
-tokio-test = { workspace = true }
