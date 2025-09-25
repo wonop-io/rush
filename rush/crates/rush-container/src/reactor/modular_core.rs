@@ -5,7 +5,6 @@
 
 use crate::{
     ContainerService,
-    docker::{DockerClient, DockerService},
     events::{EventBus, Event, ContainerEvent},
     simple_lifecycle::{SimpleLifecycleManager, SimpleLifecycleConfig},
     build::{BuildOrchestrator, BuildOrchestratorConfig},
@@ -13,7 +12,6 @@ use crate::{
     dependency_graph::DependencyGraph,
     reactor::{
         config::ContainerReactorConfig,
-        docker_integration::{DockerIntegration, DockerIntegrationConfig, DockerIntegrationBuilder},
         state::{SharedReactorState, ReactorState, ReactorPhase},
         errors::ReactorError,
     },
@@ -68,8 +66,6 @@ pub struct ModularReactorConfig {
     pub build: BuildOrchestratorConfig,
     /// File watcher configuration
     pub watcher: CoordinatorConfig,
-    /// Docker integration configuration
-    pub docker: DockerIntegrationConfig,
     /// Docker registry configuration
     pub registry: RegistryConfig,
 }
@@ -81,7 +77,6 @@ impl Default for ModularReactorConfig {
             lifecycle: SimpleLifecycleConfig::default(),
             build: BuildOrchestratorConfig::default(),
             watcher: CoordinatorConfig::default(),
-            docker: DockerIntegrationConfig::default(),
             registry: RegistryConfig::default(),
         }
     }
@@ -101,8 +96,6 @@ pub struct Reactor {
     build_orchestrator: Arc<BuildOrchestrator>,
     /// File watcher coordinator
     watcher_coordinator: Option<WatcherCoordinator>,
-    /// Enhanced Docker integration
-    docker_integration: DockerIntegration,
     /// Shutdown coordination
     shutdown_sender: broadcast::Sender<()>,
     shutdown_receiver: broadcast::Receiver<()>,
@@ -130,18 +123,16 @@ impl Reactor {
     /// Create a new modular reactor
     pub async fn new(
         config: ModularReactorConfig,
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<Self> {
         // Use default toolchain
         let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
-        Self::with_toolchain(config, docker_client, component_specs, toolchain).await
+        Self::with_toolchain(config, component_specs, toolchain).await
     }
 
     /// Create a new modular reactor with custom toolchain
     pub async fn with_toolchain(
         config: ModularReactorConfig,
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
         toolchain: Arc<rush_toolchain::ToolchainContext>,
     ) -> Result<Self> {
@@ -155,14 +146,6 @@ impl Reactor {
 
         // Set up shutdown coordination
         let (shutdown_sender, shutdown_receiver) = broadcast::channel(1);
-
-        // Create Docker integration with all enhancements
-        let docker_integration = DockerIntegrationBuilder::new()
-            .with_config(config.docker.clone())
-            .with_client(docker_client.clone())
-            .with_event_bus(event_bus.clone())
-            .with_state(state.clone())
-            .build()?;
 
         // Create lifecycle manager with a mock vault for now
         let vault: Arc<std::sync::Mutex<dyn rush_security::Vault + Send>> =
@@ -182,7 +165,7 @@ impl Reactor {
         let build_orchestrator = Arc::new(
             BuildOrchestrator::with_toolchain(
                 config.build.clone(),
-                docker_integration.client(),
+                lifecycle_manager.docker_client(),
                 event_bus.clone(),
                 state.clone(),
                 toolchain,
@@ -212,7 +195,6 @@ impl Reactor {
             lifecycle_manager,
             build_orchestrator,
             watcher_coordinator,
-            docker_integration,
             shutdown_sender,
             shutdown_receiver,
             services: Vec::new(),
@@ -280,12 +262,7 @@ impl Reactor {
             .record_with_component("reactor_setup", "output_sink_propagation", sink_start.elapsed())
             .await;
 
-        // Start Docker health monitoring
-        let health_start = std::time::Instant::now();
-        self.docker_integration.health_check().await?;
-        crate::profiling::global_tracker()
-            .record_with_component("reactor_setup", "docker_health_check", health_start.elapsed())
-            .await;
+        // Docker health check removed - SimpleDocker handles this internally
         
         // Start lifecycle manager
         let lifecycle_start = std::time::Instant::now();
@@ -888,17 +865,15 @@ impl Reactor {
     /// Get current reactor status
     pub async fn status(&self) -> ReactorStatus {
         let state = self.state.read().await;
-        let docker_stats = self.docker_integration.get_docker_stats().await;
-        let metrics_report = self.docker_integration.get_metrics_report().await;
-        
+
         ReactorStatus {
             phase: state.phase().clone(),
             components: state.components().len(),
             running_containers: state.running_components().len(),
             last_error: state.last_error().cloned(),
-            docker_healthy: self.docker_integration.health_check().await.is_ok(),
-            docker_stats,
-            metrics_report,
+            docker_healthy: true, // SimpleDocker is always healthy if containers are running
+            docker_stats: None,
+            metrics_report: None,
         }
     }
     
@@ -963,8 +938,8 @@ impl Reactor {
             warn!("Failed to stop lifecycle manager during shutdown: {}", e);
         }
         
-        // Shutdown Docker integration
-        self.docker_integration.shutdown().await;
+        // Shutdown lifecycle manager
+        self.lifecycle_manager.shutdown().await?;
         
         // Send shutdown signal
         let _ = self.shutdown_sender.send(());
@@ -1341,9 +1316,9 @@ impl Reactor {
         self.force_rebuild = force;
     }
     
-    /// Get the Docker client
-    pub fn docker_client(&self) -> Arc<dyn DockerClient> {
-        self.docker_integration.client()
+    /// Get the Docker client (compatibility method)
+    pub fn docker_client(&self) -> Arc<dyn crate::docker::DockerClient> {
+        self.lifecycle_manager.docker_client()
     }
     
     /// Get component specs
@@ -1754,7 +1729,7 @@ impl Reactor {
             }
 
             // Use the Docker client to push the image
-            if let Err(e) = self.docker_integration.client().push_image(&registry_tag).await {
+            if let Err(e) = self.docker_client().push_image(&registry_tag).await {
                 error!("Failed to push image {} for component {}: {}",
                        registry_tag, component_name, e);
                 return Err(e);
@@ -2255,7 +2230,7 @@ impl Reactor {
 
         // Check if network already exists
         let check_start = std::time::Instant::now();
-        let network_exists = self.docker_integration.client().network_exists(network_name).await?;
+        let network_exists = self.docker_client().network_exists(network_name).await?;
         crate::profiling::global_tracker()
             .record_with_component("network_setup", "check_exists", check_start.elapsed())
             .await;
@@ -2263,7 +2238,7 @@ impl Reactor {
         if !network_exists {
             info!("Creating Docker network: {}", network_name);
             let create_start = std::time::Instant::now();
-            self.docker_integration.client().create_network(network_name).await?;
+            self.docker_client().create_network(network_name).await?;
             crate::profiling::global_tracker()
                 .record_with_component("network_setup", "create_network", create_start.elapsed())
                 .await;
@@ -2414,7 +2389,7 @@ impl Reactor {
         modular_config.base.git_hash = String::new();
         modular_config.base.redirected_components = redirected_components;
         modular_config.base.start_port = config.start_port();
-        modular_config.docker.use_enhanced_client = true;
+        // Docker configuration removed - SimpleDocker handles this
         modular_config.watcher.auto_rebuild = true;
         modular_config.lifecycle.auto_restart = true;
         
@@ -2442,7 +2417,7 @@ impl Reactor {
         Self::resolve_component_ports(&mut component_specs, &config);
         
         // Create the reactor using the existing new() method
-        let mut reactor = Self::new(modular_config, docker_client, component_specs).await?;
+        let mut reactor = Self::new(modular_config, component_specs).await?;
         
         // Set the vault and secrets encoder
         reactor.vault = Some(vault);

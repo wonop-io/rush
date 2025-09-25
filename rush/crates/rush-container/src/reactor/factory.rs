@@ -4,7 +4,6 @@
 //! based on configuration.
 
 use crate::{
-    docker::DockerClient,
     reactor::{
         modular_core::{Reactor, ModularReactorConfig},
         config::ContainerReactorConfig,
@@ -126,99 +125,82 @@ impl ReactorFactory {
     /// Create a reactor implementation based on configuration
     pub async fn create_reactor(
         config: ModularReactorConfig,
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
         _legacy_config: Option<ContainerReactorConfig>,
     ) -> Result<ReactorImplementation> {
         info!("Creating primary reactor implementation");
-        Self::create_primary_reactor(config, docker_client, component_specs).await
+        Self::create_primary_reactor(config, component_specs).await
     }
     
     
     /// Create the primary reactor
     pub async fn create_primary_reactor(
         config: ModularReactorConfig,
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
-        let reactor = Reactor::new(config, docker_client, component_specs).await?;
+        let reactor = Reactor::new(config, component_specs).await?;
         Ok(ReactorImplementation::Primary(reactor))
     }
     
     /// Create a primary reactor with default configuration
     pub async fn create_default_primary_reactor(
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
         let config = ModularReactorConfig::default();
-        Self::create_primary_reactor(config, docker_client, component_specs).await
+        Self::create_primary_reactor(config, component_specs).await
     }
     
     /// Create a reactor with enhanced Docker features enabled
     pub async fn create_enhanced_reactor(
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
         let mut config = ModularReactorConfig::default();
-        
-        // Enable all enhanced features
-        config.docker.use_enhanced_client = true;
-        config.docker.enable_metrics = true;
-        config.docker.enable_pooling = true;
+
+        // Configure lifecycle and build settings
         config.lifecycle.auto_restart = true;
         config.lifecycle.enable_health_checks = true;
         config.build.parallel_builds = true;
         config.build.enable_cache = true;
-        
-        Self::create_primary_reactor(config, docker_client, component_specs).await
+
+        Self::create_primary_reactor(config, component_specs).await
     }
     
     /// Create a reactor for development (with file watching enabled)
     pub async fn create_dev_reactor(
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
         let mut config = ModularReactorConfig::default();
-        
+
         // Configure for development
-        config.docker.use_enhanced_client = true;
         config.watcher.auto_rebuild = true;
         config.watcher.rebuild_cooldown = std::time::Duration::from_secs(1);
         config.lifecycle.auto_restart = true;
         config.build.parallel_builds = true;
-        
+
         // Enable verbose logging for development
-        config.docker.wrapper_config.verbose = true;
         config.watcher.handler_config.verbose = true;
-        
-        Self::create_primary_reactor(config, docker_client, component_specs).await
+
+        Self::create_primary_reactor(config, component_specs).await
     }
     
     /// Create a reactor for production (optimized for stability)
     pub async fn create_production_reactor(
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
         let mut config = ModularReactorConfig::default();
-        
+
         // Configure for production
-        config.docker.use_enhanced_client = true;
-        config.docker.enable_metrics = true;
-        config.docker.enable_pooling = true;
-        
+        // Docker configuration removed - SimpleDocker handles this internally
+
         // Disable file watching in production
         config.watcher.auto_rebuild = false;
-        
-        // Conservative retry settings
-        config.docker.wrapper_config.max_retries = 5;
-        config.docker.wrapper_config.max_retry_delay = std::time::Duration::from_secs(30);
-        
+
         // Enable health checks with more conservative thresholds
         config.lifecycle.enable_health_checks = true;
         config.lifecycle.health_check_interval = std::time::Duration::from_secs(10);
         config.lifecycle.max_restart_attempts = 3;
-        
-        Self::create_primary_reactor(config, docker_client, component_specs).await
+
+        Self::create_primary_reactor(config, component_specs).await
     }
 }
 
@@ -235,11 +217,9 @@ impl ModularReactorConfigBuilder {
         }
     }
     
-    /// Enable or disable enhanced Docker features
-    pub fn with_enhanced_docker(mut self, enabled: bool) -> Self {
-        self.config.docker.use_enhanced_client = enabled;
-        self.config.docker.enable_metrics = enabled;
-        self.config.docker.enable_pooling = enabled;
+    /// Enable or disable enhanced Docker features (deprecated - SimpleDocker handles this)
+    pub fn with_enhanced_docker(self, _enabled: bool) -> Self {
+        // Docker configuration removed - SimpleDocker handles this internally
         self
     }
     
@@ -269,7 +249,7 @@ impl ModularReactorConfigBuilder {
     
     /// Enable verbose logging
     pub fn with_verbose_logging(mut self, enabled: bool) -> Self {
-        self.config.docker.wrapper_config.verbose = enabled;
+        // Docker verbose logging removed - SimpleDocker handles this
         self.config.watcher.handler_config.verbose = enabled;
         self
     }
@@ -296,10 +276,9 @@ impl ModularReactorConfigBuilder {
     /// Build and create a reactor
     pub async fn create_reactor(
         self,
-        docker_client: Arc<dyn DockerClient>,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<ReactorImplementation> {
-        ReactorFactory::create_primary_reactor(self.config, docker_client, component_specs).await
+        ReactorFactory::create_primary_reactor(self.config, component_specs).await
     }
 }
 
@@ -324,12 +303,12 @@ mod tests {
             .with_verbose_logging(true)
             .build();
         
-        assert!(config.docker.use_enhanced_client);
+        // Docker assertions removed - SimpleDocker handles this
         assert!(config.watcher.auto_rebuild);
         assert!(config.lifecycle.auto_restart);
         assert!(config.lifecycle.enable_health_checks);
         assert!(config.build.parallel_builds);
-        assert!(config.docker.wrapper_config.verbose);
+        // Verbose logging assertion removed
     }
     
     #[test]
