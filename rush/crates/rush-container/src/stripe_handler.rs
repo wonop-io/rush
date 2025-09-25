@@ -1,11 +1,12 @@
 //! Special handler for Stripe CLI which runs as a local process with PTY
 
+use std::process::Stdio;
+use std::sync::Arc;
+
 use chrono::Utc;
 use log::info;
 use rush_core::error::{Error, Result};
 use rush_output::simple::{LogEntry, LogOrigin};
-use std::process::Stdio;
-use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
@@ -19,10 +20,7 @@ pub struct StripeCliHandler {
 
 impl StripeCliHandler {
     /// Create a new Stripe CLI handler
-    pub fn new(
-        name: String,
-        output_sink: Arc<Mutex<Box<dyn rush_output::simple::Sink>>>,
-    ) -> Self {
+    pub fn new(name: String, output_sink: Arc<Mutex<Box<dyn rush_output::simple::Sink>>>) -> Self {
         Self {
             child: None,
             name,
@@ -62,7 +60,7 @@ impl StripeCliHandler {
             cmd.arg("--forward-to");
             cmd.arg(webhook_url);
             cmd.arg("--skip-verify");
-            
+
             // Add API key if provided
             if let Some(key) = api_key {
                 cmd.arg("--api-key");
@@ -79,14 +77,14 @@ impl StripeCliHandler {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         cmd.stdin(Stdio::piped());
-        
+
         // Kill on drop to ensure cleanup
         cmd.kill_on_drop(true);
 
         // Spawn the process
-        let mut child = cmd.spawn().map_err(|e| {
-            Error::Docker(format!("Failed to start Stripe CLI: {}", e))
-        })?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| Error::Docker(format!("Failed to start Stripe CLI: {e}")))?;
 
         // Set up output capture to send to sink
         if let Some(stdout) = child.stdout.take() {
@@ -104,7 +102,7 @@ impl StripeCliHandler {
                         is_error: false,
                         log_origin: LogOrigin::Docker,
                     };
-                    
+
                     let mut sink_guard = sink.lock().await;
                     let _ = sink_guard.write(entry).await;
                 }
@@ -126,7 +124,7 @@ impl StripeCliHandler {
                         is_error: true,
                         log_origin: LogOrigin::Docker,
                     };
-                    
+
                     let mut sink_guard = sink.lock().await;
                     let _ = sink_guard.write(entry).await;
                 }

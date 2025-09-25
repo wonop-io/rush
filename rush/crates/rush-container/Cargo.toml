@@ -12,17 +12,17 @@ bollard = { workspace = true }
 chrono = { workspace = true }
 colored = { workspace = true }
 futures = { workspace = true }
-git2 = "0.18"
+git2 = { workspace = true }
 hex.workspace = true
-ignore = "0.4"
+ignore = { workspace = true }
 log = { workspace = true }
-md5 = "0.7"
+md5 = { workspace = true }
 notify = { workspace = true }
-notify-debouncer-full = "0.3"
-once_cell = "1.19"
-petgraph = "0.6"
+notify-debouncer-full = { workspace = true }
+once_cell = { workspace = true }
+petgraph = { workspace = true }
 rand = { workspace = true }
-rayon = "1.10"
+rayon = { workspace = true }
 regex = { workspace = true }
 rush-build = { workspace = true }
 rush-config = { workspace = true }
@@ -42,9 +42,9 @@ tempfile = { workspace = true }
 tera = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { version = "0.7", features = ["rt"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "chrono"] }
+tokio-util = { workspace = true, features = ["rt"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json", "fmt", "chrono"] }
 uuid = { workspace = true }
 walkdir.workspace = true
 

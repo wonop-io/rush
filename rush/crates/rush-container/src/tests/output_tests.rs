@@ -1,12 +1,14 @@
 //! Tests for output capture and log completeness
 
-use crate::docker::DockerClient;
-use crate::tests::mock_docker::{MockDockerClient, MockResponses};
-use crate::tests::test_helpers::*;
+use std::sync::Arc;
+
 use rush_core::error::Result;
 use rush_output::simple::{LogEntry, Sink};
 use serial_test::serial;
-use std::sync::Arc;
+
+use crate::docker::DockerClient;
+use crate::tests::mock_docker::{MockDockerClient, MockResponses};
+use crate::tests::test_helpers::*;
 
 #[tokio::test]
 #[serial]

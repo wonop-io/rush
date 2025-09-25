@@ -6,15 +6,10 @@
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
-    use std::time::Duration;
 
-    use rush_build::{BuildType, ComponentBuildSpec, HealthCheckConfig, HealthCheckType, Variables};
-    use rush_container::{
-        dependency_graph::DependencyGraph,
-        events::EventBus,
-    };
+    use rush_build::{BuildType, ComponentBuildSpec, HealthCheckConfig, HealthCheckType};
     use rush_config::Config;
+    use rush_container::dependency_graph::DependencyGraph;
 
     /// Create a test component with optional dependencies and health checks
     fn create_test_component(
@@ -28,7 +23,7 @@ mod tests {
 
         ComponentBuildSpec {
             build_type: BuildType::PureDockerImage {
-                image_name_with_tag: format!("{}:latest", name),
+                image_name_with_tag: format!("{name}:latest"),
                 command: None,
                 entrypoint: None,
             },
@@ -57,7 +52,7 @@ mod tests {
             dotenv: HashMap::new(),
             cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
-            domain: format!("{}.test.local", name),
+            domain: format!("{name}.test.local"),
             health_check,
             startup_probe: None,
         }
@@ -69,9 +64,19 @@ mod tests {
         let components = vec![
             create_test_component("database", 5432, vec![], None),
             create_test_component("cache", 6379, vec![], None),
-            create_test_component("backend", 8080, vec!["database".to_string(), "cache".to_string()], None),
+            create_test_component(
+                "backend",
+                8080,
+                vec!["database".to_string(), "cache".to_string()],
+                None,
+            ),
             create_test_component("frontend", 3000, vec!["backend".to_string()], None),
-            create_test_component("ingress", 80, vec!["frontend".to_string(), "backend".to_string()], None),
+            create_test_component(
+                "ingress",
+                80,
+                vec!["frontend".to_string(), "backend".to_string()],
+                None,
+            ),
         ];
 
         // Build dependency graph
@@ -113,8 +118,7 @@ mod tests {
         let error_msg = result.unwrap_err().to_string();
         assert!(
             error_msg.contains("Circular dependency") || error_msg.contains("cycle"),
-            "Error should mention cycle: {}",
-            error_msg
+            "Error should mention cycle: {error_msg}"
         );
     }
 
@@ -142,14 +146,16 @@ mod tests {
         assert_eq!(health.interval, 10);
 
         match health.check_type {
-            HealthCheckType::Http { path, expected_status } => {
+            HealthCheckType::Http {
+                path,
+                expected_status,
+            } => {
                 assert_eq!(path, "/health");
                 assert_eq!(expected_status, 200);
             }
             _ => panic!("Expected HTTP health check"),
         }
     }
-
 
     #[test]
     fn test_startup_wave_parallelization() {
@@ -161,18 +167,41 @@ mod tests {
             create_test_component("cache1", 6379, vec![], None),
             create_test_component("cache2", 6380, vec![], None),
             // Wave 1: Services depend on wave 0
-            create_test_component("api1", 8080, vec!["db1".to_string(), "cache1".to_string()], None),
-            create_test_component("api2", 8081, vec!["db2".to_string(), "cache2".to_string()], None),
+            create_test_component(
+                "api1",
+                8080,
+                vec!["db1".to_string(), "cache1".to_string()],
+                None,
+            ),
+            create_test_component(
+                "api2",
+                8081,
+                vec!["db2".to_string(), "cache2".to_string()],
+                None,
+            ),
             // Wave 2: Frontend depends on APIs
-            create_test_component("frontend", 3000, vec!["api1".to_string(), "api2".to_string()], None),
+            create_test_component(
+                "frontend",
+                3000,
+                vec!["api1".to_string(), "api2".to_string()],
+                None,
+            ),
         ];
 
         let graph = DependencyGraph::from_specs(components).unwrap();
         let waves = graph.get_startup_waves().unwrap();
 
         assert_eq!(waves.len(), 3, "Should have 3 waves");
-        assert_eq!(waves[0].len(), 4, "Wave 0 should have 4 parallel components");
-        assert_eq!(waves[1].len(), 2, "Wave 1 should have 2 parallel components");
+        assert_eq!(
+            waves[0].len(),
+            4,
+            "Wave 0 should have 4 parallel components"
+        );
+        assert_eq!(
+            waves[1].len(),
+            2,
+            "Wave 1 should have 2 parallel components"
+        );
         assert_eq!(waves[2].len(), 1, "Wave 2 should have 1 component");
     }
 

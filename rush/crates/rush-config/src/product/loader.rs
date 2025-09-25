@@ -1,9 +1,9 @@
-use rush_core::constants::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use log::{debug, error, trace, warn};
+use rush_core::constants::*;
 use serde_yaml::Value;
 
 use crate::product::types::{Product, ProductComponent};
@@ -115,11 +115,13 @@ impl ProductLoader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
     use std::fs::File;
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     #[ignore] // This test requires specific directory structure and environment setup

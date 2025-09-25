@@ -5,16 +5,17 @@
 //! and streaming output directly, eliminating the need for complex abstractions,
 //! polling, and docker logs.
 
-use rush_core::error::{Error, Result};
 use std::process::Stdio;
 use std::sync::Arc;
+
+use log::{debug, error, info};
+use rush_core::error::{Error, Result};
+use rush_output::simple::Sink;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
-use log::{debug, error, info};
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::simple_output::{OutputLine, SinkExt};
-use rush_output::simple::Sink;
 
 /// Options for running a container
 #[derive(Debug, Clone, Default)]
@@ -127,11 +128,11 @@ impl SimpleDocker {
     }
 
     /// Run a container with pseudo-TTY and follow logs
-    pub async fn run_interactive(
-        &self,
-        options: RunOptions,
-    ) -> Result<String> {
-        info!("Starting container {} with image {}", options.name, options.image);
+    pub async fn run_interactive(&self, options: RunOptions) -> Result<String> {
+        info!(
+            "Starting container {} with image {}",
+            options.name, options.image
+        );
 
         // First, run the container with -d -t (detached with TTY)
         let mut cmd = Command::new(&self.docker_cmd);
@@ -155,20 +156,25 @@ impl SimpleDocker {
         debug!("Executing: {:?}", cmd);
 
         // Run the container and capture the container ID
-        let output = cmd.output().await
-            .map_err(|e| Error::Docker(format!("Failed to start container {}: {}", options.name, e)))?;
+        let output = cmd.output().await.map_err(|e| {
+            Error::Docker(format!("Failed to start container {}: {}", options.name, e))
+        })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::Docker(format!("Failed to start container {}: {}", options.name, stderr)));
+            return Err(Error::Docker(format!(
+                "Failed to start container {}: {}",
+                options.name, stderr
+            )));
         }
 
         // The container ID is in stdout
-        let container_id = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-        info!("Container {} started with ID: {}", options.name, container_id);
+        info!(
+            "Container {} started with ID: {}",
+            options.name, container_id
+        );
 
         // Now follow the logs using docker logs --follow
         // This gives us the TTY output with colors preserved
@@ -183,7 +189,7 @@ impl SimpleDocker {
 
                 // Follow logs using docker logs --follow
                 let mut cmd = Command::new(&docker_cmd);
-                cmd.args(&["logs", "--follow", &container_name]);
+                cmd.args(["logs", "--follow", &container_name]);
                 cmd.stdout(Stdio::piped());
                 cmd.stderr(Stdio::piped());
 
@@ -204,7 +210,8 @@ impl SimpleDocker {
                                     is_error: false,
                                 };
 
-                                let _ = sink_clone.lock().await.write_output_line(output_line).await;
+                                let _ =
+                                    sink_clone.lock().await.write_output_line(output_line).await;
                             }
                         });
                     }
@@ -225,7 +232,8 @@ impl SimpleDocker {
                                     is_error: true,
                                 };
 
-                                let _ = sink_clone.lock().await.write_output_line(output_line).await;
+                                let _ =
+                                    sink_clone.lock().await.write_output_line(output_line).await;
                             }
                         });
                     }
@@ -242,15 +250,17 @@ impl SimpleDocker {
 
         // Use docker stop to stop the container
         let output = Command::new(&self.docker_cmd)
-            .args(&["stop", name])
+            .args(["stop", name])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to stop container {}: {}", name, e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to stop container {name}: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             if !stderr.contains("No such container") {
-                return Err(Error::Docker(format!("Failed to stop container {}: {}", name, stderr)));
+                return Err(Error::Docker(format!(
+                    "Failed to stop container {name}: {stderr}"
+                )));
             }
         }
 
@@ -264,15 +274,17 @@ impl SimpleDocker {
 
         // Force remove the container
         let output = Command::new(&self.docker_cmd)
-            .args(&["rm", "-f", name])
+            .args(["rm", "-f", name])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to remove container {}: {}", name, e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to remove container {name}: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             if !stderr.contains("No such container") {
-                return Err(Error::Docker(format!("Failed to remove container {}: {}", name, stderr)));
+                return Err(Error::Docker(format!(
+                    "Failed to remove container {name}: {stderr}"
+                )));
             }
         }
 
@@ -283,14 +295,16 @@ impl SimpleDocker {
     /// List running containers (simple docker ps)
     pub async fn list(&self) -> Result<Vec<String>> {
         let output = Command::new(&self.docker_cmd)
-            .args(&["ps", "--format", "{{.Names}}"])
+            .args(["ps", "--format", "{{.Names}}"])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to list containers: {}", e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to list containers: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::Docker(format!("Failed to list containers: {}", stderr)));
+            return Err(Error::Docker(format!(
+                "Failed to list containers: {stderr}"
+            )));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -306,10 +320,17 @@ impl SimpleDocker {
     /// Check if a container exists
     pub async fn exists(&self, name: &str) -> Result<bool> {
         let output = Command::new(&self.docker_cmd)
-            .args(&["ps", "-a", "--filter", &format!("name={}", name), "--format", "{{.Names}}"])
+            .args([
+                "ps",
+                "-a",
+                "--filter",
+                &format!("name={name}"),
+                "--format",
+                "{{.Names}}",
+            ])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to check container {}: {}", name, e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to check container {name}: {e}")))?;
 
         if !output.status.success() {
             return Ok(false);
@@ -322,14 +343,16 @@ impl SimpleDocker {
     /// Get container ID by name
     pub async fn get_container_id(&self, name: &str) -> Result<String> {
         let output = Command::new(&self.docker_cmd)
-            .args(&["ps", "-aqf", &format!("name={}", name)])
+            .args(["ps", "-aqf", &format!("name={name}")])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to get container ID for {}: {}", name, e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to get container ID for {name}: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::Docker(format!("Failed to get container ID for {}: {}", name, stderr)));
+            return Err(Error::Docker(format!(
+                "Failed to get container ID for {name}: {stderr}"
+            )));
         }
 
         let id = String::from_utf8_lossy(&output.stdout)
@@ -337,7 +360,7 @@ impl SimpleDocker {
             .next()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| Error::Docker(format!("Container {} not found", name)))?;
+            .ok_or_else(|| Error::Docker(format!("Container {name} not found")))?;
 
         Ok(id)
     }
@@ -372,19 +395,23 @@ impl SimpleDocker {
     pub async fn run_command(&self, image: &str, command: Vec<String>) -> Result<String> {
         let mut cmd = Command::new(&self.docker_cmd);
         cmd.arg("run")
-           .arg("--rm")  // Remove after exit
-           .arg(image);
+            .arg("--rm") // Remove after exit
+            .arg(image);
 
         for arg in command {
             cmd.arg(arg);
         }
 
-        let output = cmd.output().await
-            .map_err(|e| Error::Docker(format!("Failed to run command in {}: {}", image, e)))?;
+        let output = cmd
+            .output()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to run command in {image}: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::Docker(format!("Command failed in {}: {}", image, stderr)));
+            return Err(Error::Docker(format!(
+                "Command failed in {image}: {stderr}"
+            )));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -395,14 +422,16 @@ impl SimpleDocker {
         info!("Pulling image {}", image);
 
         let output = Command::new(&self.docker_cmd)
-            .args(&["pull", image])
+            .args(["pull", image])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to pull image {}: {}", image, e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to pull image {image}: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::Docker(format!("Failed to pull image {}: {}", image, stderr)));
+            return Err(Error::Docker(format!(
+                "Failed to pull image {image}: {stderr}"
+            )));
         }
 
         info!("Successfully pulled image {}", image);
@@ -414,16 +443,18 @@ impl SimpleDocker {
         info!("Creating network {}", name);
 
         let output = Command::new(&self.docker_cmd)
-            .args(&["network", "create", name])
+            .args(["network", "create", name])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to create network {}: {}", name, e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to create network {name}: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Ignore if network already exists
             if !stderr.contains("already exists") {
-                return Err(Error::Docker(format!("Failed to create network {}: {}", name, stderr)));
+                return Err(Error::Docker(format!(
+                    "Failed to create network {name}: {stderr}"
+                )));
             }
             debug!("Network {} already exists", name);
         } else {
@@ -438,16 +469,18 @@ impl SimpleDocker {
         info!("Removing network {}", name);
 
         let output = Command::new(&self.docker_cmd)
-            .args(&["network", "rm", name])
+            .args(["network", "rm", name])
             .output()
             .await
-            .map_err(|e| Error::Docker(format!("Failed to remove network {}: {}", name, e)))?;
+            .map_err(|e| Error::Docker(format!("Failed to remove network {name}: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Ignore if network doesn't exist
             if !stderr.contains("not found") {
-                return Err(Error::Docker(format!("Failed to remove network {}: {}", name, stderr)));
+                return Err(Error::Docker(format!(
+                    "Failed to remove network {name}: {stderr}"
+                )));
             }
             debug!("Network {} not found", name);
         } else {

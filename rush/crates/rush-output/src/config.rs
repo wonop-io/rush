@@ -1,10 +1,11 @@
+use rush_config::loader::DevOutputConfig;
+use rush_core::error::Result;
+
 use crate::event::LogLevel;
 use crate::filter::{ComponentFilter, LevelFilter, OutputFilter, PhaseFilter};
 use crate::formatter::{ColorTheme, ColoredFormatter, OutputFormatter};
 use crate::session::{OutputMode, OutputSession, SessionBuilder};
 use crate::sink::{FileSink, OutputSink, TerminalSink};
-use rush_config::loader::DevOutputConfig;
-use rush_core::error::Result;
 
 /// Create an output session from configuration
 pub fn create_session_from_config(config: &DevOutputConfig) -> Result<OutputSession> {

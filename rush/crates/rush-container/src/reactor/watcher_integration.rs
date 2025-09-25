@@ -3,14 +3,16 @@
 //! This module provides integration points for using the new watcher
 //! coordinator with the reactor.
 
-use crate::{
-    events::EventBus,
-    reactor::state::SharedReactorState,
-    watcher::{CoordinatorBuilder, CoordinatorConfig, WatcherCoordinator, WatchResult, ChangeBatch},
-};
 use std::path::Path;
-use tokio::sync::broadcast;
+
 use log::{debug, error, info};
+use tokio::sync::broadcast;
+
+use crate::events::EventBus;
+use crate::reactor::state::SharedReactorState;
+use crate::watcher::{
+    ChangeBatch, CoordinatorBuilder, CoordinatorConfig, WatchResult, WatcherCoordinator,
+};
 
 /// Integration configuration
 #[derive(Debug, Clone)]
@@ -53,12 +55,12 @@ impl WatcherIntegration {
                     .with_event_bus(event_bus.clone())
                     .with_state(state.clone())
                     .with_shutdown_sender(shutdown_sender)
-                    .build()?
+                    .build()?,
             )
         } else {
             None
         };
-        
+
         Ok(Self {
             _config: config,
             coordinator,
@@ -95,10 +97,10 @@ impl WatcherIntegration {
                         batch.len(),
                         batch.affected_components.len()
                     );
-                    
+
                     // Mark rebuild started
                     coordinator.mark_rebuild_started().await;
-                    
+
                     // Return affected components
                     Some(batch.affected_components.into_iter().collect())
                 }
@@ -165,32 +167,36 @@ mod tests {
         let event_bus = EventBus::new();
         let state = SharedReactorState::new();
         let (shutdown_tx, _) = broadcast::channel(1);
-        
+
         let integration = WatcherIntegration::new(
             WatcherIntegrationConfig::default(),
             event_bus,
             state,
             shutdown_tx,
         );
-        
+
         assert!(integration.is_ok());
         assert!(integration.unwrap().is_using_new_watcher());
     }
 
     #[test]
     fn test_determine_rebuild_targets() {
-        let all_components = vec!["comp1".to_string(), "comp2".to_string(), "comp3".to_string()];
-        
+        let all_components = vec![
+            "comp1".to_string(),
+            "comp2".to_string(),
+            "comp3".to_string(),
+        ];
+
         // Test with specific affected components
         let mut batch = ChangeBatch::new();
         batch.affected_components.insert("comp1".to_string());
         batch.affected_components.insert("comp3".to_string());
-        
+
         let targets = determine_rebuild_targets(Some(batch), &all_components);
         assert_eq!(targets.len(), 2);
         assert!(targets.contains(&"comp1".to_string()));
         assert!(targets.contains(&"comp3".to_string()));
-        
+
         // Test with no batch
         let targets = determine_rebuild_targets(None, &all_components);
         assert_eq!(targets, all_components);

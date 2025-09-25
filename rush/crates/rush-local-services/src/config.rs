@@ -1,6 +1,8 @@
-use crate::types::{LocalServiceType, PortMapping, ResourceLimits, VolumeMapping};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::types::{LocalServiceType, PortMapping, ResourceLimits, VolumeMapping};
 
 /// Configuration for a local service
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +42,7 @@ pub struct LocalServiceConfig {
 
     /// Initialization scripts or commands
     pub init_scripts: Vec<String>,
-    
+
     /// Post-startup tasks to run after the service is healthy
     /// These are commands that will be executed inside the container
     pub post_startup_tasks: Vec<String>,
@@ -172,14 +174,17 @@ impl LocalServiceConfig {
             LocalServiceType::Prometheus => {
                 // Default command with basic configuration
                 if self.command.is_none() {
-                    self.command = Some(concat!(
-                        "--config.file=/etc/prometheus/prometheus.yml ",
-                        "--storage.tsdb.path=/prometheus ",
-                        "--web.console.libraries=/usr/share/prometheus/console_libraries ",
-                        "--web.console.templates=/usr/share/prometheus/consoles ",
-                        "--storage.tsdb.retention.time=15d ",
-                        "--web.enable-lifecycle"
-                    ).to_string());
+                    self.command = Some(
+                        concat!(
+                            "--config.file=/etc/prometheus/prometheus.yml ",
+                            "--storage.tsdb.path=/prometheus ",
+                            "--web.console.libraries=/usr/share/prometheus/console_libraries ",
+                            "--web.console.templates=/usr/share/prometheus/consoles ",
+                            "--storage.tsdb.retention.time=15d ",
+                            "--web.enable-lifecycle"
+                        )
+                        .to_string(),
+                    );
                 }
 
                 // Default volumes for configuration and data
@@ -187,19 +192,23 @@ impl LocalServiceConfig {
                     self.volumes.push(VolumeMapping::new(
                         "./data/prometheus".to_string(),
                         "/prometheus".to_string(),
-                        false
+                        false,
                     ));
                 }
             }
             LocalServiceType::Grafana => {
                 // Default environment variables
-                self.env.entry("GF_SECURITY_ADMIN_USER".to_string())
+                self.env
+                    .entry("GF_SECURITY_ADMIN_USER".to_string())
                     .or_insert("admin".to_string());
-                self.env.entry("GF_SECURITY_ADMIN_PASSWORD".to_string())
+                self.env
+                    .entry("GF_SECURITY_ADMIN_PASSWORD".to_string())
                     .or_insert("admin".to_string());
-                self.env.entry("GF_USERS_ALLOW_SIGN_UP".to_string())
+                self.env
+                    .entry("GF_USERS_ALLOW_SIGN_UP".to_string())
                     .or_insert("false".to_string());
-                self.env.entry("GF_LOG_LEVEL".to_string())
+                self.env
+                    .entry("GF_LOG_LEVEL".to_string())
                     .or_insert("info".to_string());
 
                 // Default volumes for data persistence
@@ -207,7 +216,7 @@ impl LocalServiceConfig {
                     self.volumes.push(VolumeMapping::new(
                         "./data/grafana".to_string(),
                         "/var/lib/grafana".to_string(),
-                        false
+                        false,
                     ));
                 }
             }
@@ -222,7 +231,7 @@ impl LocalServiceConfig {
                     self.volumes.push(VolumeMapping::new(
                         "./data/tempo".to_string(),
                         "/var/tempo".to_string(),
-                        false
+                        false,
                     ));
                 }
 
@@ -273,9 +282,9 @@ impl ServiceDefaults {
         ));
         // Add default post-startup task to create a local bucket
         // This can be overridden in the stack.spec.yaml
-        config.post_startup_tasks.push(
-            "awslocal s3 mb s3://local-bucket --region us-east-1 || true".to_string()
-        );
+        config
+            .post_startup_tasks
+            .push("awslocal s3 mb s3://local-bucket --region us-east-1 || true".to_string());
         config.with_defaults()
     }
 
@@ -307,7 +316,7 @@ impl ServiceDefaults {
                 let mut grafana = Self::grafana("grafana".to_string());
                 grafana.depends_on = vec!["prometheus".to_string(), "tempo".to_string()];
                 grafana
-            }
+            },
         ]
     }
 }

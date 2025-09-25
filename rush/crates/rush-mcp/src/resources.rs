@@ -1,11 +1,13 @@
 //! MCP resources for accessing Rush data
 
-use crate::error::{McpError, Result};
-use crate::protocol::{ResourceContent, ResourceInfo, ResourceRead};
+use std::sync::Arc;
+
 use rush_output::mcp_sink::McpLogEntry;
 use serde_json::json;
-use std::sync::Arc;
 use tokio::sync::RwLock;
+
+use crate::error::{McpError, Result};
+use crate::protocol::{ResourceContent, ResourceInfo, ResourceRead};
 
 /// Resource registry for Rush MCP server
 pub struct ResourceRegistry {
@@ -20,7 +22,7 @@ impl ResourceRegistry {
             resources: Vec::new(),
             log_buffer,
         };
-        
+
         registry.register_resources();
         registry
     }
@@ -119,7 +121,7 @@ impl ResourceRegistry {
     /// Read logs resource
     async fn read_logs_resource(&self, path: &str) -> Result<ResourceContent> {
         let logs = self.log_buffer.read().await;
-        
+
         let filtered_logs: Vec<&McpLogEntry> = match path {
             "all" => logs.iter().collect(),
             "system" => logs.iter().filter(|l| l.log_origin == "SYSTEM").collect(),
@@ -127,22 +129,16 @@ impl ResourceRegistry {
             "script" => logs.iter().filter(|l| l.log_origin == "SCRIPT").collect(),
             component => {
                 // Filter by component name
-                logs.iter()
-                    .filter(|l| l.component == component)
-                    .collect()
+                logs.iter().filter(|l| l.component == component).collect()
             }
         };
 
         // Take last 100 logs
-        let recent_logs: Vec<&McpLogEntry> = filtered_logs
-            .into_iter()
-            .rev()
-            .take(100)
-            .rev()
-            .collect();
+        let recent_logs: Vec<&McpLogEntry> =
+            filtered_logs.into_iter().rev().take(100).rev().collect();
 
         Ok(ResourceContent {
-            uri: format!("logs://{}", path),
+            uri: format!("logs://{path}"),
             mime_type: "application/json".to_string(),
             text: Some(serde_json::to_string_pretty(&recent_logs)?),
             blob: None,
@@ -196,11 +192,11 @@ impl ResourceRegistry {
                     ]
                 })
             }
-            _ => return Err(McpError::ResourceNotFound(format!("status://{}", path))),
+            _ => return Err(McpError::ResourceNotFound(format!("status://{path}"))),
         };
 
         Ok(ResourceContent {
-            uri: format!("status://{}", path),
+            uri: format!("status://{path}"),
             mime_type: "application/json".to_string(),
             text: Some(serde_json::to_string_pretty(&content)?),
             blob: None,
@@ -247,11 +243,11 @@ impl ResourceRegistry {
                     }
                 })
             }
-            _ => return Err(McpError::ResourceNotFound(format!("config://{}", path))),
+            _ => return Err(McpError::ResourceNotFound(format!("config://{path}"))),
         };
 
         Ok(ResourceContent {
-            uri: format!("config://{}", path),
+            uri: format!("config://{path}"),
             mime_type: "application/json".to_string(),
             text: Some(serde_json::to_string_pretty(&content)?),
             blob: None,

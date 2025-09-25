@@ -7,9 +7,10 @@ use std::future::Future;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use log::{debug, error, warn};
 use tokio::sync::RwLock;
-use tokio::time::{timeout, sleep};
-use log::{warn, debug, error};
+use tokio::time::{sleep, timeout};
 
 use crate::{Error, Result};
 
@@ -38,10 +39,7 @@ impl Default for RetryConfig {
 }
 
 /// Execute an operation with retry logic and exponential backoff
-pub async fn with_retry<F, Fut, T>(
-    operation: F,
-    config: RetryConfig,
-) -> Result<T>
+pub async fn with_retry<F, Fut, T>(operation: F, config: RetryConfig) -> Result<T>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T>>,
@@ -62,9 +60,8 @@ where
                 sleep(backoff).await;
 
                 // Calculate next backoff with jitter
-                let next_backoff = Duration::from_secs_f64(
-                    backoff.as_secs_f64() * config.backoff_multiplier
-                );
+                let next_backoff =
+                    Duration::from_secs_f64(backoff.as_secs_f64() * config.backoff_multiplier);
                 backoff = next_backoff.min(config.max_backoff);
                 retries += 1;
             }
@@ -81,15 +78,14 @@ fn is_retryable(error: &Error) -> bool {
     match error {
         Error::Docker(msg) => {
             // Retry on transient Docker errors
-            msg.contains("timeout") ||
-            msg.contains("connection refused") ||
-            msg.contains("temporarily unavailable")
+            msg.contains("timeout")
+                || msg.contains("connection refused")
+                || msg.contains("temporarily unavailable")
         }
         Error::Network(_) => true,
         Error::External(msg) => {
             // Retry on transient external errors
-            msg.contains("timeout") ||
-            msg.contains("connection")
+            msg.contains("timeout") || msg.contains("connection")
         }
         _ => false,
     }
@@ -144,7 +140,7 @@ impl CircuitBreaker {
     {
         if self.is_open().await {
             return Err(Error::ServiceUnavailable(
-                "Circuit breaker is open".to_string()
+                "Circuit breaker is open".to_string(),
             ));
         }
 
@@ -194,20 +190,14 @@ impl CircuitBreaker {
 }
 
 /// Execute an operation with a timeout
-pub async fn with_timeout<F, T>(
-    operation: F,
-    duration: Duration,
-    operation_name: &str,
-) -> Result<T>
+pub async fn with_timeout<F, T>(operation: F, duration: Duration, operation_name: &str) -> Result<T>
 where
     F: Future<Output = Result<T>>,
 {
     match timeout(duration, operation).await {
         Ok(result) => result,
         Err(_) => Err(Error::Timeout(format!(
-            "{} exceeded timeout of {:?}",
-            operation_name,
-            duration
+            "{operation_name} exceeded timeout of {duration:?}"
         ))),
     }
 }
@@ -301,6 +291,15 @@ pub struct FallbackStrategy<T> {
     _phantom: std::marker::PhantomData<T>,
 }
 
+impl<T> Default for FallbackStrategy<T>
+where
+    T: Send + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> FallbackStrategy<T>
 where
     T: Send + 'static,
@@ -314,11 +313,7 @@ where
     }
 
     /// Execute with fallback strategy
-    pub async fn execute<F1, F2, Fut1, Fut2>(
-        &self,
-        primary: F1,
-        fallback: F2,
-    ) -> Result<T>
+    pub async fn execute<F1, F2, Fut1, Fut2>(&self, primary: F1, fallback: F2) -> Result<T>
     where
         F1: FnOnce() -> Fut1,
         F2: FnOnce() -> Fut2,
@@ -376,14 +371,14 @@ mod tests {
         let breaker = CircuitBreaker::new(2, Duration::from_millis(100));
 
         // First failure
-        let _ = breaker.call(|| async {
-            Err::<(), _>(Error::Docker("Connection failed".to_string()))
-        }).await;
+        let _ = breaker
+            .call(|| async { Err::<(), _>(Error::Docker("Connection failed".to_string())) })
+            .await;
 
         // Second failure - should open the circuit
-        let _ = breaker.call(|| async {
-            Err::<(), _>(Error::Docker("Connection failed".to_string()))
-        }).await;
+        let _ = breaker
+            .call(|| async { Err::<(), _>(Error::Docker("Connection failed".to_string())) })
+            .await;
 
         // Circuit should be open now
         assert!(breaker.is_open().await);
@@ -402,11 +397,7 @@ mod tests {
             Ok::<_, Error>("Should timeout")
         };
 
-        let result = with_timeout(
-            operation,
-            Duration::from_millis(100),
-            "test operation"
-        ).await;
+        let result = with_timeout(operation, Duration::from_millis(100), "test operation").await;
 
         assert!(result.is_err());
         match result {

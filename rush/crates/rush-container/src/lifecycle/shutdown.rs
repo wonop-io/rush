@@ -2,17 +2,17 @@
 //!
 //! This module handles graceful shutdown of containers and cleanup operations.
 
-use crate::{
-    docker::{DockerClient, DockerService},
-    events::{Event, EventBus, ContainerEvent, ShutdownReason, StopReason},
-    reactor::state::{SharedReactorState, ReactorPhase},
-};
-use rush_build::BuildType;
-use rush_core::error::Result;
 use std::sync::Arc;
 use std::time::Duration;
+
 use log::{debug, error, info, trace, warn};
+use rush_build::BuildType;
+use rush_core::error::Result;
 use tokio::time::sleep;
+
+use crate::docker::{DockerClient, DockerService};
+use crate::events::{ContainerEvent, Event, EventBus, ShutdownReason, StopReason};
+use crate::reactor::state::{ReactorPhase, SharedReactorState};
 
 /// Shutdown configuration
 #[derive(Debug, Clone)]
@@ -32,8 +32,8 @@ pub struct ShutdownConfig {
 impl Default for ShutdownConfig {
     fn default() -> Self {
         Self {
-            grace_period: Duration::from_secs(5),  // Reduced from 10
-            max_retries: 2,                        // Reduced from 3
+            grace_period: Duration::from_secs(5),    // Reduced from 10
+            max_retries: 2,                          // Reduced from 3
             retry_delay: Duration::from_millis(500), // Reduced from 1 sec
             preserve_local_services: true,
             operation_timeout: Duration::from_secs(5), // Reduced from 30
@@ -83,37 +83,50 @@ impl ShutdownManager {
         reason: ShutdownReason,
         strategy: ShutdownStrategy,
     ) -> Result<()> {
-        info!("Initiating shutdown of {} services: {:?}", services.len(), reason);
+        info!(
+            "Initiating shutdown of {} services: {:?}",
+            services.len(),
+            reason
+        );
 
         // Update state - only transition if not already shutting down
         {
             let mut state = self.state.write().await;
-            if *state.phase() != ReactorPhase::ShuttingDown && *state.phase() != ReactorPhase::Terminated {
+            if *state.phase() != ReactorPhase::ShuttingDown
+                && *state.phase() != ReactorPhase::Terminated
+            {
                 state.transition_to(ReactorPhase::ShuttingDown)?;
             }
         }
-        
+
         // Publish shutdown event
-        if let Err(e) = self.event_bus.publish(Event::new(
-            "shutdown",
-            ContainerEvent::ShutdownInitiated { reason: reason.clone() },
-        )).await {
+        if let Err(e) = self
+            .event_bus
+            .publish(Event::new(
+                "shutdown",
+                ContainerEvent::ShutdownInitiated {
+                    reason: reason.clone(),
+                },
+            ))
+            .await
+        {
             debug!("Failed to publish shutdown event: {}", e);
         }
-        
+
         // Shutdown each service
         for service in services {
             let service_name = service.name().unwrap_or_else(|| "unknown".to_string());
             match self.shutdown_service(service, strategy).await {
                 Ok(_) => {
                     debug!("Successfully shut down {}", service_name);
-                    
+
                     // Update state
                     {
                         let mut state = self.state.write().await;
                         // Find component by container ID
                         let components = state.components().clone();
-                        if let Some((name, _)) = components.iter()
+                        if let Some((name, _)) = components
+                            .iter()
                             .find(|(_, c)| c.container_id.as_deref() == Some(service.id()))
                         {
                             state.mark_component_stopped(name);
@@ -126,13 +139,13 @@ impl ShutdownManager {
                 }
             }
         }
-        
+
         // Update state to terminated
         {
             let mut state = self.state.write().await;
             state.transition_to(ReactorPhase::Terminated)?;
         }
-        
+
         info!("Shutdown complete");
         Ok(())
     }
@@ -144,21 +157,19 @@ impl ShutdownManager {
         strategy: ShutdownStrategy,
     ) -> Result<()> {
         match strategy {
-            ShutdownStrategy::Graceful => {
-                self.stop_gracefully(service).await
-            }
-            ShutdownStrategy::Forced => {
-                self.force_stop(service.id()).await
-            }
+            ShutdownStrategy::Graceful => self.stop_gracefully(service).await,
+            ShutdownStrategy::Forced => self.force_stop(service.id()).await,
             ShutdownStrategy::GracefulThenForced => {
-                match tokio::time::timeout(
-                    self.config.grace_period,
-                    self.stop_gracefully(service)
-                ).await {
+                match tokio::time::timeout(self.config.grace_period, self.stop_gracefully(service))
+                    .await
+                {
                     Ok(Ok(_)) => Ok(()),
                     _ => {
                         let service_name = service.name().unwrap_or_else(|| "unknown".to_string());
-                        warn!("Graceful shutdown timed out for {}, forcing stop", service_name);
+                        warn!(
+                            "Graceful shutdown timed out for {}, forcing stop",
+                            service_name
+                        );
                         self.force_stop(service.id()).await
                     }
                 }
@@ -170,10 +181,10 @@ impl ShutdownManager {
     async fn stop_gracefully(&self, service: &DockerService) -> Result<()> {
         let service_name = service.name().unwrap_or_else(|| "unknown".to_string());
         debug!("Stopping {} gracefully", service_name);
-        
+
         // Send stop signal
         service.stop().await?;
-        
+
         // Wait for container to stop
         let start = std::time::Instant::now();
         while start.elapsed() < self.config.operation_timeout {
@@ -187,31 +198,35 @@ impl ShutdownManager {
                 }
             }
         }
-        
+
         // Remove container
         service.remove().await?;
-        
+
         // Publish event
         let service_name = service.name().unwrap_or_else(|| "unknown".to_string());
-        if let Err(e) = self.event_bus.publish(Event::new(
-            "shutdown",
-            ContainerEvent::ContainerStopped {
-                component: service_name,
-                container_id: service.id().to_string(),
-                exit_code: Some(0),
-                reason: StopReason::Shutdown,
-            },
-        )).await {
+        if let Err(e) = self
+            .event_bus
+            .publish(Event::new(
+                "shutdown",
+                ContainerEvent::ContainerStopped {
+                    component: service_name,
+                    container_id: service.id().to_string(),
+                    exit_code: Some(0),
+                    reason: StopReason::Shutdown,
+                },
+            ))
+            .await
+        {
             debug!("Failed to publish container stopped event: {}", e);
         }
-        
+
         Ok(())
     }
 
     /// Force stop a container with retries
     pub async fn force_stop(&self, container_id: &str) -> Result<()> {
         warn!("Force stopping container {}", container_id);
-        
+
         let mut retries = 0;
         while retries < self.config.max_retries {
             // Try to stop the container
@@ -229,29 +244,36 @@ impl ShutdownManager {
                     );
                 }
                 Err(e) => {
-                    error!("Failed to stop container {} after {} attempts", container_id, self.config.max_retries);
+                    error!(
+                        "Failed to stop container {} after {} attempts",
+                        container_id, self.config.max_retries
+                    );
                     return Err(e);
                 }
             }
-            
+
             // Try to remove the container
             match self.docker_client.remove_container(container_id).await {
                 Ok(_) => {
                     info!("Container {} removed", container_id);
-                    
+
                     // Publish event
-                    if let Err(e) = self.event_bus.publish(Event::new(
-                        "shutdown",
-                        ContainerEvent::ContainerStopped {
-                            component: container_id.to_string(),
-                            container_id: container_id.to_string(),
-                            exit_code: None,
-                            reason: StopReason::Killed,
-                        },
-                    )).await {
+                    if let Err(e) = self
+                        .event_bus
+                        .publish(Event::new(
+                            "shutdown",
+                            ContainerEvent::ContainerStopped {
+                                component: container_id.to_string(),
+                                container_id: container_id.to_string(),
+                                exit_code: None,
+                                reason: StopReason::Killed,
+                            },
+                        ))
+                        .await
+                    {
                         debug!("Failed to publish container stopped event: {}", e);
                     }
-                    
+
                     return Ok(());
                 }
                 Err(e) if retries < self.config.max_retries - 1 => {
@@ -266,12 +288,15 @@ impl ShutdownManager {
                     sleep(self.config.retry_delay).await;
                 }
                 Err(e) => {
-                    error!("Failed to remove container {} after {} attempts", container_id, self.config.max_retries);
+                    error!(
+                        "Failed to remove container {} after {} attempts",
+                        container_id, self.config.max_retries
+                    );
                     return Err(e);
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -282,26 +307,33 @@ impl ShutdownManager {
         component_specs: &[rush_build::ComponentBuildSpec],
     ) -> Result<()> {
         trace!("Cleaning up containers by name pattern");
-        
+
         for spec in component_specs {
             // Skip local services if configured
-            if self.config.preserve_local_services {
-                if matches!(spec.build_type, BuildType::LocalService { .. }) {
-                    debug!("Preserving local service {}", spec.component_name);
-                    continue;
-                }
+            if self.config.preserve_local_services
+                && matches!(spec.build_type, BuildType::LocalService { .. })
+            {
+                debug!("Preserving local service {}", spec.component_name);
+                continue;
             }
-            
+
             // Build container name
-            let container_name = rush_core::naming::NamingConvention::container_name(product_name, &spec.component_name);
-            
+            let container_name = rush_core::naming::NamingConvention::container_name(
+                product_name,
+                &spec.component_name,
+            );
+
             // Check if container exists
             match self.docker_client.container_exists(&container_name).await {
                 Ok(true) => {
                     info!("Cleaning up container {}", container_name);
-                    
+
                     // Get container ID
-                    match self.docker_client.get_container_by_name(&container_name).await {
+                    match self
+                        .docker_client
+                        .get_container_by_name(&container_name)
+                        .await
+                    {
                         Ok(container_id) => {
                             self.force_stop(&container_id).await?;
                         }
@@ -318,7 +350,7 @@ impl ShutdownManager {
                 }
             }
         }
-        
+
         trace!("Container cleanup complete");
         Ok(())
     }
@@ -326,35 +358,39 @@ impl ShutdownManager {
     /// Emergency shutdown - force stop all containers immediately
     pub async fn emergency_shutdown(&self, container_ids: &[String]) -> Result<()> {
         error!("EMERGENCY SHUTDOWN - Force stopping all containers");
-        
+
         // Publish emergency shutdown event
-        if let Err(e) = self.event_bus.publish(Event::new(
-            "shutdown",
-            ContainerEvent::ShutdownInitiated {
-                reason: ShutdownReason::Error("Emergency shutdown".to_string()),
-            },
-        )).await {
+        if let Err(e) = self
+            .event_bus
+            .publish(Event::new(
+                "shutdown",
+                ContainerEvent::ShutdownInitiated {
+                    reason: ShutdownReason::Error("Emergency shutdown".to_string()),
+                },
+            ))
+            .await
+        {
             debug!("Failed to publish emergency shutdown event: {}", e);
         }
-        
+
         // Force stop all containers in parallel
         let mut tasks = Vec::new();
         for container_id in container_ids {
             let docker_client = self.docker_client.clone();
             let id = container_id.clone();
-            
+
             tasks.push(tokio::spawn(async move {
                 // Best effort - ignore errors
                 let _ = docker_client.stop_container(&id).await;
                 let _ = docker_client.remove_container(&id).await;
             }));
         }
-        
+
         // Wait for all tasks
         for task in tasks {
             let _ = task.await;
         }
-        
+
         info!("Emergency shutdown complete");
         Ok(())
     }
@@ -363,7 +399,7 @@ impl ShutdownManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_shutdown_config_default() {
         let config = ShutdownConfig::default();
@@ -373,11 +409,14 @@ mod tests {
         assert!(config.preserve_local_services);
         assert_eq!(config.operation_timeout, Duration::from_secs(5));
     }
-    
+
     #[test]
     fn test_shutdown_strategy_equality() {
         assert_eq!(ShutdownStrategy::Graceful, ShutdownStrategy::Graceful);
         assert_ne!(ShutdownStrategy::Graceful, ShutdownStrategy::Forced);
-        assert_ne!(ShutdownStrategy::Forced, ShutdownStrategy::GracefulThenForced);
+        assert_ne!(
+            ShutdownStrategy::Forced,
+            ShutdownStrategy::GracefulThenForced
+        );
     }
 }

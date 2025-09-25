@@ -3,10 +3,11 @@
 //! This module provides a consistent interface for executing external commands
 //! with proper error handling, logging, and timeout support.
 
-use log::{debug, error, trace};
-use rush_core::{Error, ErrorContext, Result};
 use std::process::Stdio;
 use std::time::Duration;
+
+use log::{debug, error, trace};
+use rush_core::{Error, ErrorContext, Result};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::mpsc;
@@ -252,7 +253,7 @@ pub async fn run_command_with_label(
         trace!("Received line: {}", line.trim_end());
         lines.push(line.trim_end().to_string());
         let clean_line = line.trim_end().replace(['\x1B', '\r', '\n'], "");
-        println!("{} {}", formatted_label, clean_line);
+        println!("{formatted_label} {clean_line}");
     }
 
     // Wait for tasks to complete
@@ -278,10 +279,7 @@ pub async fn run_command_with_label(
 }
 
 /// Helper function to handle async reading from a stream
-async fn handle_stream<R: AsyncRead + Unpin>(
-    stream: R,
-    tx: mpsc::Sender<String>,
-) -> Result<()> {
+async fn handle_stream<R: AsyncRead + Unpin>(stream: R, tx: mpsc::Sender<String>) -> Result<()> {
     let reader = BufReader::new(stream);
     let mut lines = reader.lines();
 

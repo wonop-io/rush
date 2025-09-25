@@ -4,11 +4,13 @@
 //! Vault trait, enabling a consistent interface for accessing secrets across
 //! different storage backends.
 
-use crate::secrets::{Environment, SecretError, SecretsProvider};
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
+
+use async_trait::async_trait;
+
+use crate::secrets::{Environment, SecretError, SecretsProvider};
 
 /// Adapter that converts secure secret values to encrypted values suitable for Kubernetes
 pub struct SecretsAdapter<S: SecretsProvider + Send + Sync> {

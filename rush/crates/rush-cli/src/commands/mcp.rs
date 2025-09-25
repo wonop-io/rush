@@ -65,11 +65,11 @@ async fn serve(matches: &ArgMatches) -> Result<()> {
     if use_stdio {
         info!("Starting MCP server in stdio mode");
         eprintln!("Rush MCP server starting in stdio mode...");
-        
+
         // Create stdio transport
         let transport = StdioTransport::new()
             .map_err(|e| Error::Other(format!("Failed to create stdio transport: {}", e)))?;
-        
+
         // Create and run server
         let server = McpServer::new(config);
         server

@@ -1,12 +1,12 @@
-use crate::docker::{ContainerStatus, DockerClient};
-use crate::{
-    config::LocalServiceConfig,
-    error::{Error, Result},
-    health::{HealthCheck, HealthStatus},
-};
-use log::{debug, info};
 use std::sync::Arc;
+
+use log::{debug, info};
 use tokio::time::sleep;
+
+use crate::config::LocalServiceConfig;
+use crate::docker::{ContainerStatus, DockerClient};
+use crate::error::{Error, Result};
+use crate::health::{HealthCheck, HealthStatus};
 
 /// Status of a local service
 #[derive(Debug, Clone, PartialEq)]
@@ -174,7 +174,9 @@ impl LocalServiceHandle {
 
         // Prepare command if specified
         let command_args = self.config.command.as_ref().map(|cmd| {
-            cmd.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()
+            cmd.split_whitespace()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
         });
 
         // Run the container using the proper method signature
@@ -202,7 +204,7 @@ impl LocalServiceHandle {
                 )
                 .await
         }
-            .map_err(|e| Error::Docker(format!("Failed to start {}: {}", self.config.name, e)))?;
+        .map_err(|e| Error::Docker(format!("Failed to start {}: {}", self.config.name, e)))?;
 
         self.container_id = Some(container_id);
 

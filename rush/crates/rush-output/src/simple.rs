@@ -3,11 +3,12 @@
 //! This module provides a clean, simple abstraction for handling output
 //! from containers and build processes.
 
+use std::io::{self, Write};
+
 use async_trait::async_trait;
 use chrono::{DateTime, Local, Utc};
 use colored::*;
 use rush_core::error::Result;
-use std::io::{self, Write};
 
 /// A log entry from a container or build process
 #[derive(Debug, Clone)]
@@ -169,7 +170,7 @@ impl StdoutSink {
                 // System messages in dim white
                 entry.content.bright_black().to_string()
             };
-            
+
             if self.show_timestamp {
                 format!("{timestamp} {origin_label} {content}")
             } else {
@@ -258,7 +259,10 @@ impl NoColorStdoutSink {
         let content = entry.content.trim_end();
 
         if self.show_timestamp {
-            format!("{} {} {} | {}", timestamp, origin_label, entry.component, content)
+            format!(
+                "{} {} {} | {}",
+                timestamp, origin_label, entry.component, content
+            )
         } else {
             format!("{} {} | {}", origin_label, entry.component, content)
         }

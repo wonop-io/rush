@@ -6,9 +6,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
-use log::{info, warn, error};
+
+use log::{error, info, warn};
 use rush_core::error::{Error, Result};
+use tokio::sync::RwLock;
 
 /// Recovery strategy for failed components
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -103,13 +104,17 @@ impl RecoveryManager {
         }
 
         // Get component criticality
-        let criticality = self.config.component_criticality
+        let criticality = self
+            .config
+            .component_criticality
             .get(component_name)
             .copied()
             .unwrap_or(Criticality::Important);
 
         // Get recovery strategy
-        let strategy = self.config.component_strategies
+        let strategy = self
+            .config
+            .component_strategies
             .get(component_name)
             .copied()
             .unwrap_or(self.config.default_strategy);
@@ -124,7 +129,10 @@ impl RecoveryManager {
                 RecoveryAction::StopAll
             }
             (RecoveryStrategy::Graceful, Criticality::Optional) => {
-                warn!("Optional component {} failed, continuing without it", component_name);
+                warn!(
+                    "Optional component {} failed, continuing without it",
+                    component_name
+                );
                 RecoveryAction::Skip
             }
             (RecoveryStrategy::SkipNonCritical, Criticality::Optional) => {
@@ -149,7 +157,11 @@ impl RecoveryManager {
                 // Default: retry once then fail
                 let attempts = self.get_recovery_attempts(component_name).await;
                 if attempts < 1 {
-                    info!("Retrying component {} (attempt {})", component_name, attempts + 1);
+                    info!(
+                        "Retrying component {} (attempt {})",
+                        component_name,
+                        attempts + 1
+                    );
                     self.increment_recovery_attempts(component_name).await;
                     RecoveryAction::Retry(Duration::from_secs(5))
                 } else {
@@ -181,12 +193,13 @@ impl RecoveryManager {
         } else {
             error!(
                 "Network failure for {} after {} attempts",
-                component_name,
-                self.config.network_retry_attempts
+                component_name, self.config.network_retry_attempts
             );
 
             // Check criticality
-            let criticality = self.config.component_criticality
+            let criticality = self
+                .config
+                .component_criticality
                 .get(component_name)
                 .copied()
                 .unwrap_or(Criticality::Important);
@@ -223,7 +236,9 @@ impl RecoveryManager {
             // Also check that no critical components have failed
             let failed = self.failed_components.read().await;
             for component in failed.iter() {
-                if let Some(Criticality::Critical) = self.config.component_criticality.get(component) {
+                if let Some(Criticality::Critical) =
+                    self.config.component_criticality.get(component)
+                {
                     return false;
                 }
             }
@@ -322,9 +337,15 @@ mod tests {
     #[tokio::test]
     async fn test_criticality_handling() {
         let mut config = RecoveryConfig::default();
-        config.component_criticality.insert("database".to_string(), Criticality::Critical);
-        config.component_criticality.insert("cache".to_string(), Criticality::Important);
-        config.component_criticality.insert("monitoring".to_string(), Criticality::Optional);
+        config
+            .component_criticality
+            .insert("database".to_string(), Criticality::Critical);
+        config
+            .component_criticality
+            .insert("cache".to_string(), Criticality::Important);
+        config
+            .component_criticality
+            .insert("monitoring".to_string(), Criticality::Optional);
 
         let manager = RecoveryManager::new(config);
 
@@ -343,7 +364,9 @@ mod tests {
         manager.reset().await;
         let mut config = RecoveryConfig::default();
         config.default_strategy = RecoveryStrategy::SkipNonCritical;
-        config.component_criticality.insert("monitoring".to_string(), Criticality::Optional);
+        config
+            .component_criticality
+            .insert("monitoring".to_string(), Criticality::Optional);
 
         let manager = RecoveryManager::new(config);
         let action = manager
@@ -368,30 +391,18 @@ mod tests {
 
         // With 1 failure out of 5, should allow degraded (80% healthy)
         let action = manager
-            .handle_failure(
-                "component1",
-                &Error::Container("Failed".to_string()),
-                5,
-            )
+            .handle_failure("component1", &Error::Container("Failed".to_string()), 5)
             .await
             .unwrap();
         assert_eq!(action, RecoveryAction::ContinueDegraded);
 
         // With 3 failures out of 5, should not allow (40% healthy)
         manager
-            .handle_failure(
-                "component2",
-                &Error::Container("Failed".to_string()),
-                5,
-            )
+            .handle_failure("component2", &Error::Container("Failed".to_string()), 5)
             .await
             .unwrap();
         let action = manager
-            .handle_failure(
-                "component3",
-                &Error::Container("Failed".to_string()),
-                5,
-            )
+            .handle_failure("component3", &Error::Container("Failed".to_string()), 5)
             .await
             .unwrap();
         assert_eq!(action, RecoveryAction::StopAll);

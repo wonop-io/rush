@@ -1,13 +1,15 @@
 //! Tests for graceful shutdown handling
 
-use crate::docker::{ContainerStatus, DockerClient};
-use crate::tests::mock_docker::MockDockerClient;
-use crate::tests::test_helpers::*;
+use std::sync::Arc;
+
 use rush_core::error::Result;
 use rush_core::shutdown::{self, ShutdownReason};
 use rush_output::simple::Sink;
 use serial_test::serial;
-use std::sync::Arc;
+
+use crate::docker::{ContainerStatus, DockerClient};
+use crate::tests::mock_docker::MockDockerClient;
+use crate::tests::test_helpers::*;
 
 #[tokio::test]
 #[serial]

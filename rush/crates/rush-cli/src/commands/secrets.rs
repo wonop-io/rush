@@ -1,8 +1,10 @@
-use crate::context::CliContext;
+use std::process;
+
 use clap::ArgMatches;
 use log::{error, trace};
 use rush_core::error::Result;
-use std::process;
+
+use crate::context::CliContext;
 
 pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     trace!("Executing 'secrets' subcommand");

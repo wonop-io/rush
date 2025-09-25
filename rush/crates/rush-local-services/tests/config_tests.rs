@@ -1,5 +1,6 @@
-use rush_local_services::{LocalServiceConfig, LocalServiceType, PortMapping, VolumeMapping};
 use std::collections::HashMap;
+
+use rush_local_services::{LocalServiceConfig, LocalServiceType, PortMapping, VolumeMapping};
 
 #[test]
 fn test_create_postgresql_config() {

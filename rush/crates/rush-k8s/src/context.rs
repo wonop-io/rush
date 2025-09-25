@@ -3,9 +3,10 @@
 //! This module provides functionality for managing Kubernetes contexts, including
 //! setting the current context, retrieving available contexts, and validating contexts.
 
+use std::process::Command;
+
 use log::{debug, trace, warn};
 use rush_core::error::{Error, Result};
-use std::process::Command;
 
 /// Represents a Kubernetes context configuration
 #[derive(Debug, Clone)]
@@ -288,8 +289,9 @@ pub fn create_context_manager_with_config(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::env;
+
+    use super::*;
 
     fn get_test_kubectl_path() -> String {
         env::var("KUBECTL_PATH").unwrap_or_else(|_| "kubectl".to_string())

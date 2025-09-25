@@ -3,16 +3,16 @@
 //! This module provides an improved Docker client with automatic retries,
 //! connection pooling, and monitoring capabilities.
 
-use crate::{
-    docker::{DockerClient, ContainerStatus},
-    events::{Event, EventBus},
-};
-use async_trait::async_trait;
-use rush_core::error::{Error, Result};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, Semaphore};
+
+use async_trait::async_trait;
 use log::{debug, warn};
+use rush_core::error::{Error, Result};
+use tokio::sync::{RwLock, Semaphore};
+
+use crate::docker::{ContainerStatus, DockerClient};
+use crate::events::{Event, EventBus};
 
 /// Configuration for the Docker client wrapper
 #[derive(Debug, Clone)]
@@ -82,12 +82,9 @@ pub struct DockerClientWrapper {
 
 impl DockerClientWrapper {
     /// Create a new Docker client wrapper
-    pub fn new(
-        inner: Arc<dyn DockerClient>,
-        config: DockerWrapperConfig,
-    ) -> Self {
+    pub fn new(inner: Arc<dyn DockerClient>, config: DockerWrapperConfig) -> Self {
         let semaphore = Arc::new(Semaphore::new(config.max_concurrent_operations));
-        
+
         Self {
             inner,
             config,
@@ -114,29 +111,25 @@ impl DockerClientWrapper {
     }
 
     /// Execute an operation with retry logic
-    async fn execute_with_retry<F, T>(
-        &self,
-        operation_name: &str,
-        operation: F,
-    ) -> Result<T>
+    async fn execute_with_retry<F, T>(&self, operation_name: &str, operation: F) -> Result<T>
     where
         F: Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T>> + Send>> + Send,
         T: Send,
     {
         let start_time = Instant::now();
         let _permit = self.semaphore.acquire().await.unwrap();
-        
+
         // Update active operations count
         {
             let mut stats = self.stats.write().await;
             stats.active_operations += 1;
             stats.total_operations += 1;
         }
-        
+
         let mut delay = self.config.initial_retry_delay;
         let mut attempts = 0;
         let mut last_error = None;
-        
+
         while attempts <= self.config.max_retries {
             if attempts > 0 {
                 if self.config.verbose {
@@ -147,24 +140,21 @@ impl DockerClientWrapper {
                         self.config.max_retries + 1
                     );
                 }
-                
+
                 // Update retry stats
                 {
                     let mut stats = self.stats.write().await;
                     stats.total_retries += 1;
                 }
-                
+
                 // Wait with exponential backoff
                 tokio::time::sleep(delay).await;
                 delay = (delay * 2).min(self.config.max_retry_delay);
             }
-            
+
             // Execute with timeout
-            let result = tokio::time::timeout(
-                self.config.operation_timeout,
-                operation()
-            ).await;
-            
+            let result = tokio::time::timeout(self.config.operation_timeout, operation()).await;
+
             match result {
                 Ok(Ok(value)) => {
                     // Update stats for success
@@ -180,70 +170,69 @@ impl DockerClientWrapper {
                         let total = stats.successful_operations + stats.failed_operations;
                         if total > 0 {
                             let current_avg = stats.avg_operation_duration.as_millis() as u64;
-                            let new_avg = (current_avg * (total - 1) + duration.as_millis() as u64) / total;
+                            let new_avg =
+                                (current_avg * (total - 1) + duration.as_millis() as u64) / total;
                             stats.avg_operation_duration = Duration::from_millis(new_avg);
                         }
                     }
-                    
+
                     // Mark as healthy
                     *self.healthy.write().await = true;
-                    
+
                     if self.config.verbose {
                         debug!("{} operation succeeded in {:?}", operation_name, duration);
                     }
-                    
+
                     return Ok(value);
                 }
                 Ok(Err(e)) => {
                     last_error = Some(e);
                     attempts += 1;
-                    
+
                     if attempts > self.config.max_retries {
                         warn!(
                             "{} operation failed after {} attempts: {:?}",
-                            operation_name,
-                            attempts,
-                            last_error
+                            operation_name, attempts, last_error
                         );
                     }
                 }
                 Err(_) => {
                     last_error = Some(Error::Docker(format!(
                         "{} operation timed out after {:?}",
-                        operation_name,
-                        self.config.operation_timeout
+                        operation_name, self.config.operation_timeout
                     )));
                     attempts += 1;
-                    
+
                     warn!("{} operation timed out", operation_name);
                 }
             }
         }
-        
+
         // Update stats for failure
         {
             let mut stats = self.stats.write().await;
             stats.failed_operations += 1;
             stats.active_operations -= 1;
         }
-        
+
         // Mark as unhealthy if critical operation fails
         if operation_name == "health_check" {
             *self.healthy.write().await = false;
         }
-        
+
         // Publish error event if we have event bus
         if let Some(event_bus) = &self.event_bus {
-            let _ = event_bus.publish(Event::error(
-                "docker",
-                format!("{} operation failed: {:?}", operation_name, last_error),
-                false,
-            )).await;
+            let _ = event_bus
+                .publish(Event::error(
+                    "docker",
+                    format!("{operation_name} operation failed: {last_error:?}"),
+                    false,
+                ))
+                .await;
         }
-        
-        Err(last_error.unwrap_or_else(|| {
-            Error::Docker(format!("{} operation failed", operation_name))
-        }))
+
+        Err(last_error
+            .unwrap_or_else(|| Error::Docker(format!("{operation_name} operation failed"))))
     }
 
     /// Health check for Docker connection
@@ -255,7 +244,8 @@ impl DockerClientWrapper {
                 // Check if we can list networks as a health check
                 client.network_exists("bridge").await.map(|_| ())
             })
-        }).await
+        })
+        .await
     }
 }
 
@@ -263,26 +253,24 @@ impl DockerClientWrapper {
 impl DockerClient for DockerClientWrapper {
     async fn create_network(&self, name: &str) -> Result<()> {
         let name = name.to_string();
-        
+
         self.execute_with_retry("create_network", || {
             let client = self.inner.clone();
             let name = name.clone();
-            Box::pin(async move {
-                client.create_network(&name).await
-            })
-        }).await
+            Box::pin(async move { client.create_network(&name).await })
+        })
+        .await
     }
 
     async fn delete_network(&self, name: &str) -> Result<()> {
         let name = name.to_string();
-        
+
         self.execute_with_retry("delete_network", || {
             let client = self.inner.clone();
             let name = name.clone();
-            Box::pin(async move {
-                client.delete_network(&name).await
-            })
-        }).await
+            Box::pin(async move { client.delete_network(&name).await })
+        })
+        .await
     }
 
     async fn network_exists(&self, name: &str) -> Result<bool> {
@@ -291,25 +279,19 @@ impl DockerClient for DockerClientWrapper {
         self.inner.network_exists(name).await
     }
 
-    async fn build_image(
-        &self,
-        tag: &str,
-        dockerfile: &str,
-        context: &str,
-    ) -> Result<()> {
+    async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         let tag = tag.to_string();
         let dockerfile = dockerfile.to_string();
         let context = context.to_string();
-        
+
         self.execute_with_retry("build_image", || {
             let client = self.inner.clone();
             let tag = tag.clone();
             let dockerfile = dockerfile.clone();
             let context = context.clone();
-            Box::pin(async move {
-                client.build_image(&tag, &dockerfile, &context).await
-            })
-        }).await
+            Box::pin(async move { client.build_image(&tag, &dockerfile, &context).await })
+        })
+        .await
     }
 
     async fn run_container(
@@ -323,7 +305,9 @@ impl DockerClient for DockerClientWrapper {
     ) -> Result<String> {
         // Call underlying client directly - don't retry container creation
         // as the lifecycle manager handles retries with proper cleanup
-        self.inner.run_container(image, name, network, env_vars, ports, volumes).await
+        self.inner
+            .run_container(image, name, network, env_vars, ports, volumes)
+            .await
     }
 
     async fn run_container_with_command(
@@ -338,7 +322,9 @@ impl DockerClient for DockerClientWrapper {
     ) -> Result<String> {
         // Call underlying client directly - don't retry container creation
         // as the lifecycle manager handles retries with proper cleanup
-        self.inner.run_container_with_command(image, name, network, env_vars, ports, volumes, command).await
+        self.inner
+            .run_container_with_command(image, name, network, env_vars, ports, volumes, command)
+            .await
     }
 
     async fn stop_container(&self, id: &str) -> Result<()> {
@@ -347,10 +333,9 @@ impl DockerClient for DockerClientWrapper {
         self.execute_with_retry("stop_container", || {
             let client = self.inner.clone();
             let id = id.clone();
-            Box::pin(async move {
-                client.stop_container(&id).await
-            })
-        }).await
+            Box::pin(async move { client.stop_container(&id).await })
+        })
+        .await
     }
 
     async fn kill_container(&self, id: &str) -> Result<()> {
@@ -359,82 +344,75 @@ impl DockerClient for DockerClientWrapper {
         self.execute_with_retry("kill_container", || {
             let client = self.inner.clone();
             let id = id.clone();
-            Box::pin(async move {
-                client.kill_container(&id).await
-            })
-        }).await
+            Box::pin(async move { client.kill_container(&id).await })
+        })
+        .await
     }
 
     async fn remove_container(&self, id: &str) -> Result<()> {
         let id = id.to_string();
-        
+
         self.execute_with_retry("remove_container", || {
             let client = self.inner.clone();
             let id = id.clone();
-            Box::pin(async move {
-                client.remove_container(&id).await
-            })
-        }).await
+            Box::pin(async move { client.remove_container(&id).await })
+        })
+        .await
     }
 
     async fn container_status(&self, id: &str) -> Result<ContainerStatus> {
         let id = id.to_string();
-        
+
         self.execute_with_retry("container_status", || {
             let client = self.inner.clone();
             let id = id.clone();
-            Box::pin(async move {
-                client.container_status(&id).await
-            })
-        }).await
+            Box::pin(async move { client.container_status(&id).await })
+        })
+        .await
     }
 
     async fn container_logs(&self, id: &str, lines: usize) -> Result<String> {
         let id = id.to_string();
-        
+
         self.execute_with_retry("container_logs", || {
             let client = self.inner.clone();
             let id = id.clone();
-            Box::pin(async move {
-                client.container_logs(&id, lines).await
-            })
-        }).await
+            Box::pin(async move { client.container_logs(&id, lines).await })
+        })
+        .await
     }
 
     async fn container_exists(&self, name: &str) -> Result<bool> {
         let name = name.to_string();
-        
+
         self.execute_with_retry("container_exists", || {
             let client = self.inner.clone();
             let name = name.clone();
-            Box::pin(async move {
-                client.container_exists(&name).await
-            })
-        }).await
+            Box::pin(async move { client.container_exists(&name).await })
+        })
+        .await
     }
 
     async fn get_container_by_name(&self, name: &str) -> Result<String> {
         let name = name.to_string();
-        
+
         self.execute_with_retry("get_container_by_name", || {
             let client = self.inner.clone();
             let name = name.clone();
-            Box::pin(async move {
-                client.get_container_by_name(&name).await
-            })
-        }).await
+            Box::pin(async move { client.get_container_by_name(&name).await })
+        })
+        .await
     }
 
     async fn pull_image(&self, name: &str) -> Result<()> {
         let name = name.to_string();
-        
+
         self.execute_with_retry("pull_image", || {
             let client = self.inner.clone();
             let name = name.clone();
-            Box::pin(async move {
-                client.pull_image(&name).await
-            })
-        }).await
+            Box::pin(async move { client.pull_image(&name).await })
+        })
+        .await
     }
 
     async fn follow_container_logs(
@@ -445,34 +423,36 @@ impl DockerClient for DockerClientWrapper {
     ) -> Result<()> {
         let container_id = container_id.to_string();
         let color = color.to_string();
-        
+
         self.execute_with_retry("follow_container_logs", || {
             let client = self.inner.clone();
             let container_id = container_id.clone();
             let label = label.clone();
             let color = color.clone();
             Box::pin(async move {
-                client.follow_container_logs(&container_id, label, &color).await
+                client
+                    .follow_container_logs(&container_id, label, &color)
+                    .await
             })
-        }).await
+        })
+        .await
     }
 
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {
         let container_id = container_id.to_string();
-        
+
         self.execute_with_retry("send_signal_to_container", || {
             let client = self.inner.clone();
             let container_id = container_id.clone();
-            Box::pin(async move {
-                client.send_signal_to_container(&container_id, signal).await
-            })
-        }).await
+            Box::pin(async move { client.send_signal_to_container(&container_id, signal).await })
+        })
+        .await
     }
 
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
         let container_id = container_id.to_string();
         let command: Vec<String> = command.iter().map(|s| s.to_string()).collect();
-        
+
         self.execute_with_retry("exec_in_container", || {
             let client = self.inner.clone();
             let container_id = container_id.clone();
@@ -481,9 +461,10 @@ impl DockerClient for DockerClientWrapper {
                 let cmd_refs: Vec<&str> = command.iter().map(|s| s.as_str()).collect();
                 client.exec_in_container(&container_id, &cmd_refs).await
             })
-        }).await
+        })
+        .await
     }
-    
+
     async fn push_image(&self, image: &str) -> Result<()> {
         let image = image.to_string();
 
@@ -492,10 +473,9 @@ impl DockerClient for DockerClientWrapper {
         self.execute_with_retry("push_image", || {
             let client = self.inner.clone();
             let image = image.clone();
-            Box::pin(async move {
-                client.push_image(&image).await
-            })
-        }).await
+            Box::pin(async move { client.push_image(&image).await })
+        })
+        .await
     }
 
     async fn image_exists(&self, image: &str) -> Result<bool> {
@@ -504,10 +484,9 @@ impl DockerClient for DockerClientWrapper {
         self.execute_with_retry("image_exists", || {
             let client = self.inner.clone();
             let image = image.clone();
-            Box::pin(async move {
-                client.image_exists(&image).await
-            })
-        }).await
+            Box::pin(async move { client.image_exists(&image).await })
+        })
+        .await
     }
 }
 

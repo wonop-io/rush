@@ -1,8 +1,9 @@
 //! MCP protocol definitions
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 
 /// MCP protocol version
 pub const MCP_VERSION: &str = "1.0.0";
@@ -43,34 +44,34 @@ pub enum McpMethod {
     // Initialization
     Initialize,
     Initialized,
-    
+
     // Tools
     ToolsList,
     ToolsCall,
-    
+
     // Resources
     ResourcesList,
     ResourcesRead,
-    
+
     // Prompts
     PromptsList,
     PromptsGet,
-    
+
     // Completion
     CompletionComplete,
-    
+
     // Logging
     LoggingSetLevel,
-    
+
     // Sampling
     SamplingCreateMessage,
-    
+
     // Roots
     RootsList,
-    
+
     // Server info
     Ping,
-    
+
     // Unknown
     Unknown(String),
 }

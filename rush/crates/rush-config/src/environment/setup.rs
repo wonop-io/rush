@@ -1,6 +1,7 @@
-use log::{debug, info, trace, warn};
 use std::env;
 use std::path::Path;
+
+use log::{debug, info, trace, warn};
 
 /// Sets up the environment for Rush CLI
 ///

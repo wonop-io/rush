@@ -27,12 +27,11 @@ pub mod session;
 pub mod shared;
 
 // Re-export commonly used types
-pub use source::OutputSource;
-pub use stream::{OutputStream, OutputStreamType};
-
 // Re-export legacy types for backward compatibility (deprecated)
 pub use buffered::BufferedOutputDirector;
 pub use director::{OutputDirector, StdOutputDirector};
 pub use factory::OutputDirectorFactory;
 pub use file::FileOutputDirector;
 pub use shared::SharedOutputDirector;
+pub use source::OutputSource;
+pub use stream::{OutputStream, OutputStreamType};

@@ -1,10 +1,12 @@
-use crate::vault::vault_trait::Vault;
-use async_trait::async_trait;
-use log::{debug, trace};
-use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::process::Command;
+
+use async_trait::async_trait;
+use log::{debug, trace};
+use serde_json::Value;
+
+use crate::vault::vault_trait::Vault;
 
 #[derive(Debug)]
 pub struct OnePassword {

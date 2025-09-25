@@ -3,8 +3,9 @@
 //! This module defines the various build types that Rush supports, including
 //! web applications, binary applications, and container-based deployments.
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
 
 /// Represents the different types of component builds supported by Rush
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

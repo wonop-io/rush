@@ -1,7 +1,9 @@
-use crate::event::{ExecutionPhase, LogLevel, OutputEvent};
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use regex::Regex;
-use std::collections::HashSet;
+
+use crate::event::{ExecutionPhase, LogLevel, OutputEvent};
 
 /// Trait for filtering output events
 pub trait OutputFilter: Send + Sync {

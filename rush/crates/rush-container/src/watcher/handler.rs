@@ -3,15 +3,17 @@
 //! This module provides improved handling of file system events with
 //! debouncing, filtering, and component matching.
 
-use crate::events::{Event, EventBus, ContainerEvent};
-use notify::{Event as NotifyEvent, EventKind};
-use rush_build::ComponentBuildSpec;
-use std::collections::{HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, RwLock};
+
 use log::{debug, info, trace, warn};
+use notify::{Event as NotifyEvent, EventKind};
+use rush_build::ComponentBuildSpec;
+use tokio::sync::{mpsc, RwLock};
+
+use crate::events::{ContainerEvent, Event, EventBus};
 
 /// Configuration for the file change handler
 #[derive(Debug, Clone)]
@@ -64,6 +66,12 @@ pub struct ChangeBatch {
     pub timestamp: Instant,
 }
 
+impl Default for ChangeBatch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChangeBatch {
     /// Create a new empty batch
     pub fn new() -> Self {
@@ -111,7 +119,7 @@ impl FileChangeHandler {
     /// Create a new file change handler
     pub fn new(config: HandlerConfig) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
-        
+
         Self {
             config,
             event_bus: None,
@@ -124,12 +132,12 @@ impl FileChangeHandler {
         }
     }
 
-    /// Set the event bus for publishing events  
+    /// Set the event bus for publishing events
     pub fn with_event_bus(mut self, event_bus: EventBus) -> Self {
         self.event_bus = Some(event_bus);
         self
     }
-    
+
     /// Set the base directory for path resolution
     pub fn with_base_dir(mut self, base_dir: PathBuf) -> Self {
         self.base_dir = Arc::new(base_dir);
@@ -170,7 +178,7 @@ impl FileChangeHandler {
         // Update pending changes
         let mut pending = self.pending_changes.write().await;
         let mut last_time = self.last_event_time.write().await;
-        
+
         for path in valid_paths {
             match event.kind {
                 EventKind::Create(_) => {
@@ -214,17 +222,25 @@ impl FileChangeHandler {
     /// Check if a path should be ignored
     fn should_ignore_path(&self, path: &Path) -> bool {
         let path_str = path.to_string_lossy();
-        
+
         for pattern in &self.config.ignore_patterns {
             if pattern.contains('*') {
                 // Simple glob matching
                 let pattern = pattern.replace("*", "");
                 if path_str.contains(&pattern) {
-                    trace!("Ignoring path '{}' (matched pattern '*{}')", path_str, pattern);
+                    trace!(
+                        "Ignoring path '{}' (matched pattern '*{}')",
+                        path_str,
+                        pattern
+                    );
                     return true;
                 }
             } else if path_str.contains(pattern) {
-                trace!("Ignoring path '{}' (matched pattern '{}')", path_str, pattern);
+                trace!(
+                    "Ignoring path '{}' (matched pattern '{}')",
+                    path_str,
+                    pattern
+                );
                 return true;
             }
         }
@@ -244,7 +260,7 @@ impl FileChangeHandler {
     pub async fn process_pending(&self) -> Option<ChangeBatch> {
         let last_time = *self.last_event_time.read().await;
         let now = Instant::now();
-        
+
         // Check if enough time has passed for debouncing
         if now.duration_since(last_time) < self.config.debounce_duration {
             return None;
@@ -264,13 +280,16 @@ impl FileChangeHandler {
 
         // Publish event if we have an event bus
         if let Some(event_bus) = &self.event_bus {
-            if let Err(e) = event_bus.publish(Event::new(
-                "watcher",
-                ContainerEvent::FileChangesDetected {
-                    files: batch.modified.clone(),
-                    components: batch.affected_components.clone().into_iter().collect(),
-                },
-            )).await {
+            if let Err(e) = event_bus
+                .publish(Event::new(
+                    "watcher",
+                    ContainerEvent::FileChangesDetected {
+                        files: batch.modified.clone(),
+                        components: batch.affected_components.clone().into_iter().collect(),
+                    },
+                ))
+                .await
+            {
                 warn!("Failed to publish file changes event: {}", e);
             }
         }
@@ -292,11 +311,13 @@ impl FileChangeHandler {
     /// Identify which components are affected by the changes
     async fn identify_affected_components(&self, batch: &mut ChangeBatch) {
         let specs = self.component_specs.read().await;
-        
+
         for spec in specs.iter() {
             let affected = self.is_component_affected(spec, batch);
             if affected {
-                batch.affected_components.insert(spec.component_name.clone());
+                batch
+                    .affected_components
+                    .insert(spec.component_name.clone());
             }
         }
     }
@@ -313,22 +334,31 @@ impl FileChangeHandler {
             // Check if any changed file matches the watch patterns
             for path in &batch.modified {
                 if watch.matches(path) {
-                    info!("Component {} affected by change to watched file: {}",
-                        spec.component_name, path.display());
+                    info!(
+                        "Component {} affected by change to watched file: {}",
+                        spec.component_name,
+                        path.display()
+                    );
                     return true;
                 }
             }
             for path in &batch.created {
                 if watch.matches(path) {
-                    info!("Component {} affected by new watched file: {}",
-                        spec.component_name, path.display());
+                    info!(
+                        "Component {} affected by new watched file: {}",
+                        spec.component_name,
+                        path.display()
+                    );
                     return true;
                 }
             }
             for path in &batch.deleted {
                 if watch.matches(path) {
-                    info!("Component {} affected by deleted watched file: {}",
-                        spec.component_name, path.display());
+                    info!(
+                        "Component {} affected by deleted watched file: {}",
+                        spec.component_name,
+                        path.display()
+                    );
                     return true;
                 }
             }
@@ -353,7 +383,9 @@ impl FileChangeHandler {
                 };
 
                 // Try to canonicalize for better comparison, but fall back if it fails
-                let canonical_location = abs_location.canonicalize().unwrap_or_else(|_| abs_location.clone());
+                let canonical_location = abs_location
+                    .canonicalize()
+                    .unwrap_or_else(|_| abs_location.clone());
 
                 debug!(
                     "Checking if component {} is affected by changes (location: {}, canonical: {})",
@@ -368,8 +400,16 @@ impl FileChangeHandler {
                     let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
 
                     debug!("  Comparing paths for component {}:", spec.component_name);
-                    debug!("    Changed file: {} (canonical: {})", path.display(), canonical_path.display());
-                    debug!("    Component location: {} (canonical: {})", abs_location.display(), canonical_location.display());
+                    debug!(
+                        "    Changed file: {} (canonical: {})",
+                        path.display(),
+                        canonical_path.display()
+                    );
+                    debug!(
+                        "    Component location: {} (canonical: {})",
+                        abs_location.display(),
+                        canonical_location.display()
+                    );
 
                     // Check multiple conditions for matching
                     let is_match =
@@ -388,7 +428,11 @@ impl FileChangeHandler {
                         (path.to_string_lossy().contains(&loc.replace('/', std::path::MAIN_SEPARATOR_STR)));
 
                     if is_match {
-                        info!("Component {} affected by change to: {}", spec.component_name, path.display());
+                        info!(
+                            "Component {} affected by change to: {}",
+                            spec.component_name,
+                            path.display()
+                        );
                         return true;
                     }
                 }
@@ -396,47 +440,75 @@ impl FileChangeHandler {
                     // Try to canonicalize the changed path for better comparison
                     let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
 
-                    debug!("  Comparing paths for new file in component {}:", spec.component_name);
-                    debug!("    New file: {} (canonical: {})", path.display(), canonical_path.display());
-                    debug!("    Component location: {} (canonical: {})", abs_location.display(), canonical_location.display());
+                    debug!(
+                        "  Comparing paths for new file in component {}:",
+                        spec.component_name
+                    );
+                    debug!(
+                        "    New file: {} (canonical: {})",
+                        path.display(),
+                        canonical_path.display()
+                    );
+                    debug!(
+                        "    Component location: {} (canonical: {})",
+                        abs_location.display(),
+                        canonical_location.display()
+                    );
 
-                    let is_match =
-                        path.starts_with(&abs_location) ||
-                        canonical_path.starts_with(&canonical_location) ||
-                        path.components().any(|c| {
+                    let is_match = path.starts_with(&abs_location)
+                        || canonical_path.starts_with(&canonical_location)
+                        || path.components().any(|c| {
                             if let Some(loc_name) = abs_location.file_name() {
                                 c.as_os_str() == loc_name
                             } else {
                                 false
                             }
-                        }) ||
-                        (path.to_string_lossy().contains(&loc.replace('/', std::path::MAIN_SEPARATOR_STR)));
+                        })
+                        || (path
+                            .to_string_lossy()
+                            .contains(&loc.replace('/', std::path::MAIN_SEPARATOR_STR)));
 
                     if is_match {
-                        info!("Component {} affected by new file: {}", spec.component_name, path.display());
+                        info!(
+                            "Component {} affected by new file: {}",
+                            spec.component_name,
+                            path.display()
+                        );
                         return true;
                     }
                 }
                 for path in &batch.deleted {
                     // For deleted files, we can't canonicalize since they don't exist
-                    debug!("  Comparing paths for deleted file in component {}:", spec.component_name);
+                    debug!(
+                        "  Comparing paths for deleted file in component {}:",
+                        spec.component_name
+                    );
                     debug!("    Deleted file: {}", path.display());
-                    debug!("    Component location: {} (canonical: {})", abs_location.display(), canonical_location.display());
+                    debug!(
+                        "    Component location: {} (canonical: {})",
+                        abs_location.display(),
+                        canonical_location.display()
+                    );
 
-                    let is_match =
-                        path.starts_with(&abs_location) ||
-                        path.starts_with(&canonical_location) ||
-                        path.components().any(|c| {
+                    let is_match = path.starts_with(&abs_location)
+                        || path.starts_with(&canonical_location)
+                        || path.components().any(|c| {
                             if let Some(loc_name) = abs_location.file_name() {
                                 c.as_os_str() == loc_name
                             } else {
                                 false
                             }
-                        }) ||
-                        (path.to_string_lossy().contains(&loc.replace('/', std::path::MAIN_SEPARATOR_STR)));
+                        })
+                        || (path
+                            .to_string_lossy()
+                            .contains(&loc.replace('/', std::path::MAIN_SEPARATOR_STR)));
 
                     if is_match {
-                        info!("Component {} affected by deleted file: {}", spec.component_name, path.display());
+                        info!(
+                            "Component {} affected by deleted file: {}",
+                            spec.component_name,
+                            path.display()
+                        );
                         return true;
                     }
                 }
@@ -479,10 +551,10 @@ impl FileChangeHandler {
     pub fn start_background_processor(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Process pending changes
                 if let Some(batch) = self.process_pending().await {
                     trace!("Background processor found {} changes", batch.len());
@@ -494,14 +566,15 @@ impl FileChangeHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use notify::event::{CreateKind, ModifyKind, RemoveKind};
+
+    use super::*;
 
     #[tokio::test]
     async fn test_handler_creation() {
         let config = HandlerConfig::default();
         let handler = FileChangeHandler::new(config);
-        
+
         assert!(handler.event_bus.is_none());
     }
 
@@ -509,13 +582,13 @@ mod tests {
     async fn test_ignore_patterns() {
         let config = HandlerConfig::default();
         let handler = FileChangeHandler::new(config);
-        
+
         // Test ignored paths
         assert!(handler.should_ignore_path(Path::new(".git/config")));
         assert!(handler.should_ignore_path(Path::new("target/debug/app")));
         assert!(handler.should_ignore_path(Path::new("node_modules/package/index.js")));
         assert!(handler.should_ignore_path(Path::new(".DS_Store")));
-        
+
         // Test allowed paths
         assert!(!handler.should_ignore_path(Path::new("src/main.rs")));
         assert!(!handler.should_ignore_path(Path::new("Cargo.toml")));
@@ -528,23 +601,23 @@ mod tests {
             ..Default::default()
         };
         let handler = Arc::new(FileChangeHandler::new(config));
-        
+
         // Create a file creation event
         let event = NotifyEvent {
             kind: EventKind::Create(CreateKind::File),
             paths: vec![PathBuf::from("src/test.rs")],
             attrs: Default::default(),
         };
-        
+
         handler.handle_event(event).await;
-        
+
         // Wait for debounce
         tokio::time::sleep(Duration::from_millis(20)).await;
-        
+
         // Process pending changes
         let batch = handler.process_pending().await;
         assert!(batch.is_some());
-        
+
         let batch = batch.unwrap();
         assert_eq!(batch.created.len(), 1);
         assert_eq!(batch.created[0], PathBuf::from("src/test.rs"));
@@ -555,13 +628,13 @@ mod tests {
         let mut batch1 = ChangeBatch::new();
         batch1.modified.push(PathBuf::from("file1.rs"));
         batch1.affected_components.insert("comp1".to_string());
-        
+
         let mut batch2 = ChangeBatch::new();
         batch2.created.push(PathBuf::from("file2.rs"));
         batch2.affected_components.insert("comp2".to_string());
-        
+
         batch1.merge(batch2);
-        
+
         assert_eq!(batch1.modified.len(), 1);
         assert_eq!(batch1.created.len(), 1);
         assert_eq!(batch1.affected_components.len(), 2);
@@ -576,7 +649,7 @@ mod tests {
             ..Default::default()
         };
         let handler = Arc::new(FileChangeHandler::new(config));
-        
+
         // Create multiple events quickly
         for i in 0..5 {
             let event = NotifyEvent {
@@ -587,18 +660,18 @@ mod tests {
             handler.handle_event(event).await;
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        
+
         // Try to process immediately - should return None due to debouncing
         let batch = handler.process_pending().await;
         assert!(batch.is_none());
-        
+
         // Wait for debounce period
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         // Now should get all changes in one batch
         let batch = handler.process_pending().await;
         assert!(batch.is_some());
-        
+
         let batch = batch.unwrap();
         assert_eq!(batch.modified.len(), 5);
     }
@@ -625,8 +698,7 @@ mod tests {
 
         // Create handler
         let handler_config = HandlerConfig::default();
-        let handler = FileChangeHandler::new(handler_config)
-            .with_base_dir(base_dir.clone());
+        let handler = FileChangeHandler::new(handler_config).with_base_dir(base_dir.clone());
 
         // Create a batch with changes matching patterns
         let mut batch = ChangeBatch::new();

@@ -3,14 +3,16 @@
 //! This module provides connection pooling to improve Docker API performance
 //! and handle connection limits gracefully.
 
-use crate::docker::{DockerClient, ContainerStatus};
-use async_trait::async_trait;
-use rush_core::error::{Error, Result};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, Semaphore};
+
+use async_trait::async_trait;
 use log::{debug, info, warn};
+use rush_core::error::{Error, Result};
+use tokio::sync::{Mutex, Semaphore};
+
+use crate::docker::{ContainerStatus, DockerClient};
 
 /// Configuration for the connection pool
 #[derive(Debug, Clone)]
@@ -139,27 +141,30 @@ impl ConnectionPool {
 
     /// Create a new connection and add it to the pool
     async fn create_connection(&self) -> Result<()> {
-        let permit = self.semaphore.acquire().await
-            .map_err(|e| Error::Docker(format!("Failed to acquire semaphore: {}", e)))?;
-        
+        let permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to acquire semaphore: {e}")))?;
+
         let mut next_id = self.next_id.lock().await;
         let id = *next_id;
         *next_id += 1;
         drop(next_id);
 
         let client = (self.factory)();
-        
+
         // Test the connection
         client.network_exists("bridge").await?;
 
         let connection = PooledConnection::new(client, id);
-        
+
         let mut connections = self.connections.lock().await;
         connections.push_back(connection);
-        
+
         // Forget the permit so it doesn't get dropped
         std::mem::forget(permit);
-        
+
         debug!("Created new connection with ID {}", id);
         Ok(())
     }
@@ -173,7 +178,7 @@ impl ConnectionPool {
         }
 
         let start = Instant::now();
-        
+
         loop {
             // Check if we're shutting down
             if *self.shutdown.lock().await {
@@ -183,7 +188,7 @@ impl ConnectionPool {
             // Try to get an existing connection
             {
                 let mut connections = self.connections.lock().await;
-                
+
                 // Find an available connection
                 for conn in connections.iter_mut() {
                     if !conn.in_use {
@@ -221,7 +226,7 @@ impl ConnectionPool {
     /// Return a connection to the pool
     async fn return_connection(&self, id: usize) {
         let mut connections = self.connections.lock().await;
-        
+
         for conn in connections.iter_mut() {
             if conn.id == id {
                 conn.mark_returned();
@@ -229,7 +234,7 @@ impl ConnectionPool {
                 return;
             }
         }
-        
+
         warn!("Attempted to return unknown connection {}", id);
     }
 
@@ -241,12 +246,12 @@ impl ConnectionPool {
 
         let mut connections = self.connections.lock().await;
         let initial_count = connections.len();
-        
+
         // Count how many can be removed
         let mut to_remove = Vec::new();
         let min_connections = self.config.min_connections;
         let max_idle_time = self.config.max_idle_time;
-        
+
         for (i, conn) in connections.iter().enumerate() {
             if connections.len() - to_remove.len() <= min_connections {
                 break;
@@ -256,7 +261,7 @@ impl ConnectionPool {
                 debug!("Removing idle connection {}", conn.id);
             }
         }
-        
+
         // Remove in reverse order to maintain indices
         for i in to_remove.iter().rev() {
             connections.remove(*i);
@@ -265,7 +270,7 @@ impl ConnectionPool {
         let removed = initial_count - connections.len();
         if removed > 0 {
             info!("Removed {} idle connections", removed);
-            
+
             // Release semaphore permits for removed connections
             for _ in 0..removed {
                 self.semaphore.add_permits(1);
@@ -277,17 +282,17 @@ impl ConnectionPool {
     fn start_cleanup_task(self: Arc<Self>) {
         let pool = self.clone();
         let interval = self.config.cleanup_interval;
-        
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(interval);
-            
+
             loop {
                 interval.tick().await;
-                
+
                 if *pool.shutdown.lock().await {
                     break;
                 }
-                
+
                 pool.cleanup_idle_connections().await;
             }
         });
@@ -296,9 +301,9 @@ impl ConnectionPool {
     /// Shutdown the pool
     pub async fn shutdown(&self) {
         info!("Shutting down connection pool");
-        
+
         *self.shutdown.lock().await = true;
-        
+
         // Clear all connections
         let mut connections = self.connections.lock().await;
         connections.clear();
@@ -307,11 +312,11 @@ impl ConnectionPool {
     /// Get pool statistics
     pub async fn stats(&self) -> PoolStats {
         let connections = self.connections.lock().await;
-        
+
         let total = connections.len();
         let in_use = connections.iter().filter(|c| c.in_use).count();
         let idle = total - in_use;
-        
+
         PoolStats {
             total_connections: total,
             in_use_connections: in_use,
@@ -319,7 +324,6 @@ impl ConnectionPool {
             max_connections: self.config.max_connections,
         }
     }
-
 }
 
 impl std::fmt::Debug for ConnectionPool {
@@ -374,7 +378,7 @@ impl Drop for PoolGuard {
         if let PoolGuard::Pooled { pool, id, .. } = self {
             let pool = pool.clone();
             let id = *id;
-            
+
             // Return connection asynchronously
             tokio::spawn(async move {
                 pool.return_connection(id).await;
@@ -398,12 +402,7 @@ impl PooledDockerClient {
 
 #[async_trait]
 impl DockerClient for PooledDockerClient {
-    async fn build_image(
-        &self,
-        tag: &str,
-        dockerfile: &str,
-        context: &str,
-    ) -> Result<()> {
+    async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
         let guard = self.pool.clone().acquire().await?;
         guard.client().build_image(tag, dockerfile, context).await
     }
@@ -428,14 +427,10 @@ impl DockerClient for PooledDockerClient {
         volumes: &[String],
     ) -> Result<String> {
         let guard = self.pool.clone().acquire().await?;
-        guard.client().run_container(
-            image,
-            name,
-            network,
-            env_vars,
-            ports,
-            volumes,
-        ).await
+        guard
+            .client()
+            .run_container(image, name, network, env_vars, ports, volumes)
+            .await
     }
 
     async fn stop_container(&self, id: &str) -> Result<()> {
@@ -482,7 +477,7 @@ impl DockerClient for PooledDockerClient {
         let guard = self.pool.clone().acquire().await?;
         guard.client().pull_image(name).await
     }
-    
+
     async fn push_image(&self, image: &str) -> Result<()> {
         let guard = self.pool.clone().acquire().await?;
         guard.client().push_image(image).await
@@ -504,15 +499,10 @@ impl DockerClient for PooledDockerClient {
         command: Option<&[String]>,
     ) -> Result<String> {
         let guard = self.pool.clone().acquire().await?;
-        guard.client().run_container_with_command(
-            image,
-            name,
-            network,
-            env_vars,
-            ports,
-            volumes,
-            command,
-        ).await
+        guard
+            .client()
+            .run_container_with_command(image, name, network, env_vars, ports, volumes, command)
+            .await
     }
 
     async fn follow_container_logs(
@@ -522,17 +512,26 @@ impl DockerClient for PooledDockerClient {
         color: &str,
     ) -> Result<()> {
         let guard = self.pool.clone().acquire().await?;
-        guard.client().follow_container_logs(container_id, label, color).await
+        guard
+            .client()
+            .follow_container_logs(container_id, label, color)
+            .await
     }
 
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {
         let guard = self.pool.clone().acquire().await?;
-        guard.client().send_signal_to_container(container_id, signal).await
+        guard
+            .client()
+            .send_signal_to_container(container_id, signal)
+            .await
     }
 
     async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
         let guard = self.pool.clone().acquire().await?;
-        guard.client().exec_in_container(container_id, command).await
+        guard
+            .client()
+            .exec_in_container(container_id, command)
+            .await
     }
 }
 

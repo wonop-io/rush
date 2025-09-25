@@ -6,12 +6,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-rush-core = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true }
 bollard = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
+rush-core = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

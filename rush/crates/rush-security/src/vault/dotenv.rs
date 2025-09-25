@@ -1,12 +1,14 @@
-use crate::vault::vault_trait::Vault;
-use async_trait::async_trait;
-use log::{debug, warn};
-use rush_core::dotenv::{load_dotenv, save_dotenv};
-use serde_yaml::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
+
+use async_trait::async_trait;
+use log::{debug, warn};
+use rush_core::dotenv::{load_dotenv, save_dotenv};
+use serde_yaml::Value;
+
+use crate::vault::vault_trait::Vault;
 
 /// Vault implementation that stores secrets in .env.secrets files
 #[derive(Debug)]
@@ -153,10 +155,12 @@ impl Vault for DotenvVault {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs::File;
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_dotenv_vault_get_nonexistent() {

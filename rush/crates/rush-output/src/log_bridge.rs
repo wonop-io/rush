@@ -3,16 +3,18 @@
 //! This module provides a custom logger implementation that forwards
 //! all log messages to our output sink.
 
-use crate::simple::{LogEntry, Sink};
-use log::{Level, Log, Metadata, Record};
 use std::cell::RefCell;
 use std::sync::Arc;
+
+use log::{Level, Log, Metadata, Record};
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
+use crate::simple::{LogEntry, Sink};
+
 thread_local! {
     /// Thread-local flag to prevent recursive logging
-    static IN_LOG: RefCell<bool> = RefCell::new(false);
+    static IN_LOG: RefCell<bool> = const { RefCell::new(false) };
 }
 
 /// A logger that forwards all log messages to a sink
@@ -60,10 +62,10 @@ impl Log for SinkLogger {
                 // Already logging, skip to prevent recursion
                 return;
             }
-            
+
             // Set flag to indicate we're logging
             *in_log.borrow_mut() = true;
-            
+
             // Ensure we reset the flag when done
             let _guard = scopeguard::guard((), |_| {
                 IN_LOG.with(|in_log| *in_log.borrow_mut() = false);
@@ -87,7 +89,7 @@ impl Log for SinkLogger {
             // Create log entry based on level
             let mut entry = LogEntry::system(content);
             entry.component = component;
-            
+
             // Mark errors and warnings
             entry.is_error = matches!(record.level(), Level::Error | Level::Warn);
 
@@ -125,7 +127,7 @@ impl Log for SinkLogger {
     fn flush(&self) {
         // Clone sink for async operation
         let sink = self.sink.clone();
-        
+
         // Try to flush
         if let Ok(handle) = Handle::try_current() {
             handle.spawn(async move {
@@ -137,7 +139,10 @@ impl Log for SinkLogger {
 }
 
 /// Initialize the global logger with a sink
-pub fn init_with_sink(sink: Arc<Mutex<Box<dyn Sink>>>, level: Level) -> Result<(), log::SetLoggerError> {
+pub fn init_with_sink(
+    sink: Arc<Mutex<Box<dyn Sink>>>,
+    level: Level,
+) -> Result<(), log::SetLoggerError> {
     SinkLogger::with_level(sink, level).init()
 }
 
@@ -146,7 +151,7 @@ pub fn init_with_sink_debug(sink: Arc<Mutex<Box<dyn Sink>>>) -> Result<(), log::
     init_with_sink(sink, Level::Debug)
 }
 
-/// Initialize the global logger with a sink at info level  
+/// Initialize the global logger with a sink at info level
 pub fn init_with_sink_info(sink: Arc<Mutex<Box<dyn Sink>>>) -> Result<(), log::SetLoggerError> {
     init_with_sink(sink, Level::Info)
 }

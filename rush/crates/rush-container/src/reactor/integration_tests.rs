@@ -5,22 +5,20 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        docker::{DockerClient, ContainerStatus},
-        events::{EventBus, Event, ContainerEvent},
-        reactor::{
-            factory::{ReactorFactory, ModularReactorConfigBuilder},
-            modular_core::{ModularReactorConfig, ReactorStatus},
-            state::{ReactorPhase, ComponentStatus},
-        },
-    };
-    use rush_build::{ComponentBuildSpec, BuildType, Variables};
-    use rush_core::error::Result;
-    use async_trait::async_trait;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
+
+    use async_trait::async_trait;
+    use rush_build::{BuildType, ComponentBuildSpec, Variables};
+    use rush_core::error::Result;
     use tokio::sync::broadcast;
+
+    use crate::docker::{ContainerStatus, DockerClient};
+    use crate::events::{ContainerEvent, Event, EventBus};
+    use crate::reactor::factory::{ModularReactorConfigBuilder, ReactorFactory};
+    use crate::reactor::modular_core::{ModularReactorConfig, ReactorStatus};
+    use crate::reactor::state::{ComponentStatus, ReactorPhase};
 
     /// Mock Docker client for testing
     #[derive(Debug)]
@@ -158,7 +156,10 @@ mod tests {
         }
 
         async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {
-            self.record_operation(&format!("send_signal_to_container:{}:{}", container_id, signal));
+            self.record_operation(&format!(
+                "send_signal_to_container:{}:{}",
+                container_id, signal
+            ));
             Ok(())
         }
 
@@ -166,7 +167,7 @@ mod tests {
             self.record_operation(&format!("exec_in_container:{}:{:?}", container_id, command));
             Ok("Mock exec result".to_string())
         }
-        
+
         async fn push_image(&self, image: &str) -> Result<()> {
             self.record_operation(&format!("push_image:{}", image));
             Ok(())
@@ -193,16 +194,10 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        // Create config with connection pooling disabled for testing
-        let mut config = ModularReactorConfig::default();
-        config.docker.enable_pooling = false;
+        // Create config for testing
+        let config = ModularReactorConfig::default();
 
-        let result = ReactorFactory::create_reactor(
-            config,
-            docker_client.clone(),
-            component_specs,
-            None,
-        ).await;
+        let result = ReactorFactory::create_reactor(config, component_specs, None).await;
 
         match result {
             Ok(_) => println!("Reactor created successfully!"),
@@ -223,7 +218,7 @@ mod tests {
             .with_file_watching(false) // Disable to avoid file system dependencies
             .with_auto_restart(true)
             .with_health_checks(true)
-            .create_reactor(docker_client, component_specs)
+            .create_reactor(component_specs)
             .await;
 
         assert!(result.is_ok());
@@ -234,10 +229,7 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let result = ReactorFactory::create_dev_reactor(
-            docker_client,
-            component_specs,
-        ).await;
+        let result = ReactorFactory::create_dev_reactor(component_specs).await;
 
         assert!(result.is_ok());
     }
@@ -247,10 +239,7 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let result = ReactorFactory::create_production_reactor(
-            docker_client,
-            component_specs,
-        ).await;
+        let result = ReactorFactory::create_production_reactor(component_specs).await;
 
         assert!(result.is_ok());
     }
@@ -260,10 +249,7 @@ mod tests {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
 
-        let result = ReactorFactory::create_enhanced_reactor(
-            docker_client,
-            component_specs,
-        ).await;
+        let result = ReactorFactory::create_enhanced_reactor(component_specs).await;
 
         assert!(result.is_ok());
     }
@@ -280,12 +266,10 @@ mod tests {
         config.base.product_name = "test-product".to_string();
         config.build.product_dir = temp_dir.path().to_path_buf();
         config.build.cache_dir = temp_dir.path().join(".cache");
-        
-        let mut reactor = ReactorFactory::create_primary_reactor(
-            config,
-            docker_client.clone(),
-            component_specs,
-        ).await.unwrap();
+
+        let mut reactor = ReactorFactory::create_primary_reactor(config, component_specs)
+            .await
+            .unwrap();
 
         // Test startup
         let start_result = reactor.start().await;
@@ -312,20 +296,15 @@ mod tests {
         config.base.product_name = "test-product".to_string();
         config.build.product_dir = temp_dir.path().to_path_buf();
         config.build.cache_dir = temp_dir.path().join(".cache");
-        // Enable enhanced features
-        config.docker.use_enhanced_client = true;
-        config.docker.enable_metrics = true;
-        config.docker.enable_pooling = true;
+        // Docker features are now handled internally
         config.lifecycle.auto_restart = true;
         config.lifecycle.enable_health_checks = true;
         config.build.parallel_builds = true;
         config.build.enable_cache = true;
-        
-        let mut reactor = ReactorFactory::create_primary_reactor(
-            config,
-            docker_client.clone(),
-            component_specs,
-        ).await.unwrap();
+
+        let mut reactor = ReactorFactory::create_primary_reactor(config, component_specs)
+            .await
+            .unwrap();
 
         // Start the reactor
         reactor.start().await.unwrap();
@@ -346,10 +325,7 @@ mod tests {
         // Configure mock to fail
         docker_client.set_should_fail(true);
 
-        let result = ReactorFactory::create_default_primary_reactor(
-            docker_client,
-            component_specs,
-        ).await;
+        let result = ReactorFactory::create_default_primary_reactor(component_specs).await;
 
         // Should still create successfully (errors happen during operations)
         assert!(result.is_ok());
@@ -367,12 +343,10 @@ mod tests {
         config.base.product_name = "test-product".to_string();
         config.build.product_dir = temp_dir.path().to_path_buf();
         config.build.cache_dir = temp_dir.path().join(".cache");
-        
-        let mut reactor = ReactorFactory::create_primary_reactor(
-            config,
-            docker_client,
-            component_specs,
-        ).await.unwrap();
+
+        let mut reactor = ReactorFactory::create_primary_reactor(config, component_specs)
+            .await
+            .unwrap();
 
         // Subscribe to events
         let event_bus = match &reactor {
@@ -388,12 +362,12 @@ mod tests {
         reactor.start().await.unwrap();
 
         // Wait for events
-        tokio::time::timeout(Duration::from_millis(100), rx.recv()).await.ok();
+        tokio::time::timeout(Duration::from_millis(100), rx.recv())
+            .await
+            .ok();
 
         reactor.shutdown().await.unwrap();
     }
-
-
 
     // Helper event handler for testing
     struct TestEventHandler {
@@ -408,8 +382,14 @@ mod tests {
 
     #[async_trait::async_trait]
     impl crate::events::EventHandler for TestEventHandler {
-        async fn handle(&self, event: Event) -> std::result::Result<(), Box<dyn std::error::Error>> {
-            self.sender.send(event).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        async fn handle(
+            &self,
+            event: Event,
+        ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+            self.sender
+                .send(event)
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
         }
     }
 
@@ -417,7 +397,7 @@ mod tests {
     async fn test_reactor_status_reporting() {
         let docker_client = Arc::new(MockDockerClient::new());
         let component_specs = create_test_component_specs();
-        
+
         // Create a temporary directory for the test
         let temp_dir = tempfile::TempDir::new().unwrap();
         let mut config = ModularReactorConfig::default();
@@ -426,11 +406,9 @@ mod tests {
         config.build.product_dir = temp_dir.path().to_path_buf();
         config.build.cache_dir = temp_dir.path().join(".cache");
 
-        let mut reactor = ReactorFactory::create_primary_reactor(
-            config,
-            docker_client,
-            component_specs,
-        ).await.unwrap();
+        let mut reactor = ReactorFactory::create_primary_reactor(config, component_specs)
+            .await
+            .unwrap();
 
         reactor.start().await.unwrap();
 
@@ -445,17 +423,10 @@ mod tests {
     #[tokio::test]
     async fn test_modular_reactor_config_validation() {
         let config = ModularReactorConfig {
-            docker: crate::reactor::docker_integration::DockerIntegrationConfig {
-                use_enhanced_client: true,
-                enable_metrics: true,
-                enable_pooling: true,
-                ..Default::default()
-            },
             ..Default::default()
         };
 
-        assert!(config.docker.use_enhanced_client);
-        assert!(config.docker.enable_metrics);
-        assert!(config.docker.enable_pooling);
+        // Docker config has been removed, these checks are no longer needed
+        // The functionality is now handled internally
     }
 }

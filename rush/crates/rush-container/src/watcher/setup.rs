@@ -9,10 +9,10 @@ use log::{debug, error, info, trace};
 use notify::{
     Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
-
-use crate::watcher::processor::ChangeProcessor;
 use rush_core::error::Result;
 use rush_utils::PathMatcher;
+
+use crate::watcher::processor::ChangeProcessor;
 
 /// Configuration for file watching
 #[derive(Debug, Clone)]
@@ -167,9 +167,11 @@ pub fn create_component_matcher(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs::File;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_file_watcher_setup() {

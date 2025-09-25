@@ -4,11 +4,11 @@
 //! the entire application to coordinate graceful shutdown of builds, containers,
 //! and other long-running operations.
 
-use log::error;
-use log::{debug, info, warn};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use log::{debug, error, info, warn};
 use tokio::sync::{broadcast, Notify};
 use tokio_util::sync::CancellationToken;
 
@@ -319,8 +319,9 @@ pub fn setup_signal_handlers() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tokio::time::{timeout, Duration};
+
+    use super::*;
 
     #[tokio::test]
     async fn test_shutdown_coordination() {

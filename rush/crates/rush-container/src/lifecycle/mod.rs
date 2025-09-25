@@ -6,4 +6,4 @@
 pub mod shutdown;
 
 // Re-export main types
-pub use shutdown::{ShutdownManager, ShutdownConfig, ShutdownStrategy};
+pub use shutdown::{ShutdownConfig, ShutdownManager, ShutdownStrategy};

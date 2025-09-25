@@ -1,8 +1,9 @@
 use std::fs;
 use std::sync::Arc;
-use tempfile::TempDir;
+
 use rush_container::tagging::ImageTagGenerator;
 use rush_toolchain::ToolchainContext;
+use tempfile::TempDir;
 
 #[test]
 fn test_gitignore_integration_in_hash_computation() {
@@ -12,7 +13,7 @@ fn test_gitignore_integration_in_hash_computation() {
 
     // Initialize git repo
     std::process::Command::new("git")
-        .args(&["init"])
+        .args(["init"])
         .current_dir(base_path)
         .output()
         .unwrap();
@@ -40,13 +41,13 @@ fn test_gitignore_integration_in_hash_computation() {
 
     // Commit initial state
     std::process::Command::new("git")
-        .args(&["add", "."])
+        .args(["add", "."])
         .current_dir(base_path)
         .output()
         .unwrap();
 
     std::process::Command::new("git")
-        .args(&["commit", "-m", "initial"])
+        .args(["commit", "-m", "initial"])
         .current_dir(base_path)
         .output()
         .unwrap();
@@ -70,7 +71,8 @@ fn test_gitignore_integration_in_hash_computation() {
         "local",
         "localhost:5000",
         8000,
-    ).expect("Failed to create config");
+    )
+    .expect("Failed to create config");
 
     let spec = rush_build::ComponentBuildSpec {
         build_type: rush_build::BuildType::RustBinary {
@@ -117,7 +119,11 @@ fn test_gitignore_integration_in_hash_computation() {
     fs::write(component_dir.join("new.rs"), "// new file").unwrap();
 
     // Modify ignored file (the hash computation should not include it)
-    fs::write(component_dir.join("debug.log"), "more log data that should be ignored").unwrap();
+    fs::write(
+        component_dir.join("debug.log"),
+        "more log data that should be ignored",
+    )
+    .unwrap();
 
     // Create new ignored file in target/
     fs::write(target_dir.join("another.exe"), "another binary").unwrap();
@@ -132,23 +138,44 @@ fn test_gitignore_integration_in_hash_computation() {
     }
 
     // Check if we found any files at all
-    assert!(!files.is_empty(), "Should find at least some files in the component directory");
+    assert!(
+        !files.is_empty(),
+        "Should find at least some files in the component directory"
+    );
 
     // Verify gitignored files are excluded
-    assert!(!files.iter().any(|f| f.ends_with("debug.log")),
-            "Log files should be excluded by gitignore");
-    assert!(!files.iter().any(|f| f.to_str().unwrap().contains("/target/")),
-            "Target directory files should be excluded by gitignore");
+    assert!(
+        !files.iter().any(|f| f.ends_with("debug.log")),
+        "Log files should be excluded by gitignore"
+    );
+    assert!(
+        !files
+            .iter()
+            .any(|f| f.to_str().unwrap().contains("/target/")),
+        "Target directory files should be excluded by gitignore"
+    );
 
     // Verify source files are included
-    assert!(files.iter().any(|f| f.ends_with("main.rs")),
-            "Source files should be included - main.rs");
-    assert!(files.iter().any(|f| f.ends_with("lib.rs")),
-            "Source files should be included - lib.rs");
-    assert!(files.iter().any(|f| f.ends_with("new.rs")),
-            "New source files should be included - new.rs");
+    assert!(
+        files.iter().any(|f| f.ends_with("main.rs")),
+        "Source files should be included - main.rs"
+    );
+    assert!(
+        files.iter().any(|f| f.ends_with("lib.rs")),
+        "Source files should be included - lib.rs"
+    );
+    assert!(
+        files.iter().any(|f| f.ends_with("new.rs")),
+        "New source files should be included - new.rs"
+    );
 
     println!("Gitignore integration test passed!");
     println!("Total files found: {}", files.len());
-    println!("Files: {:?}", files.iter().map(|f| f.file_name().unwrap()).collect::<Vec<_>>());
+    println!(
+        "Files: {:?}",
+        files
+            .iter()
+            .map(|f| f.file_name().unwrap())
+            .collect::<Vec<_>>()
+    );
 }

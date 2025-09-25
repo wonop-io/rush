@@ -1,7 +1,9 @@
-use super::{OutputDirector, OutputSource, OutputStream, OutputStreamType};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use rush_core::error::Result;
-use std::collections::HashMap;
+
+use super::{OutputDirector, OutputSource, OutputStream, OutputStreamType};
 
 /// A buffered output director that accumulates partial lines before writing
 pub struct BufferedOutputDirector<T: OutputDirector> {

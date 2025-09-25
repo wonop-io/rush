@@ -3,13 +3,13 @@
 //! This module provides functionality for managing environment-specific
 //! configuration settings across different deployment environments.
 
-use log::{debug, error, info, trace, warn};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::BufRead;
-use std::io::{Read, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
+
+use log::{debug, error, info, trace, warn};
+use serde::{Deserialize, Serialize};
 
 /// Represents environment-specific variable definitions for a product
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -468,9 +468,11 @@ impl EnvironmentDefinitions {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_merge_components() {

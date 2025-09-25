@@ -4,12 +4,13 @@
 //! based on component build types and contexts.
 
 use std::error::Error;
+
+use log::{debug, trace};
+use rush_utils::TEMPLATES;
 use tera::Context;
 
 use crate::build_type::BuildType;
 use crate::context::BuildContext;
-use log::{debug, trace};
-use rush_utils::TEMPLATES;
 
 /// Represents a build script that can be generated for a component
 pub struct BuildScript {
@@ -98,12 +99,13 @@ impl BuildScript {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use rush_toolchain::{Platform, ToolchainContext};
+
     use super::*;
     use crate::build_type::BuildType;
     use crate::context::BuildContext;
-    use rush_toolchain::Platform;
-    use rush_toolchain::ToolchainContext;
-    use std::collections::HashMap;
 
     fn create_test_context() -> BuildContext {
         let platform = Platform::default();

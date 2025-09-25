@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+
 use crate::watcher::WatcherConfig;
 
 /// Configuration for the ContainerReactor
@@ -98,8 +99,14 @@ impl ContainerReactorConfig {
     }
 
     /// Add a redirected component
-    pub fn add_redirect(mut self, component: impl Into<String>, host: impl Into<String>, port: u16) -> Self {
-        self.redirected_components.insert(component.into(), (host.into(), port));
+    pub fn add_redirect(
+        mut self,
+        component: impl Into<String>,
+        host: impl Into<String>,
+        port: u16,
+    ) -> Self {
+        self.redirected_components
+            .insert(component.into(), (host.into(), port));
         self
     }
 
@@ -127,8 +134,9 @@ impl ContainerReactorConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::Path;
+
+    use super::*;
 
     #[test]
     fn test_config_creation() {
@@ -136,7 +144,7 @@ mod tests {
             "test-product",
             PathBuf::from("/test/path"),
             "test-network",
-            "dev"
+            "dev",
         );
 
         assert_eq!(config.product_name, "test-product");
@@ -149,16 +157,11 @@ mod tests {
 
     #[test]
     fn test_builder_methods() {
-        let config = ContainerReactorConfig::new(
-            "test",
-            PathBuf::from("/test"),
-            "network",
-            "prod"
-        )
-        .with_registry("registry.example.com")
-        .with_verbose(true)
-        .with_git_hash("abc123")
-        .with_start_port(8080);
+        let config = ContainerReactorConfig::new("test", PathBuf::from("/test"), "network", "prod")
+            .with_registry("registry.example.com")
+            .with_verbose(true)
+            .with_git_hash("abc123")
+            .with_start_port(8080);
 
         assert_eq!(config.docker_registry, "registry.example.com");
         assert!(config.verbose);
@@ -168,34 +171,30 @@ mod tests {
 
     #[test]
     fn test_redirects() {
-        let config = ContainerReactorConfig::new(
-            "test",
-            PathBuf::from("/test"),
-            "network",
-            "dev"
-        )
-        .add_redirect("frontend", "localhost", 3000)
-        .add_redirect("backend", "localhost", 8080);
+        let config = ContainerReactorConfig::new("test", PathBuf::from("/test"), "network", "dev")
+            .add_redirect("frontend", "localhost", 3000)
+            .add_redirect("backend", "localhost", 8080);
 
         assert!(config.is_redirected("frontend"));
         assert!(config.is_redirected("backend"));
         assert!(!config.is_redirected("other"));
 
-        assert_eq!(config.get_redirect("frontend"), Some(&("localhost".to_string(), 3000)));
-        assert_eq!(config.get_redirect("backend"), Some(&("localhost".to_string(), 8080)));
+        assert_eq!(
+            config.get_redirect("frontend"),
+            Some(&("localhost".to_string(), 3000))
+        );
+        assert_eq!(
+            config.get_redirect("backend"),
+            Some(&("localhost".to_string(), 8080))
+        );
         assert_eq!(config.get_redirect("other"), None);
     }
 
     #[test]
     fn test_silenced_components() {
-        let config = ContainerReactorConfig::new(
-            "test",
-            PathBuf::from("/test"),
-            "network",
-            "dev"
-        )
-        .add_silenced("noisy-service")
-        .add_silenced("debug-service");
+        let config = ContainerReactorConfig::new("test", PathBuf::from("/test"), "network", "dev")
+            .add_silenced("noisy-service")
+            .add_silenced("debug-service");
 
         assert!(config.is_silenced("noisy-service"));
         assert!(config.is_silenced("debug-service"));

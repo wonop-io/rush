@@ -1,10 +1,10 @@
 pub mod checks;
 pub mod error;
 
+use std::process::Command;
+
 pub use checks::{check_all_requirements, check_docker, check_rust_targets, check_trunk};
 pub use error::{HelperError, HelperResult};
-
-use std::process::Command;
 
 pub fn run_preflight_checks() -> HelperResult<()> {
     check_all_requirements()

@@ -6,6 +6,7 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
+
 use tokio::sync::RwLock;
 
 /// System-wide events
@@ -13,50 +14,34 @@ use tokio::sync::RwLock;
 pub enum SystemEvent {
     /// Build started for a component
     BuildStarted { component: String },
-    
+
     /// Build completed for a component
-    BuildCompleted { 
-        component: String, 
-        success: bool 
-    },
-    
+    BuildCompleted { component: String, success: bool },
+
     /// Container started
-    ContainerStarted { 
-        id: String,
-        component: String 
-    },
-    
+    ContainerStarted { id: String, component: String },
+
     /// Container stopped
-    ContainerStopped { 
+    ContainerStopped {
         id: String,
         component: String,
-        reason: StopReason 
+        reason: StopReason,
     },
-    
+
     /// File changed
-    FileChanged { 
-        path: std::path::PathBuf 
-    },
-    
+    FileChanged { path: std::path::PathBuf },
+
     /// Configuration reloaded
     ConfigurationReloaded,
-    
+
     /// Health check status changed
-    HealthCheckStatusChanged {
-        component: String,
-        healthy: bool
-    },
-    
+    HealthCheckStatusChanged { component: String, healthy: bool },
+
     /// Deployment started
-    DeploymentStarted {
-        environment: String
-    },
-    
+    DeploymentStarted { environment: String },
+
     /// Deployment completed
-    DeploymentCompleted {
-        environment: String,
-        success: bool
-    },
+    DeploymentCompleted { environment: String, success: bool },
 }
 
 /// Reason for container stop
@@ -79,7 +64,7 @@ pub enum StopReason {
 pub trait EventHandler: Send + Sync {
     /// Handle an event
     async fn handle(&self, event: &SystemEvent) -> crate::Result<()>;
-    
+
     /// Get the event types this handler is interested in
     fn event_types(&self) -> Vec<TypeId> {
         vec![TypeId::of::<SystemEvent>()]
@@ -100,44 +85,45 @@ impl EventBus {
             typed_handlers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-    
+
     /// Register an event handler
     pub async fn register_handler(&self, handler: Arc<dyn EventHandler>) {
         let mut handlers = self.handlers.write().await;
         handlers.push(handler.clone());
-        
+
         // Also register by type for efficient routing
         let mut typed = self.typed_handlers.write().await;
         for type_id in handler.event_types() {
-            typed.entry(type_id)
+            typed
+                .entry(type_id)
                 .or_insert_with(Vec::new)
                 .push(handler.clone());
         }
     }
-    
+
     /// Publish an event to all registered handlers
     pub async fn publish(&self, event: SystemEvent) -> crate::Result<()> {
         let handlers = self.handlers.read().await;
-        
+
         for handler in handlers.iter() {
             if let Err(e) = handler.handle(&event).await {
                 log::warn!("Event handler error: {}", e);
                 // Continue processing other handlers even if one fails
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Remove all handlers
     pub async fn clear(&self) {
         let mut handlers = self.handlers.write().await;
         handlers.clear();
-        
+
         let mut typed = self.typed_handlers.write().await;
         typed.clear();
     }
-    
+
     /// Get the number of registered handlers
     pub async fn handler_count(&self) -> usize {
         let handlers = self.handlers.read().await;
@@ -152,7 +138,7 @@ impl Default for EventBus {
 }
 
 /// Global event bus instance
-static GLOBAL_EVENT_BUS: once_cell::sync::Lazy<EventBus> = 
+static GLOBAL_EVENT_BUS: once_cell::sync::Lazy<EventBus> =
     once_cell::sync::Lazy::new(EventBus::new);
 
 /// Get the global event bus
@@ -192,6 +178,12 @@ pub struct MetricsEventHandler {
     container_count: Arc<RwLock<u64>>,
 }
 
+impl Default for MetricsEventHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetricsEventHandler {
     pub fn new() -> Self {
         Self {
@@ -199,11 +191,11 @@ impl MetricsEventHandler {
             container_count: Arc::new(RwLock::new(0)),
         }
     }
-    
+
     pub async fn get_build_count(&self) -> u64 {
         *self.build_count.read().await
     }
-    
+
     pub async fn get_container_count(&self) -> u64 {
         *self.container_count.read().await
     }

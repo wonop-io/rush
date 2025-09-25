@@ -1,8 +1,9 @@
 //! Integration tests for file watching and rebuild functionality
 
-use rush_container::watcher::{setup_file_watcher, WatcherConfig};
 use std::fs;
 use std::time::Duration;
+
+use rush_container::watcher::{setup_file_watcher, WatcherConfig};
 use tempfile::TempDir;
 use tokio::time::sleep;
 

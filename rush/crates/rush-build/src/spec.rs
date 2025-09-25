@@ -1,19 +1,16 @@
-use serde::{Deserialize, Serialize};
-use serde_yaml::Value;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::Artefact;
-use crate::BuildContext;
-use crate::BuildScript;
-use crate::BuildType;
-use crate::Variables;
-use crate::health_check::{HealthCheckConfig, parse_health_check};
 use rush_config::Config;
 use rush_core::dotenv::load_dotenv;
 use rush_toolchain::ToolchainContext;
 use rush_utils::PathMatcher;
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
+
+use crate::health_check::{parse_health_check, HealthCheckConfig};
+use crate::{Artefact, BuildContext, BuildScript, BuildType, Variables};
 
 /// Represents the build specification for a component
 #[derive(Debug, Clone)]
@@ -134,7 +131,10 @@ pub struct ServiceSpec {
 impl ComponentBuildSpec {
     /// Gets the Docker local name for this component
     pub fn docker_local_name(&self) -> String {
-        rush_core::naming::NamingConvention::container_name(&self.product_name, &self.component_name)
+        rush_core::naming::NamingConvention::container_name(
+            &self.product_name,
+            &self.component_name,
+        )
     }
 
     /// Sets the service specification
@@ -399,18 +399,24 @@ impl ComponentBuildSpec {
                 if dotenv_secrets_path.exists() {
                     match load_dotenv(&dotenv_secrets_path) {
                         Ok(env) => {
-                            log::debug!("Loaded {} secrets from .env.secrets for component", env.len());
+                            log::debug!(
+                                "Loaded {} secrets from .env.secrets for component",
+                                env.len()
+                            );
                             for key in env.keys() {
                                 log::debug!("  Secret key: {}", key);
                             }
                             env
-                        },
+                        }
                         Err(e) => {
                             panic!("Failed to load .env.secrets file: {e}");
                         }
                     }
                 } else {
-                    log::debug!("No .env.secrets file found at: {}", dotenv_secrets_path.display());
+                    log::debug!(
+                        "No .env.secrets file found at: {}",
+                        dotenv_secrets_path.display()
+                    );
                     HashMap::new()
                 }
             }
@@ -564,10 +570,10 @@ impl ComponentBuildSpec {
                 .unwrap_or_else(|| "native".to_string()),
             health_check: yaml_section
                 .get("health_check")
-                .and_then(|v| parse_health_check(v)),
+                .and_then(parse_health_check),
             startup_probe: yaml_section
                 .get("startup_probe")
-                .and_then(|v| parse_health_check(v)),
+                .and_then(parse_health_check),
         }
     }
 
@@ -718,7 +724,7 @@ impl ComponentBuildSpec {
             .domains
             .clone()
             .map(|d| (*d).clone())
-            .unwrap_or_else(HashMap::new);
+            .unwrap_or_default();
 
         let (location, filtered_services) = match &self.build_type {
             BuildType::TrunkWasm { location, .. } => (Some(location.clone()), None),
@@ -778,11 +784,13 @@ impl ComponentBuildSpec {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{BuildType, Variables};
+    use std::sync::Arc;
+
     use rush_config::Config;
     use serde_yaml;
-    use std::sync::Arc;
+
+    use super::*;
+    use crate::{BuildType, Variables};
 
     fn create_test_config() -> Arc<Config> {
         Config::test_default()

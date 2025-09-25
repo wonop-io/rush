@@ -1,7 +1,8 @@
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
+
+use async_trait::async_trait;
 
 /// Vault trait defines the interface for secret storage providers.
 ///

@@ -1,9 +1,11 @@
-use crate::context::BuildContext;
-use log::{debug, error, trace};
 use std::error::Error;
 use std::fs;
 use std::path::Path;
+
+use log::{debug, error, trace};
 use tera::{Context, Tera};
+
+use crate::context::BuildContext;
 
 /// Represents a file artifact that can be rendered using the BuildContext
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -219,12 +221,14 @@ impl Artefact {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::build_type::BuildType;
-    use rush_toolchain::Platform;
     use std::collections::HashMap;
     use std::io::Write;
+
+    use rush_toolchain::Platform;
     use tempfile::NamedTempFile;
+
+    use super::*;
+    use crate::build_type::BuildType;
 
     fn create_test_context() -> BuildContext {
         let mut env = HashMap::new();

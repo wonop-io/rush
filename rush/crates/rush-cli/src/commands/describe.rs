@@ -1,13 +1,16 @@
-use crate::args::DescribeCommand;
-use rush_build::{ComponentBuildSpec, BuildType};
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use rush_build::{BuildType, ComponentBuildSpec};
 use rush_config::Config;
-use rush_container::{ContainerService, tagging::ImageTagGenerator};
+use rush_container::tagging::ImageTagGenerator;
+use rush_container::ContainerService;
 use rush_core::error::{Error, Result};
 use rush_security::SecretsProvider;
 use rush_toolchain::ToolchainContext;
-use std::sync::Arc;
-use std::path::PathBuf;
 use tera::Context;
+
+use crate::args::DescribeCommand;
 
 pub async fn execute(
     cmd: DescribeCommand,
@@ -21,9 +24,7 @@ pub async fn execute(
             println!("{toolchain:#?}");
             Ok(())
         }
-        DescribeCommand::Images => {
-            describe_images(config, toolchain).await
-        }
+        DescribeCommand::Images => describe_images(config, toolchain).await,
         DescribeCommand::Services => {
             // Create a view of services that contains the essential information
             let service_info = services
@@ -111,10 +112,7 @@ pub async fn execute(
 }
 
 /// Describes how images will be built for all components
-async fn describe_images(
-    config: &Arc<Config>,
-    toolchain: &Arc<ToolchainContext>,
-) -> Result<()> {
+async fn describe_images(config: &Arc<Config>, toolchain: &Arc<ToolchainContext>) -> Result<()> {
     use std::fs;
 
     let product_path = config.product_path();
@@ -149,22 +147,21 @@ async fn describe_images(
                 if let serde_yaml::Value::Mapping(ref mut map) = component_config_with_name {
                     map.insert(
                         serde_yaml::Value::String("component_name".to_string()),
-                        serde_yaml::Value::String(name_str.to_string())
+                        serde_yaml::Value::String(name_str.to_string()),
                     );
                 }
 
                 let spec = rush_build::ComponentBuildSpec::from_yaml(
                     config.clone(),
                     rush_build::Variables::empty(),
-                    &component_config_with_name
+                    &component_config_with_name,
                 );
 
                 // Compute tag for this component
-                let tag = tag_generator.compute_tag(&spec)
-                    .unwrap_or_else(|e| {
-                        eprintln!("Warning: Failed to compute tag for {}: {}", name_str, e);
-                        "latest".to_string()
-                    });
+                let tag = tag_generator.compute_tag(&spec).unwrap_or_else(|e| {
+                    eprintln!("Warning: Failed to compute tag for {}: {}", name_str, e);
+                    "latest".to_string()
+                });
 
                 // Collect information about this component
                 let info = ComponentImageInfo {
@@ -184,7 +181,7 @@ async fn describe_images(
         // Display information for each component
         for info in component_infos {
             print_component_image_info(&info, product_path);
-            println!();  // Add spacing between components
+            println!(); // Add spacing between components
         }
     }
 
@@ -220,7 +217,10 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
         if dockerfile_path.exists() {
             println!("    └─ Status: ✓ Found at {}", dockerfile_path.display());
         } else {
-            println!("    └─ Status: ✗ Not found at {}", dockerfile_path.display());
+            println!(
+                "    └─ Status: ✗ Not found at {}",
+                dockerfile_path.display()
+            );
         }
     }
 
@@ -235,10 +235,10 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
                 .filter(|e| {
                     let name = e.file_name();
                     let name_str = name.to_string_lossy();
-                    !name_str.starts_with('.') &&
-                    name_str != "target" &&
-                    name_str != "node_modules" &&
-                    name_str != "dist"
+                    !name_str.starts_with('.')
+                        && name_str != "target"
+                        && name_str != "node_modules"
+                        && name_str != "dist"
                 })
                 .count();
             println!("    └─ Status: ✓ Found ({} entries)", file_count);
@@ -249,7 +249,11 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
 
     // Build-specific information
     match &info.spec.build_type {
-        BuildType::RustBinary { features, precompile_commands, .. } => {
+        BuildType::RustBinary {
+            features,
+            precompile_commands,
+            ..
+        } => {
             if let Some(features) = features {
                 if !features.is_empty() {
                     println!("  Rust Features: {}", features.join(", "));
@@ -264,8 +268,16 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
                 }
             }
         }
-        BuildType::TrunkWasm { ssr, features, precompile_commands, .. } => {
-            println!("  Server-Side Rendering: {}", if *ssr { "Yes" } else { "No" });
+        BuildType::TrunkWasm {
+            ssr,
+            features,
+            precompile_commands,
+            ..
+        } => {
+            println!(
+                "  Server-Side Rendering: {}",
+                if *ssr { "Yes" } else { "No" }
+            );
             if let Some(features) = features {
                 if !features.is_empty() {
                     println!("  Rust Features: {}", features.join(", "));
@@ -280,15 +292,26 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
                 }
             }
         }
-        BuildType::LocalService { service_type, version, persist_data, .. } => {
+        BuildType::LocalService {
+            service_type,
+            version,
+            persist_data,
+            ..
+        } => {
             println!("  Service Type: {}", service_type);
             if let Some(version) = version {
                 println!("  Version: {}", version);
             }
-            println!("  Persist Data: {}", if *persist_data { "Yes" } else { "No" });
+            println!(
+                "  Persist Data: {}",
+                if *persist_data { "Yes" } else { "No" }
+            );
             println!("  Note: LocalService uses pre-built images, not built locally");
         }
-        BuildType::PureDockerImage { image_name_with_tag, .. } => {
+        BuildType::PureDockerImage {
+            image_name_with_tag,
+            ..
+        } => {
             println!("  Base Image: {}", image_name_with_tag);
             println!("  Note: Uses existing Docker image, not built locally");
         }
@@ -334,12 +357,36 @@ fn format_build_type(build_type: &BuildType) -> &str {
 /// Determine the context directory for a build
 fn determine_context_dir(build_type: &BuildType, product_path: &std::path::Path) -> PathBuf {
     match build_type {
-        BuildType::TrunkWasm { location, context_dir, .. } |
-        BuildType::DixiousWasm { location, context_dir, .. } |
-        BuildType::RustBinary { location, context_dir, .. } |
-        BuildType::Script { location, context_dir, .. } |
-        BuildType::Zola { location, context_dir, .. } |
-        BuildType::Book { location, context_dir, .. } => {
+        BuildType::TrunkWasm {
+            location,
+            context_dir,
+            ..
+        }
+        | BuildType::DixiousWasm {
+            location,
+            context_dir,
+            ..
+        }
+        | BuildType::RustBinary {
+            location,
+            context_dir,
+            ..
+        }
+        | BuildType::Script {
+            location,
+            context_dir,
+            ..
+        }
+        | BuildType::Zola {
+            location,
+            context_dir,
+            ..
+        }
+        | BuildType::Book {
+            location,
+            context_dir,
+            ..
+        } => {
             let component_base = product_path.join(location);
             if let Some(ctx) = context_dir {
                 component_base.join(ctx)

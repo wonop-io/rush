@@ -1,9 +1,10 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use colored::Colorize;
 use rush_cli::{args, context_builder, execute, init, logging};
 use rush_core::shutdown::{self, ShutdownReason};
 use rush_helper::{run_preflight_checks, HelperError};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
@@ -27,7 +28,8 @@ async fn main() -> Result<(), std::io::Error> {
             signal_clone.store(true, Ordering::SeqCst);
             shutdown::global_shutdown().initiate_immediate(ShutdownReason::Signal);
         }
-    }).expect("Error setting Ctrl+C handler");
+    })
+    .expect("Error setting Ctrl+C handler");
 
     // Also set up the default signal handlers for other signals
     shutdown::setup_signal_handlers();
@@ -41,7 +43,10 @@ async fn main() -> Result<(), std::io::Error> {
     // Set up logging to route through the sink
     if let Err(e) = logging::setup_logging_with_sink(&matches, output_sink.clone()) {
         // Fallback to env_logger if sink setup fails
-        eprintln!("Failed to setup sink-based logging: {}, falling back to env_logger", e);
+        eprintln!(
+            "Failed to setup sink-based logging: {}, falling back to env_logger",
+            e
+        );
         context_builder::setup_logging(&matches);
     }
 

@@ -46,7 +46,7 @@ impl LocalServiceType {
             Self::Custom(image) => image.clone(),
         }
     }
-    
+
     /// Get the environment variable suffix for connection strings
     pub fn env_var_suffix(&self) -> &str {
         match self {

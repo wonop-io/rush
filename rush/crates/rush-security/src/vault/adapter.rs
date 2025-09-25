@@ -4,12 +4,14 @@
 //! SecretsProvider trait, enabling a consistent interface for accessing secrets across
 //! different storage backends.
 
-use crate::secrets::{Environment, SecretError, SecretsProvider};
-use crate::vault::vault_trait::Vault;
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
+
+use async_trait::async_trait;
+
+use crate::secrets::{Environment, SecretError, SecretsProvider};
+use crate::vault::vault_trait::Vault;
 
 /// Adapter that wraps a Vault implementation and exposes it as a SecretsProvider
 pub struct VaultAdapter<V: Vault + Send + Sync> {

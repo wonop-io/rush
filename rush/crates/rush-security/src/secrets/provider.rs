@@ -3,11 +3,12 @@
 //! This module defines a common interface for secrets providers, allowing
 //! different backend implementations to be used interchangeably.
 
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
+
+use async_trait::async_trait;
 
 /// Defines the possible environments a secret can be used in
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -10,14 +10,14 @@ pub mod mocks {
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
-    
+
     use crate::docker::{ContainerStatus, DockerClient, DockerService};
     use rush_core::error::Result;
-    
+
     // Mock Docker client
     mock! {
         pub DockerClient {}
-        
+
         #[async_trait]
         impl DockerClient for DockerClient {
             async fn container_exists(&self, name: &str) -> Result<bool>;
@@ -50,24 +50,24 @@ pub mod mocks {
             async fn push_image(&self, image: &str) -> Result<()>;
         }
     }
-    
+
     // Mock file system watcher
     mock! {
         pub FileWatcher {}
-        
+
         impl Clone for FileWatcher {
             fn clone(&self) -> Self;
         }
     }
-    
+
     // Mock kubectl client
     mock! {
         pub KubectlClient {}
-        
+
         impl Clone for KubectlClient {
             fn clone(&self) -> Self;
         }
-        
+
         #[async_trait]
         impl crate::kubernetes::KubernetesClient for KubectlClient {
             async fn apply_manifest(&self, manifest: &str) -> Result<()>;
@@ -79,7 +79,7 @@ pub mod mocks {
             async fn current_context(&self) -> Result<String>;
         }
     }
-    
+
     // Test container for integration tests
     pub struct TestContainer {
         pub name: String,
@@ -88,7 +88,7 @@ pub mod mocks {
         pub env: Vec<String>,
         pub ports: Vec<(u16, u16)>,
     }
-    
+
     impl TestContainer {
         pub fn new(name: impl Into<String>, image: impl Into<String>) -> Self {
             Self {
@@ -99,30 +99,30 @@ pub mod mocks {
                 ports: Vec::new(),
             }
         }
-        
+
         pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
             self.env.push(format!("{}={}", key.into(), value.into()));
             self
         }
-        
+
         pub fn with_port(mut self, host: u16, container: u16) -> Self {
             self.ports.push((host, container));
             self
         }
-        
+
         pub fn running(mut self) -> Self {
             self.status = ContainerStatus::Running;
             self
         }
     }
-    
+
     // In-memory Docker client for testing
     pub struct InMemoryDockerClient {
         containers: Arc<Mutex<HashMap<String, TestContainer>>>,
         networks: Arc<Mutex<Vec<String>>>,
         images: Arc<Mutex<Vec<String>>>,
     }
-    
+
     impl InMemoryDockerClient {
         pub fn new() -> Self {
             Self {
@@ -131,25 +131,25 @@ pub mod mocks {
                 images: Arc::new(Mutex::new(Vec::new())),
             }
         }
-        
+
         pub async fn add_container(&self, container: TestContainer) {
             let mut containers = self.containers.lock().await;
             containers.insert(container.name.clone(), container);
         }
-        
+
         pub async fn add_image(&self, tag: impl Into<String>) {
             let mut images = self.images.lock().await;
             images.push(tag.into());
         }
     }
-    
+
     #[async_trait]
     impl DockerClient for InMemoryDockerClient {
         async fn container_exists(&self, name: &str) -> Result<bool> {
             let containers = self.containers.lock().await;
             Ok(containers.contains_key(name))
         }
-        
+
         async fn create_container(
             &self,
             name: &str,
@@ -170,7 +170,7 @@ pub mod mocks {
             containers.insert(name.to_string(), container);
             Ok(format!("container_{}", name))
         }
-        
+
         async fn start_container(&self, id: &str) -> Result<()> {
             let mut containers = self.containers.lock().await;
             let name = id.strip_prefix("container_").unwrap_or(id);
@@ -179,7 +179,7 @@ pub mod mocks {
             }
             Ok(())
         }
-        
+
         async fn stop_container(&self, id: &str, _timeout: Option<u64>) -> Result<()> {
             let mut containers = self.containers.lock().await;
             let name = id.strip_prefix("container_").unwrap_or(id);
@@ -188,14 +188,14 @@ pub mod mocks {
             }
             Ok(())
         }
-        
+
         async fn remove_container(&self, id: &str, _force: bool) -> Result<()> {
             let mut containers = self.containers.lock().await;
             let name = id.strip_prefix("container_").unwrap_or(id);
             containers.remove(name);
             Ok(())
         }
-        
+
         async fn container_status(&self, id: &str) -> Result<ContainerStatus> {
             let containers = self.containers.lock().await;
             let name = id.strip_prefix("container_").unwrap_or(id);
@@ -204,28 +204,28 @@ pub mod mocks {
                 .map(|c| c.status.clone())
                 .ok_or_else(|| rush_core::error::Error::Docker(format!("Container {} not found", id)))
         }
-        
+
         async fn container_logs(&self, _id: &str, _follow: bool) -> Result<String> {
             Ok("Test logs".to_string())
         }
-        
+
         async fn network_exists(&self, name: &str) -> Result<bool> {
             let networks = self.networks.lock().await;
             Ok(networks.contains(&name.to_string()))
         }
-        
+
         async fn create_network(&self, name: &str) -> Result<()> {
             let mut networks = self.networks.lock().await;
             networks.push(name.to_string());
             Ok(())
         }
-        
+
         async fn remove_network(&self, name: &str) -> Result<()> {
             let mut networks = self.networks.lock().await;
             networks.retain(|n| n != name);
             Ok(())
         }
-        
+
         async fn build_image(
             &self,
             _context: &str,
@@ -237,18 +237,18 @@ pub mod mocks {
             images.push(tag.to_string());
             Ok(())
         }
-        
+
         async fn image_exists(&self, tag: &str) -> Result<bool> {
             let images = self.images.lock().await;
             Ok(images.contains(&tag.to_string()))
         }
-        
+
         async fn pull_image(&self, image: &str) -> Result<()> {
             let mut images = self.images.lock().await;
             images.push(image.to_string());
             Ok(())
         }
-        
+
         async fn push_image(&self, _image: &str) -> Result<()> {
             Ok(())
         }
@@ -266,7 +266,7 @@ pub mod fixtures {
     use rush_build::{BuildType, ComponentBuildSpec};
     use std::collections::HashMap;
     use std::path::PathBuf;
-    
+
     /// Create a test component spec
     pub fn test_component_spec(name: &str, build_type: BuildType) -> ComponentBuildSpec {
         ComponentBuildSpec {
@@ -299,19 +299,19 @@ pub mod fixtures {
             cache_from: vec![],
         }
     }
-    
+
     /// Create a frontend component spec
     pub fn frontend_spec() -> ComponentBuildSpec {
         test_component_spec("frontend", BuildType::TrunkWasm)
     }
-    
+
     /// Create a backend component spec
     pub fn backend_spec() -> ComponentBuildSpec {
         test_component_spec("backend", BuildType::RustBinary {
             binary_name: "server".to_string(),
         })
     }
-    
+
     /// Create test configuration
     pub fn test_config() -> crate::reactor::config::ContainerReactorConfig {
         crate::reactor::config::ContainerReactorConfig::new(
@@ -328,7 +328,7 @@ pub mod fixtures {
 #[cfg(test)]
 pub mod helpers {
     use std::time::Duration;
-    
+
     /// Wait for a condition to become true
     pub async fn wait_for<F>(mut condition: F, timeout: Duration) -> bool
     where
@@ -343,7 +343,7 @@ pub mod helpers {
         }
         false
     }
-    
+
     /// Assert that an async operation completes within a timeout
     pub async fn assert_completes_within<F, T>(future: F, timeout: Duration) -> T
     where

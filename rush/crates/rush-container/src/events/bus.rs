@@ -3,18 +3,20 @@
 //! The event bus allows components to publish events and subscribe to specific event types
 //! without direct dependencies between components.
 
-use super::types::{ContainerEvent, Event};
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use async_trait::async_trait;
 use tokio::sync::{mpsc, RwLock};
+
+use super::types::{ContainerEvent, Event};
 
 /// Trait for event handlers
 #[async_trait]
 pub trait EventHandler: Send + Sync {
     /// Handle an event
     async fn handle(&self, event: Event) -> Result<(), Box<dyn std::error::Error>>;
-    
+
     /// Return true if this handler should receive the given event
     fn should_handle(&self, _event: &Event) -> bool {
         true // By default, handle all events
@@ -35,13 +37,20 @@ pub struct EventBus {
     _event_task: Arc<tokio::task::JoinHandle<()>>,
 }
 
+impl Default for EventBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventBus {
     /// Create a new event bus
     pub fn new() -> Self {
         let (event_tx, mut event_rx) = mpsc::channel::<Event>(1000);
-        let subscribers: Arc<RwLock<HashMap<String, Arc<dyn EventHandler>>>> = Arc::new(RwLock::new(HashMap::new()));
+        let subscribers: Arc<RwLock<HashMap<String, Arc<dyn EventHandler>>>> =
+            Arc::new(RwLock::new(HashMap::new()));
         let subscribers_clone = subscribers.clone();
-        
+
         // Spawn task to process events
         let event_task = tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
@@ -51,7 +60,7 @@ impl EventBus {
                         // Clone handler and event for async processing
                         let handler = handler.clone();
                         let event = event.clone();
-                        
+
                         // Handle events in parallel
                         tokio::spawn(async move {
                             if let Err(e) = handler.handle(event).await {
@@ -72,8 +81,10 @@ impl EventBus {
 
     /// Publish an event to all subscribers
     pub async fn publish(&self, event: Event) -> Result<(), Box<dyn std::error::Error>> {
-        self.event_tx.send(event).await
-            .map_err(|e| format!("Failed to publish event: {}", e))?;
+        self.event_tx
+            .send(event)
+            .await
+            .map_err(|e| format!("Failed to publish event: {e}"))?;
         Ok(())
     }
 
@@ -85,10 +96,10 @@ impl EventBus {
         let id = uuid::Uuid::new_v4().to_string();
         let mut subscribers = self.subscribers.write().await;
         subscribers.insert(id.clone(), handler);
-        
+
         // Create a drop guard to automatically unsubscribe
         let (tx, _rx) = mpsc::channel(1);
-        
+
         Ok(Subscription {
             id,
             _drop_guard: tx,
@@ -179,9 +190,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Instant;
+
+    use super::*;
 
     struct TestHandler {
         counter: Arc<AtomicUsize>,
@@ -199,13 +211,13 @@ mod tests {
     async fn test_event_bus_publish_subscribe() {
         let bus = EventBus::new();
         let counter = Arc::new(AtomicUsize::new(0));
-        
+
         let handler = Arc::new(TestHandler {
             counter: counter.clone(),
         });
-        
+
         let _subscription = bus.subscribe(handler).await.unwrap();
-        
+
         // Publish an event
         let event = Event::new(
             "test",
@@ -214,12 +226,12 @@ mod tests {
                 timestamp: Instant::now(),
             },
         );
-        
+
         bus.publish(event).await.unwrap();
-        
+
         // Give the handler time to process
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
 
@@ -228,30 +240,30 @@ mod tests {
         let bus = EventBus::new();
         let counter1 = Arc::new(AtomicUsize::new(0));
         let counter2 = Arc::new(AtomicUsize::new(0));
-        
+
         let handler1 = Arc::new(TestHandler {
             counter: counter1.clone(),
         });
         let handler2 = Arc::new(TestHandler {
             counter: counter2.clone(),
         });
-        
+
         let _sub1 = bus.subscribe(handler1).await.unwrap();
         let _sub2 = bus.subscribe(handler2).await.unwrap();
-        
+
         assert_eq!(bus.subscriber_count().await, 2);
-        
+
         let event = Event::new(
             "test",
             ContainerEvent::NetworkReady {
                 network_name: "test-network".to_string(),
             },
         );
-        
+
         bus.publish(event).await.unwrap();
-        
+
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         assert_eq!(counter1.load(Ordering::SeqCst), 1);
         assert_eq!(counter2.load(Ordering::SeqCst), 1);
     }
@@ -260,17 +272,17 @@ mod tests {
     async fn test_unsubscribe() {
         let bus = EventBus::new();
         let counter = Arc::new(AtomicUsize::new(0));
-        
+
         let handler = Arc::new(TestHandler {
             counter: counter.clone(),
         });
-        
+
         let subscription = bus.subscribe(handler).await.unwrap();
         assert_eq!(bus.subscriber_count().await, 1);
-        
+
         bus.unsubscribe(subscription).await;
         assert_eq!(bus.subscriber_count().await, 0);
-        
+
         // Publish event after unsubscribe
         let event = Event::new(
             "test",
@@ -278,10 +290,10 @@ mod tests {
                 reason: crate::events::ShutdownReason::UserRequested,
             },
         );
-        
+
         bus.publish(event).await.unwrap();
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         // Counter should not increment
         assert_eq!(counter.load(Ordering::SeqCst), 0);
     }

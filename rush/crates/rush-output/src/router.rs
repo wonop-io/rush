@@ -1,11 +1,13 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use rush_core::error::Result;
+use tokio::sync::Mutex;
+
 use crate::event::OutputEvent;
 use crate::filter::OutputFilter;
 use crate::sink::OutputSink;
-use async_trait::async_trait;
-use rush_core::error::Result;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::Mutex;
 
 /// Statistics for router operations
 #[derive(Debug, Clone, Default)]

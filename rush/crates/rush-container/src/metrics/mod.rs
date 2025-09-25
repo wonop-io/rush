@@ -6,9 +6,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
+
+use log::{debug, info};
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use log::{info, debug};
 
 /// Component status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -94,7 +95,12 @@ impl MetricsCollector {
     }
 
     /// Record component startup
-    pub async fn record_component_start(&self, name: &str, wave_number: usize, dependencies: Vec<String>) {
+    pub async fn record_component_start(
+        &self,
+        name: &str,
+        wave_number: usize,
+        dependencies: Vec<String>,
+    ) {
         if !self.enabled {
             return;
         }
@@ -102,20 +108,26 @@ impl MetricsCollector {
         let now = Instant::now();
         let mut components = self.components.write().await;
 
-        components.insert(name.to_string(), ComponentMetricsInternal {
-            name: name.to_string(),
-            startup_began: Some(now),
-            container_created: None,
-            health_check_began: None,
-            became_healthy: None,
-            health_check_attempts: 0,
-            status: ComponentStatus::Starting,
-            error: None,
-            dependencies,
-            wave_number: Some(wave_number),
-        });
+        components.insert(
+            name.to_string(),
+            ComponentMetricsInternal {
+                name: name.to_string(),
+                startup_began: Some(now),
+                container_created: None,
+                health_check_began: None,
+                became_healthy: None,
+                health_check_attempts: 0,
+                status: ComponentStatus::Starting,
+                error: None,
+                dependencies,
+                wave_number: Some(wave_number),
+            },
+        );
 
-        debug!("Metrics: Component {} starting in wave {}", name, wave_number);
+        debug!(
+            "Metrics: Component {} starting in wave {}",
+            name, wave_number
+        );
     }
 
     /// Record container creation
@@ -154,7 +166,10 @@ impl MetricsCollector {
         let mut components = self.components.write().await;
         if let Some(metrics) = components.get_mut(name) {
             metrics.health_check_attempts += 1;
-            debug!("Metrics: Health check attempt {} for {}", metrics.health_check_attempts, name);
+            debug!(
+                "Metrics: Health check attempt {} for {}",
+                metrics.health_check_attempts, name
+            );
         }
     }
 
@@ -175,9 +190,7 @@ impl MetricsCollector {
                 let duration = now - start;
                 info!(
                     "Metrics: Component {} became healthy in {:?} after {} health checks",
-                    name,
-                    duration,
-                    metrics.health_check_attempts
+                    name, duration, metrics.health_check_attempts
                 );
             }
         }
@@ -229,8 +242,14 @@ impl MetricsCollector {
         let duration = Instant::now() - startup_began;
 
         let components = self.components.read().await;
-        let successful = components.values().filter(|m| m.status == ComponentStatus::Healthy).count();
-        let _failed = components.values().filter(|m| m.status == ComponentStatus::Failed).count();
+        let successful = components
+            .values()
+            .filter(|m| m.status == ComponentStatus::Healthy)
+            .count();
+        let _failed = components
+            .values()
+            .filter(|m| m.status == ComponentStatus::Failed)
+            .count();
 
         let success_rate = if !components.is_empty() {
             successful as f64 / components.len() as f64
@@ -257,34 +276,49 @@ impl MetricsCollector {
         // Convert internal metrics to serializable format
         let mut component_metrics = HashMap::new();
         for (name, internal) in components.iter() {
-            let time_to_healthy_ms = internal.startup_began
-                .and_then(|start| internal.became_healthy.map(|end| (end - start).as_millis() as u64));
-
-            component_metrics.insert(name.clone(), ComponentMetrics {
-                name: internal.name.clone(),
-                time_to_healthy_ms,
-                health_check_attempts: internal.health_check_attempts,
-                status: internal.status.clone(),
-                error: internal.error.clone(),
-                dependencies: internal.dependencies.clone(),
-                wave_number: internal.wave_number,
+            let time_to_healthy_ms = internal.startup_began.and_then(|start| {
+                internal
+                    .became_healthy
+                    .map(|end| (end - start).as_millis() as u64)
             });
+
+            component_metrics.insert(
+                name.clone(),
+                ComponentMetrics {
+                    name: internal.name.clone(),
+                    time_to_healthy_ms,
+                    health_check_attempts: internal.health_check_attempts,
+                    status: internal.status.clone(),
+                    error: internal.error.clone(),
+                    dependencies: internal.dependencies.clone(),
+                    wave_number: internal.wave_number,
+                },
+            );
         }
 
-        let successful = components.values().filter(|m| m.status == ComponentStatus::Healthy).count();
-        let failed = components.values().filter(|m| m.status == ComponentStatus::Failed).count();
+        let successful = components
+            .values()
+            .filter(|m| m.status == ComponentStatus::Healthy)
+            .count();
+        let failed = components
+            .values()
+            .filter(|m| m.status == ComponentStatus::Failed)
+            .count();
 
         let startup_metrics = StartupMetrics {
             total_duration_ms: Some(total_duration.as_millis() as u64),
-            total_waves: component_metrics.values()
+            total_waves: component_metrics
+                .values()
                 .filter_map(|m| m.wave_number)
                 .max()
-                .unwrap_or(0) + 1,
+                .unwrap_or(0)
+                + 1,
             total_components: component_metrics.len(),
             successful_components: successful,
             failed_components: failed,
             avg_health_check_duration_ms: None, // Calculated if needed
-            longest_startup: component_metrics.values()
+            longest_startup: component_metrics
+                .values()
                 .filter_map(|m| m.time_to_healthy_ms.map(|d| (m.name.clone(), d)))
                 .max_by_key(|(_, d)| *d),
             success_rate: if !component_metrics.is_empty() {
@@ -320,8 +354,7 @@ impl MetricsCollector {
         output.push_str(&format!(
             "# HELP rush_startup_duration_seconds Total startup duration\n\
              # TYPE rush_startup_duration_seconds gauge\n\
-             rush_startup_duration_seconds {}\n",
-            total_duration
+             rush_startup_duration_seconds {total_duration}\n"
         ));
 
         // Per-component metrics
@@ -330,8 +363,7 @@ impl MetricsCollector {
                 if let Some(end) = metrics.became_healthy {
                     let duration = (end - start).as_secs_f64();
                     output.push_str(&format!(
-                        "rush_component_startup_duration_seconds{{component=\"{}\"}} {}\n",
-                        name, duration
+                        "rush_component_startup_duration_seconds{{component=\"{name}\"}} {duration}\n"
                     ));
                 }
             }
@@ -348,8 +380,7 @@ impl MetricsCollector {
             };
 
             output.push_str(&format!(
-                "rush_component_status{{component=\"{}\"}} {}\n",
-                name, status_value
+                "rush_component_status{{component=\"{name}\"}} {status_value}\n"
             ));
         }
 

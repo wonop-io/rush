@@ -1,13 +1,15 @@
-use crate::context::CliContext;
+use std::collections::HashMap;
+use std::process;
+use std::sync::{Arc, Mutex};
+
 use clap::ArgMatches;
 use log::{error, trace};
 use rush_config::Config;
 use rush_core::error::{Error, Result};
-use rush_security::Vault;
-use rush_security::{secrets::Environment, SecretsProvider};
-use std::collections::HashMap;
-use std::process;
-use std::sync::{Arc, Mutex};
+use rush_security::secrets::Environment;
+use rush_security::{SecretsProvider, Vault};
+
+use crate::context::CliContext;
 
 /// Manages vault operations
 pub struct VaultCommand {

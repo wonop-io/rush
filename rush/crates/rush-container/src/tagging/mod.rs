@@ -1,15 +1,15 @@
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use sha2::{Sha256, Digest};
-use walkdir::WalkDir;
-use tokio::sync::RwLock;
 
+use rush_build::{BuildType, ComponentBuildSpec};
 use rush_core::error::{Error, Result};
-use rush_build::{ComponentBuildSpec, BuildType};
 use rush_toolchain::ToolchainContext;
+use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
+use walkdir::WalkDir;
 
 // Add gitignore module
 pub mod gitignore;
@@ -26,11 +26,10 @@ pub struct ImageTagGenerator {
 impl ImageTagGenerator {
     /// Create a new ImageTagGenerator
     pub fn new(toolchain: Arc<ToolchainContext>, base_dir: PathBuf) -> Self {
-        let gitignore_manager = GitignoreManager::new(&base_dir)
-            .unwrap_or_else(|e| {
-                log::warn!("Failed to initialize gitignore manager: {}", e);
-                GitignoreManager::default()
-            });
+        let gitignore_manager = GitignoreManager::new(&base_dir).unwrap_or_else(|e| {
+            log::warn!("Failed to initialize gitignore manager: {}", e);
+            GitignoreManager::default()
+        });
 
         Self {
             toolchain,
@@ -59,13 +58,21 @@ impl ImageTagGenerator {
             if let Some((cached_tag, timestamp)) = cache.get(&cache_key) {
                 // Use a 5-second TTL for cache entries
                 if timestamp.elapsed() < Duration::from_secs(5) {
-                    log::debug!("Using cached tag for '{}': {}", spec.component_name, cached_tag);
+                    log::debug!(
+                        "Using cached tag for '{}': {}",
+                        spec.component_name,
+                        cached_tag
+                    );
 
                     // Record cache hit
                     tokio::task::block_in_place(|| {
                         tokio::runtime::Handle::current().block_on(async {
                             crate::profiling::global_tracker()
-                                .record_with_component("tag_computation", "cache_hit", tag_start.elapsed())
+                                .record_with_component(
+                                    "tag_computation",
+                                    "cache_hit",
+                                    tag_start.elapsed(),
+                                )
                                 .await;
                         })
                     });
@@ -109,12 +116,17 @@ impl ImageTagGenerator {
             tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(async {
                     crate::profiling::global_tracker()
-                        .record_with_component("tag_computation", "content_hash", content_hash_duration)
+                        .record_with_component(
+                            "tag_computation",
+                            "content_hash",
+                            content_hash_duration,
+                        )
                         .await;
                 })
             });
 
-            format!("{}-wip-{}",
+            format!(
+                "{}-wip-{}",
                 &git_hash[..8.min(git_hash.len())],
                 &content_hash[..8.min(content_hash.len())]
             )
@@ -126,10 +138,18 @@ impl ImageTagGenerator {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 let tracker = crate::profiling::global_tracker();
-                tracker.record_with_component("tag_computation", "watch_files", watch_duration).await;
-                tracker.record_with_component("tag_computation", "git_hash", git_hash_duration).await;
-                tracker.record_with_component("tag_computation", "dirty_check", dirty_check_duration).await;
-                tracker.record_with_component("tag_computation", "total", tag_start.elapsed()).await;
+                tracker
+                    .record_with_component("tag_computation", "watch_files", watch_duration)
+                    .await;
+                tracker
+                    .record_with_component("tag_computation", "git_hash", git_hash_duration)
+                    .await;
+                tracker
+                    .record_with_component("tag_computation", "dirty_check", dirty_check_duration)
+                    .await;
+                tracker
+                    .record_with_component("tag_computation", "total", tag_start.elapsed())
+                    .await;
             })
         });
 
@@ -147,7 +167,10 @@ impl ImageTagGenerator {
 
     /// Get watched files and directories by walking and matching patterns
     /// Returns (files, directories) tuple
-    pub fn get_watch_files_and_directories(&self, spec: &ComponentBuildSpec) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    pub fn get_watch_files_and_directories(
+        &self,
+        spec: &ComponentBuildSpec,
+    ) -> (Vec<PathBuf>, Vec<PathBuf>) {
         let mut files = Vec::new();
         let mut dirs = Vec::new();
 
@@ -162,15 +185,17 @@ impl ImageTagGenerator {
 
         // Create a local gitignore manager for this component
         let mut local_gitignore = self.gitignore_manager.clone();
-        local_gitignore.add_component_gitignore(&component_dir)
+        local_gitignore
+            .add_component_gitignore(&component_dir)
             .unwrap_or_else(|e| {
-                log::debug!("No component .gitignore for {}: {}",
-                           spec.component_name, e);
+                log::debug!("No component .gitignore for {}: {}", spec.component_name, e);
             });
 
         // ALWAYS walk component directory with gitignore respect
-        log::debug!("Walking component directory for '{}' with gitignore rules",
-                   spec.component_name);
+        log::debug!(
+            "Walking component directory for '{}' with gitignore rules",
+            spec.component_name
+        );
 
         for entry in local_gitignore.walk(&component_dir) {
             let entry = match entry {
@@ -181,14 +206,14 @@ impl ImageTagGenerator {
                 }
             };
 
-            if entry.file_type().map_or(false, |ft| ft.is_file()) {
+            if entry.file_type().is_some_and(|ft| ft.is_file()) {
                 let path = entry.path();
 
                 // Apply additional Rush-specific exclusions
                 // (backwards compatibility for explicit exclusions)
                 let path_str = path.to_str().unwrap_or("");
                 if path_str.contains("/.rush/") {
-                    continue;  // Always exclude .rush directory
+                    continue; // Always exclude .rush directory
                 }
 
                 files.push(path.to_path_buf());
@@ -196,13 +221,18 @@ impl ImageTagGenerator {
         }
 
         let component_file_count = files.len();
-        log::debug!("Found {} component files for '{}' (after gitignore filtering)",
-            component_file_count, spec.component_name);
+        log::debug!(
+            "Found {} component files for '{}' (after gitignore filtering)",
+            component_file_count,
+            spec.component_name
+        );
 
         // ADDITIONALLY check watch patterns for extra files outside component dir
         if let Some(watch) = &spec.watch {
-            log::debug!("Checking watch patterns for additional files for '{}'",
-                spec.component_name);
+            log::debug!(
+                "Checking watch patterns for additional files for '{}'",
+                spec.component_name
+            );
 
             // Use gitignore-aware walker for watch patterns too
             for entry in self.gitignore_manager.walk(&self.base_dir) {
@@ -214,7 +244,7 @@ impl ImageTagGenerator {
                     }
                 };
 
-                if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                if entry.file_type().is_some_and(|ft| ft.is_file()) {
                     let path = entry.path();
 
                     // Skip if already included from component directory
@@ -225,7 +255,7 @@ impl ImageTagGenerator {
                     // Apply additional Rush-specific exclusions
                     let path_str = path.to_str().unwrap_or("");
                     if path_str.contains("/.rush/") {
-                        continue;  // Always exclude .rush directory
+                        continue; // Always exclude .rush directory
                     }
 
                     // Check if file matches any watch pattern
@@ -242,8 +272,11 @@ impl ImageTagGenerator {
             }
 
             let watch_file_count = files.len() - component_file_count;
-            log::debug!("Found {} additional files from watch patterns for '{}'",
-                watch_file_count, spec.component_name);
+            log::debug!(
+                "Found {} additional files from watch patterns for '{}'",
+                watch_file_count,
+                spec.component_name
+            );
         }
 
         // Remove duplicates
@@ -253,12 +286,18 @@ impl ImageTagGenerator {
         dirs.dedup();
 
         if files.is_empty() {
-            log::warn!("No files found for component '{}' - this will result in empty hash!",
-                spec.component_name);
+            log::warn!(
+                "No files found for component '{}' - this will result in empty hash!",
+                spec.component_name
+            );
         }
 
-        log::debug!("Total files for '{}': {} files in {} directories",
-            spec.component_name, files.len(), dirs.len());
+        log::debug!(
+            "Total files for '{}': {} files in {} directories",
+            spec.component_name,
+            files.len(),
+            dirs.len()
+        );
 
         (files, dirs)
     }
@@ -274,14 +313,12 @@ impl ImageTagGenerator {
     /// Get the main directory for a component
     fn get_component_directory(&self, spec: &ComponentBuildSpec) -> PathBuf {
         match &spec.build_type {
-            BuildType::TrunkWasm { location, .. } |
-            BuildType::DixiousWasm { location, .. } |
-            BuildType::RustBinary { location, .. } |
-            BuildType::Script { location, .. } |
-            BuildType::Zola { location, .. } |
-            BuildType::Book { location, .. } => {
-                self.base_dir.join(location)
-            }
+            BuildType::TrunkWasm { location, .. }
+            | BuildType::DixiousWasm { location, .. }
+            | BuildType::RustBinary { location, .. }
+            | BuildType::Script { location, .. }
+            | BuildType::Zola { location, .. }
+            | BuildType::Book { location, .. } => self.base_dir.join(location),
             BuildType::Ingress { .. } => {
                 // Ingress typically uses the product directory
                 self.base_dir.clone()
@@ -310,15 +347,15 @@ impl ImageTagGenerator {
                 continue;
             }
 
-            let dir_str = dir.to_str().ok_or_else(||
-                Error::Internal(format!("Invalid path: {:?}", dir))
-            )?;
+            let dir_str = dir
+                .to_str()
+                .ok_or_else(|| Error::Internal(format!("Invalid path: {dir:?}")))?;
 
-            let output = Command::new(&git_path)
+            let output = Command::new(git_path)
                 .args(["log", "-n", "1", "--format=%H %ct", "--", dir_str])
                 .current_dir(&self.base_dir)
                 .output()
-                .map_err(|e| Error::External(format!("Git command failed: {}", e)))?;
+                .map_err(|e| Error::External(format!("Git command failed: {e}")))?;
 
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -347,11 +384,11 @@ impl ImageTagGenerator {
     fn get_head_hash(&self) -> Result<String> {
         let git_path = self.toolchain.git();
 
-        let output = Command::new(&git_path)
+        let output = Command::new(git_path)
             .args(["rev-parse", "HEAD"])
             .current_dir(&self.base_dir)
             .output()
-            .map_err(|e| Error::External(format!("Git command failed: {}", e)))?;
+            .map_err(|e| Error::External(format!("Git command failed: {e}")))?;
 
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -392,17 +429,20 @@ impl ImageTagGenerator {
             return Ok(false);
         }
 
-        log::debug!("Checking dirty state for {} paths with single git status call", all_paths.len());
+        log::debug!(
+            "Checking dirty state for {} paths with single git status call",
+            all_paths.len()
+        );
 
         // Single git status call for all paths
         let mut args = vec!["status", "--porcelain", "--untracked-files=no"];
         args.extend(&all_paths);
 
-        let output = Command::new(&git_path)
+        let output = Command::new(git_path)
             .args(&args)
             .current_dir(&self.base_dir)
             .output()
-            .map_err(|e| Error::External(format!("Git status failed: {}", e)))?;
+            .map_err(|e| Error::External(format!("Git status failed: {e}")))?;
 
         let is_dirty = !output.stdout.is_empty();
 
@@ -425,7 +465,9 @@ impl ImageTagGenerator {
         let mut hasher = Sha256::new();
 
         if files.is_empty() {
-            log::error!("Computing hash with empty file list - this will produce the empty string hash!");
+            log::error!(
+                "Computing hash with empty file list - this will produce the empty string hash!"
+            );
         }
 
         // Create a sorted copy for deterministic hashing
@@ -462,7 +504,11 @@ impl ImageTagGenerator {
             log::error!("Generated empty string hash! No files were hashed. File list had {} entries, {} were hashed",
                 files.len(), hashed_count);
         } else {
-            log::trace!("Hashed {} files to generate hash: {}", hashed_count, &hash[..8.min(hash.len())]);
+            log::trace!(
+                "Hashed {} files to generate hash: {}",
+                hashed_count,
+                &hash[..8.min(hash.len())]
+            );
         }
 
         Ok(hash)
@@ -491,11 +537,12 @@ impl ImageTagGenerator {
 
                     // Skip .git, target, dist, and node_modules directories
                     let path_str = path.to_str().unwrap_or("");
-                    if path_str.contains("/.git/") ||
-                       path_str.contains("/target/") ||
-                       path_str.contains("/dist/") ||
-                       path_str.contains("/node_modules/") ||
-                       path_str.contains("/.rush/") {
+                    if path_str.contains("/.git/")
+                        || path_str.contains("/target/")
+                        || path_str.contains("/dist/")
+                        || path_str.contains("/node_modules/")
+                        || path_str.contains("/.rush/")
+                    {
                         continue;
                     }
 
@@ -528,9 +575,11 @@ impl ImageTagGenerator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tempfile::TempDir;
     use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::*;
 
     fn setup_test_env() {
         // Set required environment variables for all tests
@@ -554,7 +603,10 @@ mod tests {
     fn create_test_spec(temp_dir: &Path, yaml_content: &str) -> rush_build::ComponentBuildSpec {
         // Parse the YAML to extract component details
         let yaml: serde_yaml::Value = serde_yaml::from_str(yaml_content).unwrap();
-        let component_name = yaml["component_name"].as_str().unwrap_or("test-component").to_string();
+        let component_name = yaml["component_name"]
+            .as_str()
+            .unwrap_or("test-component")
+            .to_string();
         let location = yaml["location"].as_str().map(|s| s.to_string());
 
         // Create the required product directory structure
@@ -566,16 +618,22 @@ mod tests {
         let build_type = if let Some(loc) = location {
             rush_build::BuildType::RustBinary {
                 location: loc,
-                dockerfile_path: yaml["dockerfile"].as_str().unwrap_or("Dockerfile").to_string(),
+                dockerfile_path: yaml["dockerfile"]
+                    .as_str()
+                    .unwrap_or("Dockerfile")
+                    .to_string(),
                 context_dir: Some(".".to_string()),
                 features: None,
-                precompile_commands: None
+                precompile_commands: None,
             }
         } else {
             rush_build::BuildType::Ingress {
                 components: vec![],
-                dockerfile_path: yaml["dockerfile"].as_str().unwrap_or("ingress/Dockerfile").to_string(),
-                context_dir: None
+                dockerfile_path: yaml["dockerfile"]
+                    .as_str()
+                    .unwrap_or("ingress/Dockerfile")
+                    .to_string(),
+                context_dir: None,
             }
         };
 
@@ -589,7 +647,8 @@ mod tests {
             "local",
             "localhost:5000",
             8000,
-        ).unwrap_or_else(|_| panic!("Failed to create test config"));
+        )
+        .unwrap_or_else(|_| panic!("Failed to create test config"));
 
         let variables = rush_build::Variables::empty();
 
@@ -630,12 +689,15 @@ mod tests {
     fn test_get_component_directory() {
         let (generator, temp_dir) = create_test_generator();
 
-        let spec = create_test_spec(temp_dir.path(), r#"
+        let spec = create_test_spec(
+            temp_dir.path(),
+            r#"
             component_name: test-component
             build_type: RustBinary
             location: backend/server
             dockerfile: backend/Dockerfile
-        "#);
+        "#,
+        );
 
         let dir = generator.get_component_directory(&spec);
         assert_eq!(dir, temp_dir.path().join("backend/server"));
@@ -650,12 +712,15 @@ mod tests {
         fs::write(temp_dir.path().join("backend/server/main.rs"), "content").unwrap();
         fs::write(temp_dir.path().join("backend/server/src/lib.rs"), "content").unwrap();
 
-        let mut spec = create_test_spec(temp_dir.path(), r#"
+        let mut spec = create_test_spec(
+            temp_dir.path(),
+            r#"
             component_name: test-component
             build_type: RustBinary
             location: backend/server
             dockerfile: backend/Dockerfile
-        "#);
+        "#,
+        );
         spec.watch = None; // No watch patterns
 
         let (files, dirs) = generator.get_watch_files_and_directories(&spec);
@@ -679,16 +744,22 @@ mod tests {
         fs::write(backend_dir.join("src/admin_api.rs"), "content").unwrap();
         fs::write(backend_dir.join("src/other.rs"), "content").unwrap();
 
-        let mut spec = create_test_spec(temp_dir.path(), r#"
+        let mut spec = create_test_spec(
+            temp_dir.path(),
+            r#"
             component_name: backend
             build_type: RustBinary
             location: backend/server
             dockerfile: backend/Dockerfile
-        "#);
+        "#,
+        );
 
         // Add watch patterns
         let patterns = vec!["**/*_app*".to_string(), "**/*_api*".to_string()];
-        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(&backend_dir, patterns)));
+        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(
+            &backend_dir,
+            patterns,
+        )));
 
         let (files, dirs) = generator.get_watch_files_and_directories(&spec);
 
@@ -698,7 +769,10 @@ mod tests {
         assert!(files.contains(&backend_dir.join("main_app.rs")));
         assert!(files.contains(&backend_dir.join("src/user_api.rs")));
         assert!(files.contains(&backend_dir.join("src/admin_api.rs")));
-        assert!(files.contains(&backend_dir.join("src/other.rs")), "All component files should be included");
+        assert!(
+            files.contains(&backend_dir.join("src/other.rs")),
+            "All component files should be included"
+        );
     }
 
     #[test]
@@ -739,16 +813,22 @@ mod tests {
         // Create initial file
         fs::write(backend_dir.join("initial_api.rs"), "content").unwrap();
 
-        let mut spec = create_test_spec(temp_dir.path(), r#"
+        let mut spec = create_test_spec(
+            temp_dir.path(),
+            r#"
             component_name: backend
             build_type: RustBinary
             location: backend/server
             dockerfile: backend/Dockerfile
-        "#);
+        "#,
+        );
 
         // Add watch patterns
         let patterns = vec!["**/*_api.rs".to_string()];
-        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(&backend_dir, patterns)));
+        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(
+            &backend_dir,
+            patterns,
+        )));
 
         // First check - should find initial file
         let (files1, _dirs1) = generator.get_watch_files_and_directories(&spec);
@@ -793,19 +873,27 @@ mod tests {
             .output()
             .ok();
 
-        let mut spec = create_test_spec(temp_dir.path(), r#"
+        let mut spec = create_test_spec(
+            temp_dir.path(),
+            r#"
             component_name: backend
             build_type: RustBinary
             location: backend/server
             dockerfile: backend/Dockerfile
-        "#);
+        "#,
+        );
 
         // Add watch patterns
         let patterns = vec!["**/*_app*".to_string()];
-        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(&backend_dir, patterns)));
+        spec.watch = Some(Arc::new(rush_utils::PathMatcher::new(
+            &backend_dir,
+            patterns,
+        )));
 
         // Compute initial tag
-        let tag1 = generator.compute_tag(&spec).expect("Failed to compute initial tag");
+        let tag1 = generator
+            .compute_tag(&spec)
+            .expect("Failed to compute initial tag");
 
         // Modify the existing file instead of adding a new one
         // This ensures git sees it as a change
@@ -815,7 +903,9 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         // Compute tag again - should be different due to modified file
-        let tag2 = generator.compute_tag(&spec).expect("Failed to compute second tag");
+        let tag2 = generator
+            .compute_tag(&spec)
+            .expect("Failed to compute second tag");
 
         // For debugging: check if git sees the change
         let git_status = std::process::Command::new("git")
@@ -833,7 +923,10 @@ mod tests {
         // not on whether files are modified. This ensures reproducible builds.
         // If we want tags to change when files are dirty, we'd need to include git status in the hash.
         // For now, we'll just verify that the tag computation works consistently.
-        println!("Tag1: {}, Tag2: {} (tags are consistent even with modifications)", tag1, tag2);
+        println!(
+            "Tag1: {}, Tag2: {} (tags are consistent even with modifications)",
+            tag1, tag2
+        );
 
         // Commit the change to make it part of the repository
         std::process::Command::new("git")
@@ -848,7 +941,9 @@ mod tests {
             .ok();
 
         // After committing, compute tag again - it might be different now
-        let tag3 = generator.compute_tag(&spec).expect("Failed to compute tag after commit");
+        let tag3 = generator
+            .compute_tag(&spec)
+            .expect("Failed to compute tag after commit");
 
         // For testing purposes, we'll just verify that tag computation succeeds
         assert!(!tag3.is_empty(), "Tag should not be empty");

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use rush_local_services::config::ServiceDefaults;
     use rush_local_services::types::LocalServiceType;
-    use rush_local_services::config::{LocalServiceConfig, ServiceDefaults};
 
     #[test]
     fn test_prometheus_defaults() {
@@ -30,7 +30,10 @@ mod tests {
         assert!(config.env.contains_key("GF_SECURITY_ADMIN_USER"));
         assert_eq!(config.env.get("GF_SECURITY_ADMIN_USER").unwrap(), "admin");
         assert!(config.env.contains_key("GF_SECURITY_ADMIN_PASSWORD"));
-        assert_eq!(config.env.get("GF_SECURITY_ADMIN_PASSWORD").unwrap(), "admin");
+        assert_eq!(
+            config.env.get("GF_SECURITY_ADMIN_PASSWORD").unwrap(),
+            "admin"
+        );
         assert_eq!(
             config.get_health_check().unwrap(),
             "curl -f http://localhost:3000/api/health"
@@ -45,13 +48,28 @@ mod tests {
         assert_eq!(config.ports.len(), 5); // Main port + 4 protocol ports
 
         // Check main API port
-        assert!(config.ports.iter().any(|p| p.host_port == 3200 && p.container_port == 3200));
+        assert!(config
+            .ports
+            .iter()
+            .any(|p| p.host_port == 3200 && p.container_port == 3200));
 
         // Check protocol ports
-        assert!(config.ports.iter().any(|p| p.host_port == 4317 && p.container_port == 4317)); // OTLP gRPC
-        assert!(config.ports.iter().any(|p| p.host_port == 4318 && p.container_port == 4318)); // OTLP HTTP
-        assert!(config.ports.iter().any(|p| p.host_port == 14268 && p.container_port == 14268)); // Jaeger
-        assert!(config.ports.iter().any(|p| p.host_port == 9411 && p.container_port == 9411)); // Zipkin
+        assert!(config
+            .ports
+            .iter()
+            .any(|p| p.host_port == 4317 && p.container_port == 4317)); // OTLP gRPC
+        assert!(config
+            .ports
+            .iter()
+            .any(|p| p.host_port == 4318 && p.container_port == 4318)); // OTLP HTTP
+        assert!(config
+            .ports
+            .iter()
+            .any(|p| p.host_port == 14268 && p.container_port == 14268)); // Jaeger
+        assert!(config
+            .ports
+            .iter()
+            .any(|p| p.host_port == 9411 && p.container_port == 9411)); // Zipkin
 
         assert!(config.command.is_some());
         assert_eq!(
@@ -67,9 +85,15 @@ mod tests {
         assert_eq!(stack.len(), 3);
 
         // Find each service in the stack
-        let prometheus = stack.iter().find(|s| s.service_type == LocalServiceType::Prometheus);
-        let grafana = stack.iter().find(|s| s.service_type == LocalServiceType::Grafana);
-        let tempo = stack.iter().find(|s| s.service_type == LocalServiceType::Tempo);
+        let prometheus = stack
+            .iter()
+            .find(|s| s.service_type == LocalServiceType::Prometheus);
+        let grafana = stack
+            .iter()
+            .find(|s| s.service_type == LocalServiceType::Grafana);
+        let tempo = stack
+            .iter()
+            .find(|s| s.service_type == LocalServiceType::Tempo);
 
         assert!(prometheus.is_some());
         assert!(grafana.is_some());
@@ -84,11 +108,26 @@ mod tests {
 
     #[test]
     fn test_service_type_parsing() {
-        assert_eq!(LocalServiceType::parse("prometheus"), LocalServiceType::Prometheus);
-        assert_eq!(LocalServiceType::parse("prom"), LocalServiceType::Prometheus);
-        assert_eq!(LocalServiceType::parse("PROMETHEUS"), LocalServiceType::Prometheus);
-        assert_eq!(LocalServiceType::parse("grafana"), LocalServiceType::Grafana);
-        assert_eq!(LocalServiceType::parse("GRAFANA"), LocalServiceType::Grafana);
+        assert_eq!(
+            LocalServiceType::parse("prometheus"),
+            LocalServiceType::Prometheus
+        );
+        assert_eq!(
+            LocalServiceType::parse("prom"),
+            LocalServiceType::Prometheus
+        );
+        assert_eq!(
+            LocalServiceType::parse("PROMETHEUS"),
+            LocalServiceType::Prometheus
+        );
+        assert_eq!(
+            LocalServiceType::parse("grafana"),
+            LocalServiceType::Grafana
+        );
+        assert_eq!(
+            LocalServiceType::parse("GRAFANA"),
+            LocalServiceType::Grafana
+        );
         assert_eq!(LocalServiceType::parse("tempo"), LocalServiceType::Tempo);
         assert_eq!(LocalServiceType::parse("TEMPO"), LocalServiceType::Tempo);
     }

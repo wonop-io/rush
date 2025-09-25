@@ -15,11 +15,17 @@ pub mod watcher_integration;
 
 // Re-export main types
 pub use config::ContainerReactorConfig;
-pub use docker_integration::{DockerIntegration, DockerIntegrationConfig, DockerIntegrationBuilder};
+pub use docker_integration::{
+    DockerIntegration, DockerIntegrationBuilder, DockerIntegrationConfig,
+};
 pub use errors::{ReactorError, ReactorResult};
-pub use factory::{ReactorFactory, ReactorImplementation, ReactorStatusInfo, ModularReactorConfigBuilder};
-pub use modular_core::{Reactor, ModularReactorConfig, ReactorStatus};
-pub use state::{ReactorPhase, ReactorState, SharedReactorState, ComponentState, ComponentStatus, StateError};
+pub use factory::{
+    ModularReactorConfigBuilder, ReactorFactory, ReactorImplementation, ReactorStatusInfo,
+};
+pub use modular_core::{ModularReactorConfig, Reactor, ReactorStatus};
+pub use state::{
+    ComponentState, ComponentStatus, ReactorPhase, ReactorState, SharedReactorState, StateError,
+};
 pub use watcher_integration::{WatcherIntegration, WatcherIntegrationConfig};
 
 // ContainerReactor is now a type alias for Reactor in lib.rs

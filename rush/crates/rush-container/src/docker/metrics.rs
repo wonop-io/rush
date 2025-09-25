@@ -6,8 +6,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+
 use log::{debug, info};
+use tokio::sync::RwLock;
 
 /// Type of Docker operation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -83,59 +84,59 @@ impl OperationMetrics {
         self.total_count += 1;
         self.success_count += 1;
         self.total_duration += duration;
-        
+
         if retried {
             self.retry_count += 1;
         }
-        
+
         // Update min/max
         match self.min_duration {
             None => self.min_duration = Some(duration),
             Some(min) if duration < min => self.min_duration = Some(duration),
             _ => {}
         }
-        
+
         match self.max_duration {
             None => self.max_duration = Some(duration),
             Some(max) if duration > max => self.max_duration = Some(duration),
             _ => {}
         }
-        
+
         // Update average
         if self.total_count > 0 {
             self.avg_duration = self.total_duration / self.total_count as u32;
         }
-        
+
         self.last_operation = Some(Instant::now());
     }
-    
+
     /// Record a failed operation
     pub fn record_failure(&mut self, duration: Duration) {
         self.total_count += 1;
         self.failure_count += 1;
         self.total_duration += duration;
-        
+
         // Update min/max even for failures
         match self.min_duration {
             None => self.min_duration = Some(duration),
             Some(min) if duration < min => self.min_duration = Some(duration),
             _ => {}
         }
-        
+
         match self.max_duration {
             None => self.max_duration = Some(duration),
             Some(max) if duration > max => self.max_duration = Some(duration),
             _ => {}
         }
-        
+
         // Update average
         if self.total_count > 0 {
             self.avg_duration = self.total_duration / self.total_count as u32;
         }
-        
+
         self.last_operation = Some(Instant::now());
     }
-    
+
     /// Get success rate as a percentage
     pub fn success_rate(&self) -> f64 {
         if self.total_count == 0 {
@@ -143,7 +144,7 @@ impl OperationMetrics {
         }
         (self.success_count as f64 / self.total_count as f64) * 100.0
     }
-    
+
     /// Get retry rate as a percentage
     pub fn retry_rate(&self) -> f64 {
         if self.success_count == 0 {
@@ -199,7 +200,7 @@ impl Default for ContainerMetrics {
 }
 
 /// Global Docker metrics
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct GlobalMetrics {
     /// Start time of metrics collection
     pub start_time: Option<Instant>,
@@ -225,24 +226,6 @@ pub struct GlobalMetrics {
     pub networks_created: u64,
 }
 
-impl Default for GlobalMetrics {
-    fn default() -> Self {
-        Self {
-            start_time: None,
-            total_operations: 0,
-            total_successes: 0,
-            total_failures: 0,
-            total_retries: 0,
-            active_operations: 0,
-            peak_active_operations: 0,
-            total_data_transferred: 0,
-            containers_monitored: 0,
-            images_built: 0,
-            networks_created: 0,
-        }
-    }
-}
-
 impl GlobalMetrics {
     /// Calculate uptime
     pub fn uptime(&self) -> Duration {
@@ -250,7 +233,7 @@ impl GlobalMetrics {
             .map(|start| start.elapsed())
             .unwrap_or_default()
     }
-    
+
     /// Get overall success rate
     pub fn overall_success_rate(&self) -> f64 {
         if self.total_operations == 0 {
@@ -279,7 +262,7 @@ impl MetricsCollector {
         if enabled {
             global.start_time = Some(Instant::now());
         }
-        
+
         Self {
             operation_metrics: Arc::new(RwLock::new(HashMap::new())),
             container_metrics: Arc::new(RwLock::new(HashMap::new())),
@@ -287,23 +270,23 @@ impl MetricsCollector {
             enabled,
         }
     }
-    
+
     /// Start recording an operation
     pub async fn start_operation(&self, op_type: OperationType) -> OperationTimer {
         if !self.enabled {
             return OperationTimer::disabled();
         }
-        
+
         // Update active operations
         let mut global = self.global_metrics.write().await;
         global.active_operations += 1;
         if global.active_operations > global.peak_active_operations {
             global.peak_active_operations = global.active_operations;
         }
-        
+
         OperationTimer::new(op_type, self.clone())
     }
-    
+
     /// Record operation completion
     pub async fn record_operation(
         &self,
@@ -315,19 +298,21 @@ impl MetricsCollector {
         if !self.enabled {
             return;
         }
-        
+
         // Update operation metrics
         let mut metrics = self.operation_metrics.write().await;
-        let op_metrics = metrics.entry(op_type).or_insert_with(OperationMetrics::default);
-        
+        let op_metrics = metrics
+            .entry(op_type)
+            .or_insert_with(OperationMetrics::default);
+
         if success {
             op_metrics.record_success(duration, retried);
         } else {
             op_metrics.record_failure(duration);
         }
-        
+
         drop(metrics);
-        
+
         // Update global metrics
         let mut global = self.global_metrics.write().await;
         global.total_operations += 1;
@@ -342,14 +327,14 @@ impl MetricsCollector {
         if global.active_operations > 0 {
             global.active_operations -= 1;
         }
-        
+
         // Update specific counters
         match op_type {
             OperationType::BuildImage if success => global.images_built += 1,
             OperationType::CreateNetwork if success => global.networks_created += 1,
             _ => {}
         }
-        
+
         debug!(
             "Operation {} completed in {:?} (success: {}, retried: {})",
             op_type.name(),
@@ -358,61 +343,61 @@ impl MetricsCollector {
             retried
         );
     }
-    
+
     /// Update container metrics
     pub async fn update_container_metrics(&self, metrics: ContainerMetrics) {
         if !self.enabled {
             return;
         }
-        
+
         let mut container_metrics = self.container_metrics.write().await;
         container_metrics.insert(metrics.container_id.clone(), metrics);
-        
+
         // Update global container count
         let mut global = self.global_metrics.write().await;
         global.containers_monitored = container_metrics.len();
     }
-    
+
     /// Record data transfer
     pub async fn record_data_transfer(&self, bytes: u64) {
         if !self.enabled {
             return;
         }
-        
+
         let mut global = self.global_metrics.write().await;
         global.total_data_transferred += bytes;
     }
-    
+
     /// Get operation metrics for a specific type
     pub async fn get_operation_metrics(&self, op_type: OperationType) -> Option<OperationMetrics> {
         let metrics = self.operation_metrics.read().await;
         metrics.get(&op_type).cloned()
     }
-    
+
     /// Get all operation metrics
     pub async fn get_all_operation_metrics(&self) -> HashMap<OperationType, OperationMetrics> {
         let metrics = self.operation_metrics.read().await;
         metrics.clone()
     }
-    
+
     /// Get container metrics
     pub async fn get_container_metrics(&self, container_id: &str) -> Option<ContainerMetrics> {
         let metrics = self.container_metrics.read().await;
         metrics.get(container_id).cloned()
     }
-    
+
     /// Get all container metrics
     pub async fn get_all_container_metrics(&self) -> HashMap<String, ContainerMetrics> {
         let metrics = self.container_metrics.read().await;
         metrics.clone()
     }
-    
+
     /// Get global metrics
     pub async fn get_global_metrics(&self) -> GlobalMetrics {
         let metrics = self.global_metrics.read().await;
         metrics.clone()
     }
-    
+
     /// Generate metrics report
     pub async fn generate_report(&self) -> MetricsReport {
         MetricsReport {
@@ -422,24 +407,24 @@ impl MetricsCollector {
             generated_at: Instant::now(),
         }
     }
-    
+
     /// Reset all metrics
     pub async fn reset(&self) {
         let mut operation_metrics = self.operation_metrics.write().await;
         operation_metrics.clear();
-        
+
         let mut container_metrics = self.container_metrics.write().await;
         container_metrics.clear();
-        
+
         let mut global = self.global_metrics.write().await;
         *global = GlobalMetrics {
             start_time: Some(Instant::now()),
             ..Default::default()
         };
-        
+
         info!("Metrics reset");
     }
-    
+
     /// Clone the collector
     fn clone(&self) -> Self {
         Self {
@@ -469,7 +454,7 @@ impl OperationTimer {
             completed: false,
         }
     }
-    
+
     /// Create a disabled timer
     fn disabled() -> Self {
         Self {
@@ -479,16 +464,18 @@ impl OperationTimer {
             completed: true,
         }
     }
-    
+
     /// Complete the operation
     pub async fn complete(mut self, success: bool, retried: bool) {
         if let Some(collector) = &self.collector {
             let duration = self.start_time.elapsed();
-            collector.record_operation(self.op_type, duration, success, retried).await;
+            collector
+                .record_operation(self.op_type, duration, success, retried)
+                .await;
             self.completed = true;
         }
     }
-    
+
     /// Get elapsed time
     pub fn elapsed(&self) -> Duration {
         self.start_time.elapsed()
@@ -502,9 +489,11 @@ impl Drop for OperationTimer {
             let collector = self.collector.take().unwrap();
             let duration = self.start_time.elapsed();
             let op_type = self.op_type;
-            
+
             tokio::spawn(async move {
-                collector.record_operation(op_type, duration, false, false).await;
+                collector
+                    .record_operation(op_type, duration, false, false)
+                    .await;
             });
         }
     }
@@ -551,24 +540,26 @@ impl MetricsReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_metrics_collector() {
         let collector = MetricsCollector::new(true);
-        
+
         // Record some operations
-        let timer = collector.start_operation(OperationType::NetworkExists).await;
+        let timer = collector
+            .start_operation(OperationType::NetworkExists)
+            .await;
         tokio::time::sleep(Duration::from_millis(10)).await;
         timer.complete(true, false).await;
-        
+
         let timer = collector.start_operation(OperationType::BuildImage).await;
         tokio::time::sleep(Duration::from_millis(20)).await;
         timer.complete(true, true).await;
-        
+
         let timer = collector.start_operation(OperationType::RunContainer).await;
         tokio::time::sleep(Duration::from_millis(5)).await;
         timer.complete(false, false).await;
-        
+
         // Check metrics
         let global = collector.get_global_metrics().await;
         assert_eq!(global.total_operations, 3);
@@ -576,23 +567,25 @@ mod tests {
         assert_eq!(global.total_failures, 1);
         assert_eq!(global.total_retries, 1);
         assert_eq!(global.images_built, 1);
-        
-        let network_metrics = collector.get_operation_metrics(OperationType::NetworkExists).await;
+
+        let network_metrics = collector
+            .get_operation_metrics(OperationType::NetworkExists)
+            .await;
         assert!(network_metrics.is_some());
         let network_metrics = network_metrics.unwrap();
         assert_eq!(network_metrics.success_count, 1);
         assert_eq!(network_metrics.failure_count, 0);
         assert_eq!(network_metrics.success_rate(), 100.0);
     }
-    
+
     #[test]
     fn test_operation_metrics() {
         let mut metrics = OperationMetrics::default();
-        
+
         metrics.record_success(Duration::from_millis(100), false);
         metrics.record_success(Duration::from_millis(200), true);
         metrics.record_failure(Duration::from_millis(50));
-        
+
         assert_eq!(metrics.total_count, 3);
         assert_eq!(metrics.success_count, 2);
         assert_eq!(metrics.failure_count, 1);

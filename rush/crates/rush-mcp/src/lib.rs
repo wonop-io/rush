@@ -11,8 +11,7 @@ pub mod tools;
 pub mod transport;
 
 pub use error::{McpError, Result};
-pub use server::{McpServer, McpServerConfig};
-
 // Re-export commonly used types
 pub use protocol::{McpRequest, McpResponse};
+pub use server::{McpServer, McpServerConfig};
 pub use transport::{StdioTransport, Transport};

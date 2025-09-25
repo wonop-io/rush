@@ -3,13 +3,14 @@
 //! This module provides comprehensive audit logging for all deployment operations,
 //! tracking who deployed what, when, and the results.
 
-use chrono::{DateTime, Utc};
-use rush_core::{Error, Result};
-use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+
+use chrono::{DateTime, Utc};
 use log::{debug, info};
+use rush_core::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 /// Audit event types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +68,7 @@ impl AuditEntry {
         let user = std::env::var("USER")
             .or_else(|_| std::env::var("USERNAME"))
             .unwrap_or_else(|_| "unknown".to_string());
-        
+
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
@@ -83,18 +84,18 @@ impl AuditEntry {
             duration_seconds: None,
         }
     }
-    
+
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = metadata;
         self
     }
-    
+
     pub fn with_error(mut self, error: String) -> Self {
         self.success = false;
         self.error = Some(error);
         self
     }
-    
+
     pub fn with_duration(mut self, duration: std::time::Duration) -> Self {
         self.duration_seconds = Some(duration.as_secs_f64());
         self
@@ -105,10 +106,10 @@ impl AuditEntry {
 pub trait AuditLogger: Send + Sync {
     /// Log an audit entry
     fn log(&self, entry: &AuditEntry) -> Result<()>;
-    
+
     /// Query audit logs
     fn query(&self, filter: &AuditFilter) -> Result<Vec<AuditEntry>>;
-    
+
     /// Get audit logs for a specific deployment
     fn get_deployment_history(&self, product: &str, environment: &str) -> Result<Vec<AuditEntry>>;
 }
@@ -123,43 +124,43 @@ impl FileAuditLogger {
     pub fn new(log_dir: PathBuf) -> Result<Self> {
         // Ensure log directory exists
         fs::create_dir_all(&log_dir)
-            .map_err(|e| Error::Audit(format!("Failed to create audit log directory: {}", e)))?;
-        
+            .map_err(|e| Error::Audit(format!("Failed to create audit log directory: {e}")))?;
+
         Ok(Self {
             log_dir,
             max_entries_per_file: 10000,
         })
     }
-    
+
     fn get_log_file(&self) -> PathBuf {
         let date = Utc::now().format("%Y-%m-%d");
-        self.log_dir.join(format!("audit-{}.jsonl", date))
+        self.log_dir.join(format!("audit-{date}.jsonl"))
     }
-    
+
     fn rotate_if_needed(&self, file_path: &Path) -> Result<()> {
         if !file_path.exists() {
             return Ok(());
         }
-        
+
         // Count lines in file
         let content = fs::read_to_string(file_path)
-            .map_err(|e| Error::Audit(format!("Failed to read audit log: {}", e)))?;
-        
+            .map_err(|e| Error::Audit(format!("Failed to read audit log: {e}")))?;
+
         let line_count = content.lines().count();
-        
+
         if line_count >= self.max_entries_per_file {
             // Rotate file
             let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
-            let rotated_path = file_path.with_file_name(
-                format!("audit-{}-{}.jsonl", 
-                    file_path.file_stem().unwrap().to_string_lossy(),
-                    timestamp)
-            );
-            
+            let rotated_path = file_path.with_file_name(format!(
+                "audit-{}-{}.jsonl",
+                file_path.file_stem().unwrap().to_string_lossy(),
+                timestamp
+            ));
+
             fs::rename(file_path, rotated_path)
-                .map_err(|e| Error::Audit(format!("Failed to rotate audit log: {}", e)))?;
+                .map_err(|e| Error::Audit(format!("Failed to rotate audit log: {e}")))?;
         }
-        
+
         Ok(())
     }
 }
@@ -167,65 +168,67 @@ impl FileAuditLogger {
 impl AuditLogger for FileAuditLogger {
     fn log(&self, entry: &AuditEntry) -> Result<()> {
         let file_path = self.get_log_file();
-        
+
         // Rotate if needed
         self.rotate_if_needed(&file_path)?;
-        
+
         // Serialize entry to JSON
         let json = serde_json::to_string(entry)
-            .map_err(|e| Error::Serialization(format!("Failed to serialize audit entry: {}", e)))?;
-        
+            .map_err(|e| Error::Serialization(format!("Failed to serialize audit entry: {e}")))?;
+
         // Append to file
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&file_path)
-            .map_err(|e| Error::Audit(format!("Failed to open audit log: {}", e)))?;
-        
-        writeln!(file, "{}", json)
-            .map_err(|e| Error::Audit(format!("Failed to write audit log: {}", e)))?;
-        
+            .map_err(|e| Error::Audit(format!("Failed to open audit log: {e}")))?;
+
+        writeln!(file, "{json}")
+            .map_err(|e| Error::Audit(format!("Failed to write audit log: {e}")))?;
+
         debug!("Logged audit event: {:?}", entry.event_type);
-        
+
         Ok(())
     }
-    
+
     fn query(&self, filter: &AuditFilter) -> Result<Vec<AuditEntry>> {
         let mut results = Vec::new();
-        
+
         // Read all log files in directory
         let entries = fs::read_dir(&self.log_dir)
-            .map_err(|e| Error::Audit(format!("Failed to read audit log directory: {}", e)))?;
-        
+            .map_err(|e| Error::Audit(format!("Failed to read audit log directory: {e}")))?;
+
         for entry in entries {
-            let entry = entry.map_err(|e| Error::Audit(format!("Failed to read directory entry: {}", e)))?;
+            let entry =
+                entry.map_err(|e| Error::Audit(format!("Failed to read directory entry: {e}")))?;
             let path = entry.path();
-            
+
             if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
                 let content = fs::read_to_string(&path)
-                    .map_err(|e| Error::Audit(format!("Failed to read audit log: {}", e)))?;
-                
+                    .map_err(|e| Error::Audit(format!("Failed to read audit log: {e}")))?;
+
                 for line in content.lines() {
                     if line.is_empty() {
                         continue;
                     }
-                    
-                    let entry: AuditEntry = serde_json::from_str(line)
-                        .map_err(|e| Error::Serialization(format!("Failed to parse audit entry: {}", e)))?;
-                    
+
+                    let entry: AuditEntry = serde_json::from_str(line).map_err(|e| {
+                        Error::Serialization(format!("Failed to parse audit entry: {e}"))
+                    })?;
+
                     if filter.matches(&entry) {
                         results.push(entry);
                     }
                 }
             }
         }
-        
+
         // Sort by timestamp (newest first)
         results.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        
+
         Ok(results)
     }
-    
+
     fn get_deployment_history(&self, product: &str, environment: &str) -> Result<Vec<AuditEntry>> {
         let filter = AuditFilter::new()
             .with_product(product.to_string())
@@ -236,7 +239,7 @@ impl AuditLogger for FileAuditLogger {
                 AuditEventType::DeploymentFailed,
                 AuditEventType::DeploymentRolledBack,
             ]);
-        
+
         self.query(&filter)
     }
 }
@@ -254,6 +257,12 @@ pub struct AuditFilter {
     pub limit: Option<usize>,
 }
 
+impl Default for AuditFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuditFilter {
     pub fn new() -> Self {
         Self {
@@ -267,43 +276,43 @@ impl AuditFilter {
             limit: None,
         }
     }
-    
+
     pub fn with_product(mut self, product: String) -> Self {
         self.product = Some(product);
         self
     }
-    
+
     pub fn with_environment(mut self, environment: String) -> Self {
         self.environment = Some(environment);
         self
     }
-    
+
     pub fn with_user(mut self, user: String) -> Self {
         self.user = Some(user);
         self
     }
-    
+
     pub fn with_event_types(mut self, types: Vec<AuditEventType>) -> Self {
         self.event_types = Some(types);
         self
     }
-    
+
     pub fn with_time_range(mut self, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         self.start_time = Some(start);
         self.end_time = Some(end);
         self
     }
-    
+
     pub fn success_only(mut self) -> Self {
         self.success_only = true;
         self
     }
-    
+
     pub fn with_limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);
         self
     }
-    
+
     fn matches(&self, entry: &AuditEntry) -> bool {
         // Check product filter
         if let Some(ref product) = self.product {
@@ -311,46 +320,49 @@ impl AuditFilter {
                 return false;
             }
         }
-        
+
         // Check environment filter
         if let Some(ref env) = self.environment {
             if entry.environment != *env {
                 return false;
             }
         }
-        
+
         // Check user filter
         if let Some(ref user) = self.user {
             if entry.user != *user {
                 return false;
             }
         }
-        
+
         // Check event type filter
         if let Some(ref types) = self.event_types {
-            if !types.iter().any(|t| std::mem::discriminant(t) == std::mem::discriminant(&entry.event_type)) {
+            if !types
+                .iter()
+                .any(|t| std::mem::discriminant(t) == std::mem::discriminant(&entry.event_type))
+            {
                 return false;
             }
         }
-        
+
         // Check time range
         if let Some(start) = self.start_time {
             if entry.timestamp < start {
                 return false;
             }
         }
-        
+
         if let Some(end) = self.end_time {
             if entry.timestamp > end {
                 return false;
             }
         }
-        
+
         // Check success filter
         if self.success_only && !entry.success {
             return false;
         }
-        
+
         true
     }
 }
@@ -368,62 +380,84 @@ impl AuditManager {
             start_time: std::time::Instant::now(),
         }
     }
-    
+
     /// Create with default file logger
     pub fn with_file_logger(log_dir: PathBuf) -> Result<Self> {
         let logger = FileAuditLogger::new(log_dir)?;
         Ok(Self::new(Box::new(logger)))
     }
-    
+
     /// Log a deployment started event
-    pub fn log_deployment_started(&self, product: &str, environment: &str, version: &str) -> Result<()> {
+    pub fn log_deployment_started(
+        &self,
+        product: &str,
+        environment: &str,
+        version: &str,
+    ) -> Result<()> {
         let entry = AuditEntry::new(
             AuditEventType::DeploymentStarted,
             product.to_string(),
             environment.to_string(),
             version.to_string(),
         );
-        
+
         self.logger.log(&entry)
     }
-    
+
     /// Log a deployment succeeded event
-    pub fn log_deployment_succeeded(&self, product: &str, environment: &str, version: &str) -> Result<()> {
+    pub fn log_deployment_succeeded(
+        &self,
+        product: &str,
+        environment: &str,
+        version: &str,
+    ) -> Result<()> {
         let duration = self.start_time.elapsed();
         let entry = AuditEntry::new(
             AuditEventType::DeploymentSucceeded,
             product.to_string(),
             environment.to_string(),
             version.to_string(),
-        ).with_duration(duration);
-        
+        )
+        .with_duration(duration);
+
         self.logger.log(&entry)
     }
-    
+
     /// Log a deployment failed event
-    pub fn log_deployment_failed(&self, product: &str, environment: &str, version: &str, error: String) -> Result<()> {
+    pub fn log_deployment_failed(
+        &self,
+        product: &str,
+        environment: &str,
+        version: &str,
+        error: String,
+    ) -> Result<()> {
         let duration = self.start_time.elapsed();
         let entry = AuditEntry::new(
             AuditEventType::DeploymentFailed,
             product.to_string(),
             environment.to_string(),
             version.to_string(),
-        ).with_error(error)
+        )
+        .with_error(error)
         .with_duration(duration);
-        
+
         self.logger.log(&entry)
     }
-    
+
     /// Log a custom event
     pub fn log_event(&self, entry: AuditEntry) -> Result<()> {
         self.logger.log(&entry)
     }
-    
+
     /// Get deployment history
-    pub fn get_deployment_history(&self, product: &str, environment: &str) -> Result<Vec<AuditEntry>> {
+    pub fn get_deployment_history(
+        &self,
+        product: &str,
+        environment: &str,
+    ) -> Result<Vec<AuditEntry>> {
         self.logger.get_deployment_history(product, environment)
     }
-    
+
     /// Query audit logs
     pub fn query(&self, filter: AuditFilter) -> Result<Vec<AuditEntry>> {
         self.logger.query(&filter)
@@ -438,6 +472,12 @@ pub struct MonitoringIntegration {
     datadog_api_key: Option<String>,
 }
 
+impl Default for MonitoringIntegration {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MonitoringIntegration {
     pub fn new() -> Self {
         Self {
@@ -445,7 +485,7 @@ impl MonitoringIntegration {
             datadog_api_key: std::env::var("DATADOG_API_KEY").ok(),
         }
     }
-    
+
     /// Send metrics to Prometheus
     pub async fn send_prometheus_metrics(&self, _entry: &AuditEntry) -> Result<()> {
         if let Some(ref url) = self.prometheus_url {
@@ -454,7 +494,7 @@ impl MonitoringIntegration {
         }
         Ok(())
     }
-    
+
     /// Send events to DataDog
     pub async fn send_datadog_event(&self, _entry: &AuditEntry) -> Result<()> {
         if let Some(ref api_key) = self.datadog_api_key {

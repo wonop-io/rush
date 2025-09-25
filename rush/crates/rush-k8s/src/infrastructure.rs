@@ -3,14 +3,16 @@
 //! This module provides functionality for managing Kubernetes infrastructure resources,
 //! including operations like cloning repositories, copying manifests, and committing changes.
 
-use crate::context::KubernetesContext;
-use log::{debug, info};
-use rush_core::error::{Error, Result};
-use rush_toolchain::ToolchainContext;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
+
+use log::{debug, info};
+use rush_core::error::{Error, Result};
+use rush_toolchain::ToolchainContext;
+
+use crate::context::KubernetesContext;
 
 /// Manages infrastructure repositories for Kubernetes deployments
 #[derive(Debug)]
@@ -256,10 +258,12 @@ impl InfrastructureRepo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs::File;
     use std::io::{Read, Write};
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn create_test_file(dir: &Path, name: &str, content: &str) -> Result<()> {
         let path = dir.join(name);

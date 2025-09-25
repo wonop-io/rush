@@ -1,7 +1,8 @@
-use rush_container::ContainerReactorConfig;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+
+use rush_container::ContainerReactorConfig;
 
 #[test]
 fn test_image_name_generation_without_registry() {

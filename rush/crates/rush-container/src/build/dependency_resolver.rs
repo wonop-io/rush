@@ -4,13 +4,14 @@
 //! critical path identification, parallel group optimization, and
 //! build time estimation.
 
-use rush_build::ComponentBuildSpec;
-use rush_core::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
+
+use petgraph::algo::{all_simple_paths, is_cyclic_directed, toposort};
 use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::algo::{toposort, is_cyclic_directed, all_simple_paths};
 use petgraph::Direction;
+use rush_build::ComponentBuildSpec;
+use rush_core::{Error, Result};
 
 /// Build time estimation for components
 #[derive(Debug, Clone)]
@@ -46,6 +47,12 @@ pub struct DependencyResolver {
     time_estimates: HashMap<String, BuildTimeEstimate>,
     /// Cache of computed paths
     path_cache: HashMap<(String, String), Vec<Vec<String>>>,
+}
+
+impl Default for DependencyResolver {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DependencyResolver {
@@ -87,16 +94,12 @@ impl DependencyResolver {
         let mut resolver = Self::new();
 
         for spec in specs {
-            resolver.add_component(
-                spec.component_name.clone(),
-                spec.depends_on.clone(),
-            );
+            resolver.add_component(spec.component_name.clone(), spec.depends_on.clone());
 
             // Add default time estimate
-            resolver.time_estimates.insert(
-                spec.component_name.clone(),
-                BuildTimeEstimate::default(),
-            );
+            resolver
+                .time_estimates
+                .insert(spec.component_name.clone(), BuildTimeEstimate::default());
         }
 
         resolver
@@ -104,9 +107,10 @@ impl DependencyResolver {
 
     /// Update build time estimate for a component
     pub fn update_time_estimate(&mut self, component: &str, duration: Duration) {
-        let estimate = self.time_estimates
+        let estimate = self
+            .time_estimates
             .entry(component.to_string())
-            .or_insert_with(BuildTimeEstimate::default);
+            .or_default();
 
         // Simple moving average update
         let n = estimate.samples as f64;
@@ -122,9 +126,8 @@ impl DependencyResolver {
         estimate.samples += 1;
 
         // Update P95 (simplified - just use max of average + 2*stddev or actual)
-        let p95_estimate = Duration::from_secs_f64(
-            new_avg.as_secs_f64() + 2.0 * estimate.std_dev.as_secs_f64()
-        );
+        let p95_estimate =
+            Duration::from_secs_f64(new_avg.as_secs_f64() + 2.0 * estimate.std_dev.as_secs_f64());
         estimate.p95 = p95_estimate.max(duration);
     }
 
@@ -137,7 +140,7 @@ impl DependencyResolver {
     pub fn optimize_build_order(&self) -> Result<Vec<Vec<String>>> {
         if self.has_cycles() {
             return Err(Error::Configuration(
-                "Circular dependency detected in build graph".to_string()
+                "Circular dependency detected in build graph".to_string(),
             ));
         }
 
@@ -171,7 +174,7 @@ impl DependencyResolver {
 
             if current_level.is_empty() && !remaining.is_empty() {
                 return Err(Error::Configuration(
-                    "Unable to resolve build order".to_string()
+                    "Unable to resolve build order".to_string(),
                 ));
             }
 
@@ -197,19 +200,27 @@ impl DependencyResolver {
         let mut max_duration = Duration::from_secs(0);
 
         // Find all source nodes (no incoming edges)
-        let sources: Vec<_> = self.node_indices
+        let sources: Vec<_> = self
+            .node_indices
             .iter()
             .filter(|(_, &idx)| {
-                self.graph.neighbors_directed(idx, Direction::Incoming).count() == 0
+                self.graph
+                    .neighbors_directed(idx, Direction::Incoming)
+                    .count()
+                    == 0
             })
             .map(|(name, _)| name.clone())
             .collect();
 
         // Find all sink nodes (no outgoing edges)
-        let sinks: Vec<_> = self.node_indices
+        let sinks: Vec<_> = self
+            .node_indices
             .iter()
             .filter(|(_, &idx)| {
-                self.graph.neighbors_directed(idx, Direction::Outgoing).count() == 0
+                self.graph
+                    .neighbors_directed(idx, Direction::Outgoing)
+                    .count()
+                    == 0
             })
             .map(|(name, _)| name.clone())
             .collect();
@@ -232,10 +243,14 @@ impl DependencyResolver {
 
     /// Find the longest path between two nodes
     fn find_longest_path(&self, from: &str, to: &str) -> Result<Option<Vec<String>>> {
-        let from_idx = self.node_indices.get(from)
-            .ok_or_else(|| Error::Internal(format!("Component {} not found", from)))?;
-        let to_idx = self.node_indices.get(to)
-            .ok_or_else(|| Error::Internal(format!("Component {} not found", to)))?;
+        let from_idx = self
+            .node_indices
+            .get(from)
+            .ok_or_else(|| Error::Internal(format!("Component {from} not found")))?;
+        let to_idx = self
+            .node_indices
+            .get(to)
+            .ok_or_else(|| Error::Internal(format!("Component {to} not found")))?;
 
         // Use cache if available
         let cache_key = (from.to_string(), to.to_string());
@@ -244,8 +259,8 @@ impl DependencyResolver {
         }
 
         // Find all simple paths
-        let paths: Vec<Vec<NodeIndex>> = all_simple_paths(&self.graph, *from_idx, *to_idx, 0, None)
-            .collect();
+        let paths: Vec<Vec<NodeIndex>> =
+            all_simple_paths(&self.graph, *from_idx, *to_idx, 0, None).collect();
 
         if paths.is_empty() {
             return Ok(None);
@@ -283,14 +298,12 @@ impl DependencyResolver {
     /// Get build statistics
     pub fn get_build_stats(&self) -> BuildStats {
         let total_components = self.node_indices.len();
-        let (critical_path, critical_duration) = self.find_critical_path()
+        let (critical_path, critical_duration) = self
+            .find_critical_path()
             .unwrap_or((Vec::new(), Duration::from_secs(0)));
 
         let parallelization_factor = if critical_duration.as_secs() > 0 {
-            let total_time: Duration = self.time_estimates
-                .values()
-                .map(|e| e.average)
-                .sum();
+            let total_time: Duration = self.time_estimates.values().map(|e| e.average).sum();
             total_time.as_secs_f64() / critical_duration.as_secs_f64()
         } else {
             1.0
@@ -302,7 +315,8 @@ impl DependencyResolver {
             critical_duration,
             estimated_parallel_time: critical_duration,
             parallelization_factor,
-            max_parallel_width: self.optimize_build_order()
+            max_parallel_width: self
+                .optimize_build_order()
                 .ok()
                 .and_then(|groups| groups.iter().map(|g| g.len()).max())
                 .unwrap_or(1),
@@ -367,7 +381,10 @@ mod tests {
         resolver.add_component("api".to_string(), vec!["database".to_string()]);
         resolver.add_component("database".to_string(), vec![]);
         resolver.add_component("cache".to_string(), vec![]);
-        resolver.add_component("worker".to_string(), vec!["api".to_string(), "cache".to_string()]);
+        resolver.add_component(
+            "worker".to_string(),
+            vec!["api".to_string(), "cache".to_string()],
+        );
 
         let groups = resolver.optimize_build_order().unwrap();
 
@@ -376,8 +393,14 @@ mod tests {
         assert!(groups[0].contains(&"cache".to_string()));
 
         // API depends on database, so should come later
-        let api_group = groups.iter().position(|g| g.contains(&"api".to_string())).unwrap();
-        let db_group = groups.iter().position(|g| g.contains(&"database".to_string())).unwrap();
+        let api_group = groups
+            .iter()
+            .position(|g| g.contains(&"api".to_string()))
+            .unwrap();
+        let db_group = groups
+            .iter()
+            .position(|g| g.contains(&"database".to_string()))
+            .unwrap();
         assert!(api_group > db_group);
     }
 

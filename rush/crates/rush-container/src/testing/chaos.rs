@@ -3,15 +3,16 @@
 //! This module provides chaos engineering capabilities to test
 //! system resilience under various failure conditions.
 
-use rush_core::{Error, Result};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
-use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
-use log::{debug, info, warn};
+
 use async_trait::async_trait;
+use log::{debug, info, warn};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use rush_core::{Error, Result};
+use tokio::sync::RwLock;
 
 /// Type of chaos to inject
 #[derive(Debug, Clone, PartialEq)]
@@ -115,7 +116,9 @@ impl ChaosMonkey {
     pub async fn with_failure_rate(self, rate: f32) -> Self {
         {
             let mut policy = self.policy.write().await;
-            policy.chaos_types.push(ChaosType::RandomFailure { probability: rate });
+            policy
+                .chaos_types
+                .push(ChaosType::RandomFailure { probability: rate });
             policy.enabled = true;
         }
         self
@@ -125,7 +128,9 @@ impl ChaosMonkey {
     pub async fn with_latency_injection(self, min: Duration, max: Duration) -> Self {
         {
             let mut policy = self.policy.write().await;
-            policy.chaos_types.push(ChaosType::LatencyInjection { min, max });
+            policy
+                .chaos_types
+                .push(ChaosType::LatencyInjection { min, max });
             policy.enabled = true;
         }
         self
@@ -190,7 +195,10 @@ impl ChaosMonkey {
         match chaos_type {
             ChaosType::RandomFailure { probability } => {
                 // This is handled per-operation
-                debug!("Random failure injection enabled with probability {}", probability);
+                debug!(
+                    "Random failure injection enabled with probability {}",
+                    probability
+                );
             }
             ChaosType::LatencyInjection { min, max } => {
                 let duration = self.random_duration(*min, *max).await;
@@ -226,8 +234,9 @@ impl ChaosMonkey {
         }
 
         // Check if component is targeted
-        if !policy.target_components.is_empty() &&
-           !policy.target_components.contains(&component.to_string()) {
+        if !policy.target_components.is_empty()
+            && !policy.target_components.contains(&component.to_string())
+        {
             return false;
         }
 
@@ -237,7 +246,10 @@ impl ChaosMonkey {
                 let mut rng = self.rng.write().await;
                 if rng.gen::<f32>() < *probability {
                     self.failures_injected.fetch_add(1, Ordering::Relaxed);
-                    warn!("Chaos monkey injecting failure for component: {}", component);
+                    warn!(
+                        "Chaos monkey injecting failure for component: {}",
+                        component
+                    );
                     return true;
                 }
             }
@@ -298,7 +310,11 @@ impl ChaosMonkey {
         let duration = Duration::from_secs(5);
         let start = Instant::now();
 
-        warn!("Simulating CPU spike at {}% intensity for {:?}", intensity * 100.0, duration);
+        warn!(
+            "Simulating CPU spike at {}% intensity for {:?}",
+            intensity * 100.0,
+            duration
+        );
 
         while start.elapsed() < duration {
             // Busy loop to consume CPU
@@ -366,7 +382,11 @@ pub struct ChaosStats {
 #[async_trait]
 pub trait ChaosAware {
     /// Execute with chaos injection
-    async fn execute_with_chaos<T>(&self, chaos: &ChaosMonkey, operation: impl std::future::Future<Output = Result<T>> + Send) -> Result<T>;
+    async fn execute_with_chaos<T>(
+        &self,
+        chaos: &ChaosMonkey,
+        operation: impl std::future::Future<Output = Result<T>> + Send,
+    ) -> Result<T>;
 }
 
 /// System under chaos test
@@ -399,7 +419,10 @@ impl<T> ChaosTestSystem<T> {
 
         // Report statistics
         let stats = self.chaos.get_stats().await;
-        info!("Chaos test completed: {} failures injected", stats.failures_injected);
+        info!(
+            "Chaos test completed: {} failures injected",
+            stats.failures_injected
+        );
 
         result
     }
@@ -407,13 +430,13 @@ impl<T> ChaosTestSystem<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::atomic::AtomicU32;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_chaos_monkey_basic() {
-        let chaos = ChaosMonkey::new()
-            .with_failure_rate(0.5).await;
+        let chaos = ChaosMonkey::new().with_failure_rate(0.5).await;
 
         // Activate the chaos monkey
         chaos.active.store(true, Ordering::Relaxed);
@@ -439,10 +462,8 @@ mod tests {
     #[tokio::test]
     async fn test_chaos_latency() {
         let chaos = ChaosMonkey::new()
-            .with_latency_injection(
-                Duration::from_millis(10),
-                Duration::from_millis(50)
-            ).await;
+            .with_latency_injection(Duration::from_millis(10), Duration::from_millis(50))
+            .await;
 
         let start = Instant::now();
         chaos.inject_latency().await;

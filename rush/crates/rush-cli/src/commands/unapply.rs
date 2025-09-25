@@ -1,9 +1,10 @@
-use crate::args::CommonCliArgs;
+use std::sync::{Arc, Mutex};
+
 use rush_config::Config;
 use rush_core::error::{Error, Result};
 use rush_k8s::ContextManager;
-use std::sync::Arc;
-use std::sync::Mutex;
+
+use crate::args::CommonCliArgs;
 
 /// Execute the unapply command
 ///
@@ -40,14 +41,15 @@ pub async fn execute(_args: &CommonCliArgs, config: Arc<Config>) -> Result<()> {
     let config = rush_utils::CommandConfig::new(&kubectl_path)
         .args(vec!["delete", "-R", "-f", &output_dir])
         .capture(true);
-    
+
     match rush_utils::CommandRunner::run(config).await {
         Ok(output) if output.success() => {
             println!("Successfully unapplied Kubernetes resources");
             Ok(())
         }
         Ok(output) => Err(Error::Kubernetes(format!(
-            "Failed to unapply Kubernetes resources: {}", output.stderr
+            "Failed to unapply Kubernetes resources: {}",
+            output.stderr
         ))),
         Err(e) => Err(Error::Kubernetes(format!(
             "Failed to unapply Kubernetes resources: {e}"

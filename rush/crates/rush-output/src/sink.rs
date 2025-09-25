@@ -1,14 +1,16 @@
-use crate::event::OutputEvent;
-use crate::formatter::{OutputFormatter, PlainFormatter};
-use async_trait::async_trait;
-use crossterm::terminal;
-use rush_core::error::{Error, Result};
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use async_trait::async_trait;
+use crossterm::terminal;
+use rush_core::error::{Error, Result};
 use tokio::sync::Mutex;
+
+use crate::event::OutputEvent;
+use crate::formatter::{OutputFormatter, PlainFormatter};
 
 /// Capabilities of an output sink
 #[derive(Debug, Clone, Default)]

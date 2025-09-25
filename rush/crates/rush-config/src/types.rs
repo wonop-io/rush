@@ -1,10 +1,10 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use log::trace;
 use rush_core::constants::*;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::sync::Arc;
-use tera::Context;
-use tera::Tera;
+use tera::{Context, Tera};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DomainContext {
@@ -98,15 +98,15 @@ impl Config {
     pub fn docker_registry(&self) -> &str {
         &self.docker_registry
     }
-    
+
     pub fn docker_registry_namespace(&self) -> Option<&str> {
         self.docker_registry_namespace.as_deref()
     }
-    
+
     pub fn docker_registry_username(&self) -> Option<&str> {
         self.docker_registry_username.as_deref()
     }
-    
+
     pub fn docker_registry_password(&self) -> Option<&str> {
         self.docker_registry_password.as_deref()
     }
@@ -144,10 +144,10 @@ impl Config {
             subdomain,
         };
         let context = Context::from_serialize(&ctx)
-            .map_err(|e| format!("Could not create config context: {}", e))?;
+            .map_err(|e| format!("Could not create config context: {e}"))?;
 
         Tera::one_off(&self.domain_template, &context, false)
-            .map_err(|e| format!("Could not render domain template: {}", e))
+            .map_err(|e| format!("Could not render domain template: {e}"))
     }
 
     pub fn root_path(&self) -> &str {
@@ -307,14 +307,20 @@ impl Config {
 
         let one_password_account = std::env::var(ONE_PASSWORD_ACCOUNT_VAR).ok();
         let json_vault_dir = std::env::var(JSON_VAULT_DIR_VAR).ok();
-        
+
         // Load registry configuration from environment variables
-        let docker_registry_namespace = std::env::var("DOCKER_REGISTRY_NAMESPACE").ok()
-            .or_else(|| std::env::var(format!("{}_DOCKER_NAMESPACE", environment.to_uppercase())).ok());
-        let docker_registry_username = std::env::var("DOCKER_REGISTRY_USERNAME").ok()
-            .or_else(|| std::env::var(format!("{}_DOCKER_USERNAME", environment.to_uppercase())).ok());
-        let docker_registry_password = std::env::var("DOCKER_REGISTRY_PASSWORD").ok()
-            .or_else(|| std::env::var(format!("{}_DOCKER_PASSWORD", environment.to_uppercase())).ok());
+        let docker_registry_namespace =
+            std::env::var("DOCKER_REGISTRY_NAMESPACE").ok().or_else(|| {
+                std::env::var(format!("{}_DOCKER_NAMESPACE", environment.to_uppercase())).ok()
+            });
+        let docker_registry_username =
+            std::env::var("DOCKER_REGISTRY_USERNAME").ok().or_else(|| {
+                std::env::var(format!("{}_DOCKER_USERNAME", environment.to_uppercase())).ok()
+            });
+        let docker_registry_password =
+            std::env::var("DOCKER_REGISTRY_PASSWORD").ok().or_else(|| {
+                std::env::var(format!("{}_DOCKER_PASSWORD", environment.to_uppercase())).ok()
+            });
 
         let ret = Self {
             root_path: root_path.to_string(),

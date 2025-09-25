@@ -1,4 +1,8 @@
-use crate::context::CliContext;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::{env, process};
+
 use clap::ArgMatches;
 use log::{debug, error, info, trace, warn};
 use rush_config::environment::EnvironmentGenerator;
@@ -9,16 +13,12 @@ use rush_core::error::Result;
 use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
 use rush_output::simple::Sink;
 use rush_output::sink_proxy::SinkProxy;
-use rush_security::EnvironmentDefinitions;
-use rush_security::{SecretsDefinitions, SecretsEncoder, Vault};
+use rush_security::{EnvironmentDefinitions, SecretsDefinitions, SecretsEncoder, Vault};
 use rush_toolchain::{Platform, ToolchainContext};
 use rush_utils::Directory;
-use std::collections::HashMap;
-use std::env;
-use std::path::{Path, PathBuf};
-use std::process;
-use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
+
+use crate::context::CliContext;
 
 pub async fn create_context(
     matches: &ArgMatches,
@@ -60,24 +60,21 @@ pub async fn create_context(
 
     // Create docker client FIRST (needed by local services and network manager)
     let docker_client = Arc::new(rush_docker::DockerExecutor::new());
-    
+
     // Determine if this command needs full container support
     let needs_container_support = matches.subcommand_matches("dev").is_some()
         || matches.subcommand_matches("build").is_some()
         || matches.subcommand_matches("push").is_some()
         || matches.subcommand_matches("rollout").is_some()
         || matches.subcommand_matches("deploy").is_some();
-    
+
     // Create network manager only for commands that need it
     let network_manager = if needs_container_support {
         info!("Setting up network: net-{}", product_name.replace('.', "-"));
         Some(Arc::new(
-            rush_container::network::NetworkManager::new(
-                docker_client.clone(), 
-                &product_name
-            )
-            .await
-            .map_err(|e| rush_core::Error::Setup(format!("Failed to setup network: {e}")))?
+            rush_container::network::NetworkManager::new(docker_client.clone(), &product_name)
+                .await
+                .map_err(|e| rush_core::Error::Setup(format!("Failed to setup network: {e}")))?,
         ))
     } else {
         debug!("Skipping network setup for non-container command");
@@ -85,22 +82,33 @@ pub async fn create_context(
     };
 
     // Start local services BEFORE creating .env files (if this is for the dev command)
-    let (local_service_env_vars, local_services_manager) = if matches.subcommand_matches("dev").is_some() {
-        info!("Starting local services before environment file generation...");
-        let docker_command = env::var("DOCKER_COMMAND").unwrap_or_else(|_| "docker".to_string());
-        match crate::local_services_startup::start_local_services(&config, &product_name, &docker_command).await {
-            Ok((env_vars, manager)) => {
-                info!("Local services started with {} environment variables", env_vars.len());
-                (env_vars, Some(manager))
+    let (local_service_env_vars, local_services_manager) =
+        if matches.subcommand_matches("dev").is_some() {
+            info!("Starting local services before environment file generation...");
+            let docker_command =
+                env::var("DOCKER_COMMAND").unwrap_or_else(|_| "docker".to_string());
+            match crate::local_services_startup::start_local_services(
+                &config,
+                &product_name,
+                &docker_command,
+            )
+            .await
+            {
+                Ok((env_vars, manager)) => {
+                    info!(
+                        "Local services started with {} environment variables",
+                        env_vars.len()
+                    );
+                    (env_vars, Some(manager))
+                }
+                Err(e) => {
+                    warn!("Failed to start local services: {}", e);
+                    (HashMap::new(), None)
+                }
             }
-            Err(e) => {
-                warn!("Failed to start local services: {}", e);
-                (HashMap::new(), None)
-            }
-        }
-    } else {
-        (HashMap::new(), None)
-    };
+        } else {
+            (HashMap::new(), None)
+        };
 
     // Inject local service environment variables into the process environment
     // so they're available during .env generation
@@ -119,10 +127,10 @@ pub async fn create_context(
 
     // Create reactor only for commands that need it
     let reactor = if needs_container_support {
-        let net_manager = network_manager.ok_or_else(|| 
+        let net_manager = network_manager.ok_or_else(|| {
             rush_core::Error::Setup("Network manager required but not initialized".to_string())
-        )?;
-        
+        })?;
+
         let mut r = create_reactor(
             config.clone(),
             toolchain.clone(),
@@ -132,8 +140,9 @@ pub async fn create_context(
             local_service_env_vars,
             force_rebuild,
             net_manager,
-        ).await?;
-        
+        )
+        .await?;
+
         // Set the output sink on the reactor
         {
             // Clone the Arc to get a reference we can use
@@ -143,7 +152,7 @@ pub async fn create_context(
             let sink_for_reactor = Box::new(SinkProxy::new(sink_clone));
             r.set_output_sink_boxed(sink_for_reactor);
         }
-        
+
         r
     } else {
         // For non-container commands, create a minimal reactor
@@ -216,42 +225,42 @@ async fn create_minimal_reactor(
     // Create a minimal reactor for non-container commands
     // This reactor won't be used for container operations
     let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
-    
+
     // Create a dummy network manager that won't be used
     // We need this because Reactor::new expects one, but we could refactor
     // Reactor to make it truly optional in the future
     let docker_client = Arc::new(rush_docker::DockerExecutor::new());
     let product_name = config.product_name().to_string();
-    
+
     // Try to create network manager, but if it fails for minimal reactor, that's ok
-    let network_manager = match rush_container::network::NetworkManager::new(
-        docker_client.clone(),
-        &product_name
-    ).await {
-        Ok(nm) => Arc::new(nm),
-        Err(_) => {
-            // For minimal reactor, we can proceed without network manager
-            // by creating a stub one
-            debug!("Creating stub network manager for minimal reactor");
-            // For now, we'll just create it anyway since it's required by Reactor
-            // In the future, we should refactor Reactor to make network_manager optional
-            Arc::new(
-                rush_container::network::NetworkManager::new(
-                    docker_client,
-                    &product_name
-                ).await?
-            )
-        }
-    };
-    
+    let network_manager =
+        match rush_container::network::NetworkManager::new(docker_client.clone(), &product_name)
+            .await
+        {
+            Ok(nm) => Arc::new(nm),
+            Err(_) => {
+                // For minimal reactor, we can proceed without network manager
+                // by creating a stub one
+                debug!("Creating stub network manager for minimal reactor");
+                // For now, we'll just create it anyway since it's required by Reactor
+                // In the future, we should refactor Reactor to make network_manager optional
+                Arc::new(
+                    rush_container::network::NetworkManager::new(docker_client, &product_name)
+                        .await?,
+                )
+            }
+        };
+
     match Reactor::from_product_dir(
         config,
         vault,
         secrets_encoder,
         HashMap::new(), // No redirected components for minimal reactor
-        Vec::new(),     // No silence components for minimal reactor  
+        Vec::new(),     // No silence components for minimal reactor
         network_manager,
-    ).await {
+    )
+    .await
+    {
         Ok(reactor) => Ok(reactor),
         Err(e) => {
             error!("Failed to create minimal Reactor: {}", e);
@@ -493,7 +502,9 @@ async fn create_reactor(
         redirected_components,
         silence_components,
         network_manager,
-    ).await {
+    )
+    .await
+    {
         Ok(mut reactor) => {
             // Set force rebuild if requested
             if force_rebuild {

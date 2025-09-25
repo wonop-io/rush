@@ -1,7 +1,9 @@
-use crate::types::Config;
-use log::{debug, trace};
 use std::fmt;
 use std::path::Path;
+
+use log::{debug, trace};
+
+use crate::types::Config;
 
 /// Represents a validation error for a configuration
 #[derive(Debug)]
@@ -114,9 +116,10 @@ pub fn validate_config(config: &Config) -> Result<(), ConfigValidationError> {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
     use crate::types::Config;
-    use tempfile::TempDir;
 
     #[test]
     #[ignore] // This test changes global directory state and requires environment setup

@@ -1,5 +1,6 @@
-use clap::{arg, value_parser, Arg, Command};
 use std::collections::HashMap;
+
+use clap::{arg, value_parser, Arg, Command};
 
 #[derive(Debug, Clone)]
 pub struct CommandArgs {

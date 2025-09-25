@@ -1,10 +1,12 @@
 //! Tests for image building and architecture validation
 
-use crate::docker::DockerClient;
-use crate::tests::mock_docker::MockDockerClient;
+use std::sync::Arc;
+
 use rush_core::error::Result;
 use serial_test::serial;
-use std::sync::Arc;
+
+use crate::docker::DockerClient;
+use crate::tests::mock_docker::MockDockerClient;
 
 #[tokio::test]
 #[serial]

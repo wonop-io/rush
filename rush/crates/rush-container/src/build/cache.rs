@@ -3,11 +3,12 @@
 //! This module provides caching functionality to avoid rebuilding
 //! unchanged components.
 
-use rush_build::ComponentBuildSpec;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
 use log::{debug, info, warn};
+use rush_build::ComponentBuildSpec;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
@@ -30,11 +31,19 @@ pub struct CacheEntry {
 impl CacheEntry {
     /// Create a new cache entry
     pub fn new(image_name: String, spec: ComponentBuildSpec) -> Self {
-        Self::new_with_base_dir(image_name, spec, &std::env::current_dir().unwrap_or_default())
+        Self::new_with_base_dir(
+            image_name,
+            spec,
+            &std::env::current_dir().unwrap_or_default(),
+        )
     }
-    
+
     /// Create a new cache entry with explicit base directory
-    pub fn new_with_base_dir(image_name: String, spec: ComponentBuildSpec, base_dir: &Path) -> Self {
+    pub fn new_with_base_dir(
+        image_name: String,
+        spec: ComponentBuildSpec,
+        base_dir: &Path,
+    ) -> Self {
         Self {
             image_name,
             spec_hash: Self::hash_spec(&spec),
@@ -43,24 +52,24 @@ impl CacheEntry {
             spec: Some(spec),
         }
     }
-    
+
     /// Compute hash of source files and artifacts
     fn compute_source_hash(spec: &ComponentBuildSpec, base_dir: &Path) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
-        
+
         // Hash artifact template content if available
         if let Some(artifacts) = &spec.artefacts {
-            for (source_path, _) in artifacts {
+            for source_path in artifacts.keys() {
                 // Try to read and hash the artifact template file
                 if let Ok(content) = std::fs::read_to_string(source_path) {
                     content.hash(&mut hasher);
                 }
             }
         }
-        
+
         // For ingress, also hash the rendered nginx.conf if it exists
         if matches!(spec.build_type, rush_build::BuildType::Ingress { .. }) {
             let nginx_path = base_dir.join("target/rushd/nginx.conf");
@@ -68,7 +77,7 @@ impl CacheEntry {
                 content.hash(&mut hasher);
             }
         }
-        
+
         format!("{:x}", hasher.finish())
     }
 
@@ -76,13 +85,13 @@ impl CacheEntry {
     fn hash_spec(spec: &ComponentBuildSpec) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         spec.component_name.hash(&mut hasher);
-        
+
         // Hash build type to detect changes
         format!("{:?}", spec.build_type).hash(&mut hasher);
-        
+
         // Hash artifacts to detect template changes
         if let Some(artifacts) = &spec.artefacts {
             let mut sorted_artifacts: Vec<_> = artifacts.iter().collect();
@@ -92,7 +101,7 @@ impl CacheEntry {
                 target.hash(&mut hasher);
             }
         }
-        
+
         // Hash port configuration (important for ingress)
         if let Some(port) = spec.port {
             port.hash(&mut hasher);
@@ -100,12 +109,12 @@ impl CacheEntry {
         if let Some(target_port) = spec.target_port {
             target_port.hash(&mut hasher);
         }
-        
+
         // Hash mount point (affects routing)
         if let Some(mount_point) = &spec.mount_point {
             mount_point.hash(&mut hasher);
         }
-        
+
         format!("{:x}", hasher.finish())
     }
 
@@ -116,15 +125,17 @@ impl CacheEntry {
             debug!("Cache entry invalid: spec hash mismatch");
             return false;
         }
-        
+
         // Also check if source files have changed
         let current_source_hash = Self::compute_source_hash(spec, base_dir);
         if current_source_hash != self.source_hash {
-            debug!("Cache entry invalid: source hash mismatch (was: {}, now: {})", 
-                self.source_hash, current_source_hash);
+            debug!(
+                "Cache entry invalid: source hash mismatch (was: {}, now: {})",
+                self.source_hash, current_source_hash
+            );
             return false;
         }
-        
+
         true
     }
 }
@@ -179,12 +190,12 @@ impl BuildCache {
     /// Load cache from disk
     pub async fn load(&mut self) -> Result<(), std::io::Error> {
         let cache_file = self.cache_dir.join("cache.json");
-        
+
         if !cache_file.exists() {
             debug!("No cache file found, starting with empty cache");
             return Ok(());
         }
-        
+
         let contents = tokio::fs::read_to_string(&cache_file).await?;
         match serde_json::from_str::<HashMap<String, CacheEntry>>(&contents) {
             Ok(entries) => {
@@ -197,21 +208,21 @@ impl BuildCache {
                 // Start with empty cache on parse error
             }
         }
-        
+
         Ok(())
     }
 
     /// Save cache to disk
     pub async fn save(&self) -> Result<(), std::io::Error> {
         tokio::fs::create_dir_all(&self.cache_dir).await?;
-        
+
         let cache_file = self.cache_dir.join("cache.json");
-        let contents = serde_json::to_string_pretty(&self.entries)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        
+        let contents =
+            serde_json::to_string_pretty(&self.entries).map_err(std::io::Error::other)?;
+
         tokio::fs::write(&cache_file, contents).await?;
         debug!("Saved {} cache entries", self.entries.len());
-        
+
         Ok(())
     }
 
@@ -220,26 +231,32 @@ impl BuildCache {
         if let Some(entry) = self.entries.get(component) {
             // Validate the cache entry against current spec
             if entry.is_valid(spec, &self.base_dir) {
-                info!("[CACHE HIT] Component '{}': Using cached image '{}' built at {}", 
-                    component, entry.image_name, entry.built_at);
+                info!(
+                    "[CACHE HIT] Component '{}': Using cached image '{}' built at {}",
+                    component, entry.image_name, entry.built_at
+                );
                 Some(entry.image_name.clone())
             } else {
-                info!("[CACHE MISS] Component '{}': Cache entry invalid (spec or source changed)", component);
+                info!(
+                    "[CACHE MISS] Component '{}': Cache entry invalid (spec or source changed)",
+                    component
+                );
                 None
             }
         } else {
-            info!("[CACHE MISS] Component '{}': No cached image found", component);
+            info!(
+                "[CACHE MISS] Component '{}': No cached image found",
+                component
+            );
             None
         }
     }
-    
+
     /// Get a cached image without validation (for backwards compatibility)
     pub async fn get_unchecked(&self, component: &str) -> Option<String> {
-        if let Some(entry) = self.entries.get(component) {
-            Some(entry.image_name.clone())
-        } else {
-            None
-        }
+        self.entries
+            .get(component)
+            .map(|entry| entry.image_name.clone())
     }
 
     /// Get the raw cache entry for a component
@@ -252,15 +269,20 @@ impl BuildCache {
         debug!("Caching image for {}: {}", component, entry.image_name);
         self.entries.insert(component, entry);
         self.stats.total_entries = self.entries.len();
-        
+
         // Save cache periodically
         if let Err(e) = self.save().await {
             warn!("Failed to save cache: {}", e);
         }
     }
-    
+
     /// Put an image in the cache with proper base_dir context
-    pub async fn put_with_spec(&mut self, component: String, image_name: String, spec: ComponentBuildSpec) {
+    pub async fn put_with_spec(
+        &mut self,
+        component: String,
+        image_name: String,
+        spec: ComponentBuildSpec,
+    ) {
         let entry = CacheEntry::new_with_base_dir(image_name, spec, &self.base_dir);
         self.put(component, entry).await;
     }
@@ -270,11 +292,11 @@ impl BuildCache {
         if let Some(entry) = self.entries.get(component) {
             let age = chrono::Utc::now() - entry.built_at;
             let expired = age > chrono::Duration::from_std(self.expiry).unwrap();
-            
+
             if expired {
                 debug!("Cache entry for {} is expired", component);
             }
-            
+
             expired
         } else {
             true // Non-existent entries are considered expired
@@ -284,18 +306,24 @@ impl BuildCache {
     /// Invalidate cache entries based on file changes
     pub async fn invalidate_changed(&mut self, changed_files: &[PathBuf]) {
         let mut invalidated = Vec::new();
-        
-        info!("[CACHE] Checking {} changed files for cache invalidation", changed_files.len());
+
+        info!(
+            "[CACHE] Checking {} changed files for cache invalidation",
+            changed_files.len()
+        );
         for file in changed_files {
             debug!("[CACHE]   Changed file: {}", file.display());
         }
-        
+
         for (component, entry) in &self.entries {
             // Check if any changed file affects this component
             if let Some(spec) = &entry.spec {
-                debug!("[CACHE] Checking component '{}' with spec for invalidation", component);
+                debug!(
+                    "[CACHE] Checking component '{}' with spec for invalidation",
+                    component
+                );
                 let mut should_invalidate = false;
-                
+
                 // Get location from build_type if available
                 let location = match &spec.build_type {
                     rush_build::BuildType::RustBinary { location, .. } => Some(location.as_str()),
@@ -307,7 +335,7 @@ impl BuildCache {
                     rush_build::BuildType::Ingress { .. } => Some("./ingress"), // Ingress typically uses ./ingress directory
                     _ => None,
                 };
-                
+
                 // Check location-based changes
                 if let Some(loc) = location {
                     // Convert relative location to absolute path for comparison
@@ -316,33 +344,36 @@ impl BuildCache {
                     } else {
                         self.base_dir.join(loc)
                     };
-                    
-                    debug!("[CACHE] Checking component '{}' with location: {}", 
-                        component, abs_location.display());
-                    
+
+                    debug!(
+                        "[CACHE] Checking component '{}' with location: {}",
+                        component,
+                        abs_location.display()
+                    );
+
                     for file in changed_files {
                         if file.starts_with(&abs_location) {
-                            info!("[CACHE INVALIDATE] Component '{}': File '{}' changed in component directory '{}'", 
+                            info!("[CACHE INVALIDATE] Component '{}': File '{}' changed in component directory '{}'",
                                 component, file.display(), abs_location.display());
                             should_invalidate = true;
                             break;
                         }
                     }
                 }
-                
+
                 // Check artifact template changes
                 if !should_invalidate && spec.artefacts.is_some() {
                     if let Some(artifacts) = &spec.artefacts {
-                        for (source_path, _) in artifacts {
+                        for source_path in artifacts.keys() {
                             let abs_artifact_path = if Path::new(source_path).is_absolute() {
                                 PathBuf::from(source_path)
                             } else {
                                 self.base_dir.join(source_path)
                             };
-                            
+
                             for file in changed_files {
                                 if file == &abs_artifact_path || file.ends_with(source_path) {
-                                    info!("[CACHE INVALIDATE] Component '{}': Artifact template '{}' changed", 
+                                    info!("[CACHE INVALIDATE] Component '{}': Artifact template '{}' changed",
                                         component, source_path);
                                     should_invalidate = true;
                                     break;
@@ -354,33 +385,45 @@ impl BuildCache {
                         }
                     }
                 }
-                
+
                 // For ingress, also check if nginx.conf in target/rushd changed (rendered artifact)
-                if !should_invalidate && matches!(spec.build_type, rush_build::BuildType::Ingress { .. }) {
+                if !should_invalidate
+                    && matches!(spec.build_type, rush_build::BuildType::Ingress { .. })
+                {
                     let rendered_nginx = self.base_dir.join("target/rushd/nginx.conf");
                     for file in changed_files {
                         if file == &rendered_nginx {
-                            info!("[CACHE INVALIDATE] Component '{}': Rendered nginx.conf changed", component);
+                            info!(
+                                "[CACHE INVALIDATE] Component '{}': Rendered nginx.conf changed",
+                                component
+                            );
                             should_invalidate = true;
                             break;
                         }
                     }
                 }
-                
+
                 if should_invalidate {
                     invalidated.push(component.clone());
                 } else {
-                    debug!("[CACHE] Component '{}' not affected by file changes", component);
+                    debug!(
+                        "[CACHE] Component '{}' not affected by file changes",
+                        component
+                    );
                 }
             } else {
                 warn!("[CACHE] Component '{}' has no build spec - cannot check for invalidation! This is a bug.", component);
             }
         }
-        
+
         if invalidated.is_empty() {
             info!("[CACHE] No components invalidated by file changes");
         } else {
-            info!("[CACHE] Invalidating {} components: {:?}", invalidated.len(), invalidated);
+            info!(
+                "[CACHE] Invalidating {} components: {:?}",
+                invalidated.len(),
+                invalidated
+            );
             // Store the invalidated components for potential use
             self.recently_invalidated = invalidated.clone();
         }
@@ -397,7 +440,7 @@ impl BuildCache {
         info!("Clearing all cache entries");
         self.entries.clear();
         self.stats = CacheStats::default();
-        
+
         // Remove cache file
         let cache_file = self.cache_dir.join("cache.json");
         if cache_file.exists() {
@@ -411,40 +454,40 @@ impl BuildCache {
     pub async fn cleanup(&mut self) {
         let now = chrono::Utc::now();
         let mut expired = Vec::new();
-        
+
         for (component, entry) in &self.entries {
             let age = now - entry.built_at;
             if age > chrono::Duration::from_std(self.expiry).unwrap() {
                 expired.push(component.clone());
             }
         }
-        
+
         if !expired.is_empty() {
             info!("Removing {} expired cache entries", expired.len());
             for component in expired {
                 self.entries.remove(&component);
             }
             self.stats.total_entries = self.entries.len();
-            
+
             // Save updated cache
             if let Err(e) = self.save().await {
                 warn!("Failed to save cache after cleanup: {}", e);
             }
         }
-        
+
         self.last_cleanup = Instant::now();
     }
 
     /// Get cache statistics
     pub fn get_stats(&self) -> CacheStats {
         let mut stats = self.stats.clone();
-        
+
         // Calculate hit rate
         let total_requests = stats.hits + stats.misses;
         if total_requests > 0 {
             stats.hit_rate = (stats.hits as f64) / (total_requests as f64);
         }
-        
+
         stats
     }
 
@@ -484,14 +527,16 @@ impl BuildCache {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tempfile::TempDir;
     use std::sync::Arc;
-    
+
+    use tempfile::TempDir;
+
+    use super::*;
+
     // Helper function to create a test ComponentBuildSpec
     fn create_test_spec() -> ComponentBuildSpec {
         ComponentBuildSpec {
-            build_type: rush_build::BuildType::PureDockerImage { 
+            build_type: rush_build::BuildType::PureDockerImage {
                 image_name_with_tag: "test:latest".to_string(),
                 command: None,
                 entrypoint: None,
@@ -532,7 +577,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_dir = temp_dir.path();
         let spec = create_test_spec();
-        
+
         let entry = CacheEntry::new("test:v1".to_string(), spec.clone());
         assert_eq!(entry.image_name, "test:v1");
         assert!(entry.is_valid(&spec, base_dir));
@@ -544,15 +589,17 @@ mod tests {
         let base_dir = temp_dir.path().join("product");
         std::fs::create_dir(&base_dir).unwrap();
         let mut cache = BuildCache::new(temp_dir.path(), &base_dir);
-        
+
         let spec = create_test_spec();
-        
+
         // Test put and get
-        cache.put_with_spec("test".to_string(), "test:v1".to_string(), spec.clone()).await;
-        
+        cache
+            .put_with_spec("test".to_string(), "test:v1".to_string(), spec.clone())
+            .await;
+
         let cached = cache.get("test", &spec).await;
         assert_eq!(cached, Some("test:v1".to_string()));
-        
+
         // Test miss
         let missing_spec = create_test_spec();
         let missing = cache.get("missing", &missing_spec).await;
@@ -565,21 +612,23 @@ mod tests {
         let cache_dir = temp_dir.path();
         let base_dir = temp_dir.path().join("product");
         std::fs::create_dir(&base_dir).unwrap();
-        
+
         let spec = create_test_spec();
-        
+
         // Create and save cache
         {
             let mut cache = BuildCache::new(cache_dir, &base_dir);
-            cache.put_with_spec("test".to_string(), "test:v1".to_string(), spec.clone()).await;
+            cache
+                .put_with_spec("test".to_string(), "test:v1".to_string(), spec.clone())
+                .await;
             cache.save().await.unwrap();
         }
-        
+
         // Load cache in new instance
         {
             let mut cache = BuildCache::new(cache_dir, &base_dir);
             cache.load().await.unwrap();
-            
+
             let cached = cache.get("test", &spec).await;
             assert_eq!(cached, Some("test:v1".to_string()));
         }
@@ -591,12 +640,12 @@ mod tests {
         let base_dir = temp_dir.path().join("product");
         std::fs::create_dir(&base_dir).unwrap();
         let mut cache = BuildCache::new(temp_dir.path(), &base_dir);
-        
+
         // Record some hits and misses
         cache.record_hit();
         cache.record_hit();
         cache.record_miss();
-        
+
         let stats = cache.get_stats();
         assert_eq!(stats.hits, 2);
         assert_eq!(stats.misses, 1);
@@ -608,13 +657,13 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_dir = temp_dir.path().join("product");
         std::fs::create_dir(&base_dir).unwrap();
-        
+
         // Create component directory structure
         let frontend_dir = base_dir.join("frontend/webui");
         std::fs::create_dir_all(&frontend_dir).unwrap();
-        
+
         let mut cache = BuildCache::new(temp_dir.path(), &base_dir);
-        
+
         // Create a spec with location
         let spec = ComponentBuildSpec {
             build_type: rush_build::BuildType::TrunkWasm {
@@ -628,21 +677,34 @@ mod tests {
             component_name: "frontend".to_string(),
             ..create_test_spec()
         };
-        
+
         // Add entry to cache
-        cache.put_with_spec("frontend".to_string(), "frontend:v1".to_string(), spec.clone()).await;
-        
+        cache
+            .put_with_spec(
+                "frontend".to_string(),
+                "frontend:v1".to_string(),
+                spec.clone(),
+            )
+            .await;
+
         // Verify entry exists
-        assert_eq!(cache.get("frontend", &spec).await, Some("frontend:v1".to_string()));
-        
+        assert_eq!(
+            cache.get("frontend", &spec).await,
+            Some("frontend:v1".to_string())
+        );
+
         // Test 1: File change in component directory should invalidate
         let changed_file = base_dir.join("frontend/webui/src/main.rs");
         cache.invalidate_changed(&[changed_file]).await;
-        assert_eq!(cache.get("frontend", &spec).await, None, "Cache should be invalidated for file in component directory");
-        
+        assert_eq!(
+            cache.get("frontend", &spec).await,
+            None,
+            "Cache should be invalidated for file in component directory"
+        );
+
         // Re-add entry for next test
         let spec2 = ComponentBuildSpec {
-            build_type: rush_build::BuildType::TrunkWasm { 
+            build_type: rush_build::BuildType::TrunkWasm {
                 location: "frontend/webui".to_string(),
                 dockerfile_path: "frontend/Dockerfile".to_string(),
                 context_dir: Some("frontend".to_string()),
@@ -653,12 +715,21 @@ mod tests {
             component_name: "frontend".to_string(),
             ..create_test_spec()
         };
-        cache.put_with_spec("frontend".to_string(), "frontend:v2".to_string(), spec2.clone()).await;
-        
+        cache
+            .put_with_spec(
+                "frontend".to_string(),
+                "frontend:v2".to_string(),
+                spec2.clone(),
+            )
+            .await;
+
         // Test 2: File change outside component directory should NOT invalidate
         let unrelated_file = base_dir.join("backend/src/main.rs");
         cache.invalidate_changed(&[unrelated_file]).await;
-        assert_eq!(cache.get("frontend", &spec2).await, Some("frontend:v2".to_string()), 
-            "Cache should NOT be invalidated for file outside component directory");
+        assert_eq!(
+            cache.get("frontend", &spec2).await,
+            Some("frontend:v2".to_string()),
+            "Cache should NOT be invalidated for file outside component directory"
+        );
     }
 }

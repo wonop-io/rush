@@ -19,6 +19,10 @@ path = "src/lib.rs"
 name = "rush"
 path = "src/main.rs"
 
+[features]
+default = []
+profiling = ["tracing-flame"]
+
 [dependencies]
 
 anyhow = { workspace = true }
@@ -26,7 +30,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 console-subscriber = { workspace = true }
-ctrlc = "3.4"
+ctrlc = { workspace = true }
 directories = { workspace = true }
 dotenv = { workspace = true }
 env_logger = { workspace = true }
@@ -51,14 +55,10 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tera = { workspace = true }
 tokio = { workspace = true }
-tracing = "0.1"
-tracing-flame = { version = "0.2", optional = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt", "chrono"] }
+tracing = { workspace = true }
+tracing-flame = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json", "fmt", "chrono"] }
 uuid = { workspace = true }
-
-[features]
-default = []
-profiling = ["tracing-flame"]
 
 [dev-dependencies]
 ctor = { workspace = true }

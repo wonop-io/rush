@@ -1,9 +1,11 @@
 //! Docker client trait definitions
 
-use crate::status::ContainerStatus;
+use std::fmt;
+
 use async_trait::async_trait;
 use rush_core::Result;
-use std::fmt;
+
+use crate::status::ContainerStatus;
 
 /// Defines operations that can be performed on Docker containers
 #[async_trait]
@@ -80,7 +82,7 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
 
     /// Get container by name
     async fn get_container_by_name(&self, name: &str) -> Result<String>;
-    
+
     /// Push a Docker image to a registry
     async fn push_image(&self, image: &str) -> Result<()>;
 

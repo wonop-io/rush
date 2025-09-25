@@ -2,31 +2,33 @@
 //!
 //! This module provides a trait-based approach to building different component types.
 
-use crate::{BuildContext, BuildType, ComponentBuildSpec};
+use std::path::Path;
+
 use async_trait::async_trait;
 use rush_core::{Error, Result};
-use std::path::Path;
+
+use crate::{BuildContext, BuildType, ComponentBuildSpec};
 
 /// Trait for build strategies
 #[async_trait]
 pub trait BuildStrategy: Send + Sync {
     /// Get the name of this build strategy
     fn name(&self) -> &str;
-    
+
     /// Check if this strategy can handle the given build type
     fn can_handle(&self, build_type: &BuildType) -> bool;
-    
+
     /// Validate the build specification
     fn validate(&self, spec: &ComponentBuildSpec) -> Result<()>;
-    
+
     /// Execute the build
     async fn build(&self, spec: &ComponentBuildSpec, context: &BuildContext) -> Result<()>;
-    
+
     /// Check if Docker build is required
     fn requires_docker(&self, spec: &ComponentBuildSpec) -> bool {
         spec.build_type.dockerfile_path().is_some()
     }
-    
+
     /// Get build artifacts location
     fn artifacts_path(&self, spec: &ComponentBuildSpec) -> Option<String> {
         spec.build_type.location().map(|s| s.to_string())
@@ -41,11 +43,11 @@ impl BuildStrategy for RustBinaryStrategy {
     fn name(&self) -> &str {
         "RustBinary"
     }
-    
+
     fn can_handle(&self, build_type: &BuildType) -> bool {
         matches!(build_type, BuildType::RustBinary { .. })
     }
-    
+
     fn validate(&self, spec: &ComponentBuildSpec) -> Result<()> {
         if let BuildType::RustBinary { location, .. } = &spec.build_type {
             // Check if Cargo.toml exists
@@ -59,11 +61,17 @@ impl BuildStrategy for RustBinaryStrategy {
         }
         Ok(())
     }
-    
+
     async fn build(&self, spec: &ComponentBuildSpec, _context: &BuildContext) -> Result<()> {
-        if let BuildType::RustBinary { location, features, precompile_commands, .. } = &spec.build_type {
+        if let BuildType::RustBinary {
+            location,
+            features,
+            precompile_commands,
+            ..
+        } = &spec.build_type
+        {
             log::info!("Building Rust binary at {}", location);
-            
+
             // Run precompile commands if any
             if let Some(commands) = precompile_commands {
                 for cmd in commands {
@@ -75,7 +83,7 @@ impl BuildStrategy for RustBinaryStrategy {
                             command = command.arg(*arg);
                         }
                         command = command.working_dir(location);
-                        
+
                         let output = rush_utils::CommandRunner::run(command).await?;
                         if !output.success() {
                             return Err(Error::Build(format!(
@@ -86,21 +94,18 @@ impl BuildStrategy for RustBinaryStrategy {
                     }
                 }
             }
-            
+
             // Use rush_utils command runner
             let mut cmd = rush_utils::CommandConfig::new("cargo");
-            cmd = cmd
-                .arg("build")
-                .arg("--release")
-                .working_dir(location);
-            
+            cmd = cmd.arg("build").arg("--release").working_dir(location);
+
             // Add features if specified
             if let Some(features) = features {
                 if !features.is_empty() {
                     cmd = cmd.arg("--features").arg(features.join(","));
                 }
             }
-            
+
             let output = rush_utils::CommandRunner::run(cmd).await?;
             if !output.success() {
                 return Err(Error::Build(format!(
@@ -109,7 +114,7 @@ impl BuildStrategy for RustBinaryStrategy {
                 )));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -122,11 +127,11 @@ impl BuildStrategy for TrunkWasmStrategy {
     fn name(&self) -> &str {
         "TrunkWasm"
     }
-    
+
     fn can_handle(&self, build_type: &BuildType) -> bool {
         matches!(build_type, BuildType::TrunkWasm { .. })
     }
-    
+
     fn validate(&self, spec: &ComponentBuildSpec) -> Result<()> {
         if let BuildType::TrunkWasm { location, .. } = &spec.build_type {
             // Check if index.html exists
@@ -140,11 +145,17 @@ impl BuildStrategy for TrunkWasmStrategy {
         }
         Ok(())
     }
-    
+
     async fn build(&self, spec: &ComponentBuildSpec, _context: &BuildContext) -> Result<()> {
-        if let BuildType::TrunkWasm { location, features, precompile_commands, .. } = &spec.build_type {
+        if let BuildType::TrunkWasm {
+            location,
+            features,
+            precompile_commands,
+            ..
+        } = &spec.build_type
+        {
             log::info!("Building Trunk WASM at {}", location);
-            
+
             // Run precompile commands if any
             if let Some(commands) = precompile_commands {
                 for cmd in commands {
@@ -156,7 +167,7 @@ impl BuildStrategy for TrunkWasmStrategy {
                             command = command.arg(*arg);
                         }
                         command = command.working_dir(location);
-                        
+
                         let output = rush_utils::CommandRunner::run(command).await?;
                         if !output.success() {
                             return Err(Error::Build(format!(
@@ -167,13 +178,10 @@ impl BuildStrategy for TrunkWasmStrategy {
                     }
                 }
             }
-            
+
             let mut cmd = rush_utils::CommandConfig::new("trunk");
-            cmd = cmd
-                .arg("build")
-                .arg("--release")
-                .working_dir(location);
-            
+            cmd = cmd.arg("build").arg("--release").working_dir(location);
+
             // Add features if specified
             if let Some(features) = features {
                 if !features.is_empty() {
@@ -183,7 +191,7 @@ impl BuildStrategy for TrunkWasmStrategy {
                     }
                 }
             }
-            
+
             let output = rush_utils::CommandRunner::run(cmd).await?;
             if !output.success() {
                 return Err(Error::Build(format!(
@@ -192,7 +200,7 @@ impl BuildStrategy for TrunkWasmStrategy {
                 )));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -205,39 +213,39 @@ impl BuildStrategy for ScriptStrategy {
     fn name(&self) -> &str {
         "Script"
     }
-    
+
     fn can_handle(&self, build_type: &BuildType) -> bool {
         matches!(build_type, BuildType::Script { .. })
     }
-    
+
     fn validate(&self, spec: &ComponentBuildSpec) -> Result<()> {
         // Script builds require either a build command in the spec or a Dockerfile
         if spec.build.is_none() && spec.build_type.dockerfile_path().is_none() {
             return Err(Error::Build(
-                "Script build type requires either 'build' command or Dockerfile".to_string()
+                "Script build type requires either 'build' command or Dockerfile".to_string(),
             ));
         }
         Ok(())
     }
-    
+
     async fn build(&self, spec: &ComponentBuildSpec, _context: &BuildContext) -> Result<()> {
         if let BuildType::Script { location, .. } = &spec.build_type {
             // Check if there's a custom build command
             if let Some(build_cmd) = &spec.build {
                 log::info!("Running build script: {}", build_cmd);
-                
+
                 // Parse command
                 let parts: Vec<&str> = build_cmd.split_whitespace().collect();
                 if parts.is_empty() {
                     return Err(Error::Build("Empty build command".to_string()));
                 }
-                
+
                 let mut cmd = rush_utils::CommandConfig::new(parts[0]);
                 for arg in &parts[1..] {
                     cmd = cmd.arg(*arg);
                 }
                 cmd = cmd.working_dir(location);
-                
+
                 let output = rush_utils::CommandRunner::run(cmd).await?;
                 if !output.success() {
                     return Err(Error::Build(format!(
@@ -259,26 +267,32 @@ impl BuildStrategy for DockerImageStrategy {
     fn name(&self) -> &str {
         "PureDockerImage"
     }
-    
+
     fn can_handle(&self, build_type: &BuildType) -> bool {
         matches!(build_type, BuildType::PureDockerImage { .. })
     }
-    
+
     fn validate(&self, spec: &ComponentBuildSpec) -> Result<()> {
-        if let BuildType::PureDockerImage { image_name_with_tag, .. } = &spec.build_type {
+        if let BuildType::PureDockerImage {
+            image_name_with_tag,
+            ..
+        } = &spec.build_type
+        {
             if image_name_with_tag.is_empty() {
-                return Err(Error::Build("PureDockerImage requires an image name".to_string()));
+                return Err(Error::Build(
+                    "PureDockerImage requires an image name".to_string(),
+                ));
             }
         }
         Ok(())
     }
-    
+
     async fn build(&self, spec: &ComponentBuildSpec, _context: &BuildContext) -> Result<()> {
         // Docker image build is handled separately by the image builder
         log::info!("Docker image build for {}", spec.component_name);
         Ok(())
     }
-    
+
     fn requires_docker(&self, _spec: &ComponentBuildSpec) -> bool {
         true
     }
@@ -292,20 +306,23 @@ impl BuildStrategy for LocalServiceStrategy {
     fn name(&self) -> &str {
         "LocalService"
     }
-    
+
     fn can_handle(&self, build_type: &BuildType) -> bool {
         matches!(build_type, BuildType::LocalService { .. })
     }
-    
+
     fn validate(&self, _spec: &ComponentBuildSpec) -> Result<()> {
         Ok(())
     }
-    
+
     async fn build(&self, spec: &ComponentBuildSpec, _context: &BuildContext) -> Result<()> {
-        log::debug!("LocalService {} doesn't require building", spec.component_name);
+        log::debug!(
+            "LocalService {} doesn't require building",
+            spec.component_name
+        );
         Ok(())
     }
-    
+
     fn requires_docker(&self, _spec: &ComponentBuildSpec) -> bool {
         false
     }
@@ -326,15 +343,15 @@ impl BuildStrategyRegistry {
             Box::new(DockerImageStrategy),
             Box::new(LocalServiceStrategy),
         ];
-        
+
         Self { strategies }
     }
-    
+
     /// Register a custom build strategy
     pub fn register(&mut self, strategy: Box<dyn BuildStrategy>) {
         self.strategies.push(strategy);
     }
-    
+
     /// Find a strategy for the given build type
     pub fn find_strategy(&self, build_type: &BuildType) -> Option<&dyn BuildStrategy> {
         self.strategies
@@ -342,18 +359,19 @@ impl BuildStrategyRegistry {
             .find(|s| s.can_handle(build_type))
             .map(|s| s.as_ref())
     }
-    
+
     /// Build a component using the appropriate strategy
     pub async fn build(&self, spec: &ComponentBuildSpec, context: &BuildContext) -> Result<()> {
-        let strategy = self.find_strategy(&spec.build_type)
-            .ok_or_else(|| Error::Build(format!(
+        let strategy = self.find_strategy(&spec.build_type).ok_or_else(|| {
+            Error::Build(format!(
                 "No build strategy found for component {}",
                 spec.component_name
-            )))?;
-        
+            ))
+        })?;
+
         strategy.validate(spec)?;
         strategy.build(spec, context).await?;
-        
+
         Ok(())
     }
 }

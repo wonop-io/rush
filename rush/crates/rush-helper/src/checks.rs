@@ -1,6 +1,8 @@
-use crate::error::{HelperError, HelperResult};
 use std::process::Command;
+
 use which::which;
+
+use crate::error::{HelperError, HelperResult};
 
 pub fn check_all_requirements() -> HelperResult<()> {
     let mut errors = Vec::new();

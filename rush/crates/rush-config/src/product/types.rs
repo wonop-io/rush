@@ -1,8 +1,9 @@
-use log::trace;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use log::trace;
+use serde::{Deserialize, Serialize};
 
 /// Represents a product in the Rush CLI ecosystem.
 #[derive(Debug, Clone, Serialize, Deserialize)]

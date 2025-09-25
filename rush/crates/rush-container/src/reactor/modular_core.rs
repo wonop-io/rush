@@ -1,30 +1,28 @@
 //! Modular container reactor implementation
 //!
-//! This module provides the new modular reactor that integrates all the 
+//! This module provides the new modular reactor that integrates all the
 //! extracted components from previous phases.
 
-use crate::{
-    ContainerService,
-    events::{EventBus, Event, ContainerEvent},
-    simple_lifecycle::{SimpleLifecycleManager, SimpleLifecycleConfig},
-    build::{BuildOrchestrator, BuildOrchestratorConfig},
-    watcher::{WatcherCoordinator, CoordinatorConfig, WatchResult},
-    dependency_graph::DependencyGraph,
-    reactor::{
-        config::ContainerReactorConfig,
-        state::{SharedReactorState, ReactorPhase},
-    },
-};
-use rush_build::{ComponentBuildSpec, BuildType};
-use rush_core::error::{Error, Result};
-use rush_core::shutdown::{self, ShutdownEvent, ShutdownPhase};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use std::collections::{HashMap, HashSet};
-use tokio::sync::broadcast;
-use log::{info, debug, error, warn};
+
+use log::{debug, error, info, warn};
+use rush_build::{BuildType, ComponentBuildSpec};
+use rush_core::error::{Error, Result};
+use rush_core::shutdown::{self, ShutdownEvent, ShutdownPhase};
 use tera;
+use tokio::sync::broadcast;
 use tracing::instrument;
+
+use crate::build::{BuildOrchestrator, BuildOrchestratorConfig};
+use crate::dependency_graph::DependencyGraph;
+use crate::events::{ContainerEvent, Event, EventBus};
+use crate::reactor::config::ContainerReactorConfig;
+use crate::reactor::state::{ReactorPhase, SharedReactorState};
+use crate::simple_lifecycle::{SimpleLifecycleConfig, SimpleLifecycleManager};
+use crate::watcher::{CoordinatorConfig, WatchResult, WatcherCoordinator};
+use crate::ContainerService;
 
 /// Docker registry configuration
 #[derive(Debug, Clone)]
@@ -54,7 +52,7 @@ impl Default for RegistryConfig {
 }
 
 /// Configuration for the modular reactor
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ModularReactorConfig {
     /// Base reactor configuration
     pub base: ContainerReactorConfig,
@@ -66,18 +64,6 @@ pub struct ModularReactorConfig {
     pub watcher: CoordinatorConfig,
     /// Docker registry configuration
     pub registry: RegistryConfig,
-}
-
-impl Default for ModularReactorConfig {
-    fn default() -> Self {
-        Self {
-            base: ContainerReactorConfig::default(),
-            lifecycle: SimpleLifecycleConfig::default(),
-            build: BuildOrchestratorConfig::default(),
-            watcher: CoordinatorConfig::default(),
-            registry: RegistryConfig::default(),
-        }
-    }
 }
 
 /// Primary container reactor that manages container lifecycle and coordinates rebuilds
@@ -149,7 +135,7 @@ impl Reactor {
         let vault: Arc<std::sync::Mutex<dyn rush_security::Vault + Send>> =
             Arc::new(std::sync::Mutex::new(rush_security::FileVault::new(
                 std::path::PathBuf::from(".rush/vault"),
-                None
+                None,
             )));
 
         let lifecycle_manager = SimpleLifecycleManager::new(
@@ -160,16 +146,14 @@ impl Reactor {
         );
 
         // Create build orchestrator with the provided toolchain
-        let build_orchestrator = Arc::new(
-            BuildOrchestrator::with_toolchain(
-                config.build.clone(),
-                lifecycle_manager.docker_client(),
-                event_bus.clone(),
-                state.clone(),
-                toolchain,
-            )
-        );
-        
+        let build_orchestrator = Arc::new(BuildOrchestrator::with_toolchain(
+            config.build.clone(),
+            lifecycle_manager.docker_client(),
+            event_bus.clone(),
+            state.clone(),
+            toolchain,
+        ));
+
         // Create file watcher coordinator
         // Always create watcher for automatic rebuilds during development
         let watcher_coordinator = {
@@ -180,12 +164,14 @@ impl Reactor {
                 .with_shutdown_sender(shutdown_sender.clone())
                 .with_base_dir(config.base.product_dir.clone())
                 .build()
-                .map_err(|e| Error::Internal(format!("Failed to create watcher coordinator: {}", e)))?;
-            
+                .map_err(|e| {
+                    Error::Internal(format!("Failed to create watcher coordinator: {e}"))
+                })?;
+
             coordinator.init(component_specs.clone()).await;
             Some(coordinator)
         };
-        
+
         let mut reactor = Self {
             config,
             event_bus,
@@ -199,38 +185,39 @@ impl Reactor {
             component_specs: component_specs.clone(),
             built_images: std::collections::HashMap::new(),
             force_rebuild: false,
-            output_sink: Arc::new(tokio::sync::Mutex::new(
-                Box::new(rush_output::simple::StdoutSink::new()),
-            )),
+            output_sink: Arc::new(tokio::sync::Mutex::new(Box::new(
+                rush_output::simple::StdoutSink::new(),
+            ))),
             k8s_manifest_dir: None,
             vault: None,
             secrets_encoder: None,
             deployment_versions: Vec::new(),
         };
-        
+
         // Initialize state with component specs
         reactor.initialize_state(component_specs).await?;
-        
+
         info!("Modular reactor initialized successfully");
         Ok(reactor)
     }
-    
+
     /// Initialize reactor state with component specifications
     async fn initialize_state(&mut self, component_specs: Vec<ComponentBuildSpec>) -> Result<()> {
         let mut state = self.state.write().await;
-        
+
         // Set component specifications
         for spec in component_specs {
-            let mut component_state = crate::reactor::state::ComponentState::new(spec.component_name.clone());
+            let mut component_state =
+                crate::reactor::state::ComponentState::new(spec.component_name.clone());
             component_state.build_spec = Some(spec);
             state.add_component(component_state);
         }
-        
+
         // The state already starts in Idle, no need to transition
-        
+
         Ok(())
     }
-    
+
     /// Start the reactor and begin processing
     #[instrument(level = "info", skip(self))]
     pub async fn start(&mut self) -> Result<()> {
@@ -249,24 +236,40 @@ impl Reactor {
 
         // Record phase transition timing
         crate::profiling::global_tracker()
-            .record_with_component("reactor_phase_transition", "Starting", phase_start.elapsed())
+            .record_with_component(
+                "reactor_phase_transition",
+                "Starting",
+                phase_start.elapsed(),
+            )
             .await;
-        
+
         // Propagate output sink to build orchestrator and lifecycle manager
         let sink_start = std::time::Instant::now();
-        self.build_orchestrator.set_output_sink(self.output_sink.clone()).await;
-        self.lifecycle_manager.set_output_sink(self.output_sink.clone()).await;
+        self.build_orchestrator
+            .set_output_sink(self.output_sink.clone())
+            .await;
+        self.lifecycle_manager
+            .set_output_sink(self.output_sink.clone())
+            .await;
         crate::profiling::global_tracker()
-            .record_with_component("reactor_setup", "output_sink_propagation", sink_start.elapsed())
+            .record_with_component(
+                "reactor_setup",
+                "output_sink_propagation",
+                sink_start.elapsed(),
+            )
             .await;
 
         // Docker health check removed - SimpleDocker handles this internally
-        
+
         // Start lifecycle manager
         let lifecycle_start = std::time::Instant::now();
         self.lifecycle_manager.start().await?;
         crate::profiling::global_tracker()
-            .record_with_component("reactor_setup", "lifecycle_manager_start", lifecycle_start.elapsed())
+            .record_with_component(
+                "reactor_setup",
+                "lifecycle_manager_start",
+                lifecycle_start.elapsed(),
+            )
             .await;
 
         // Setup and start file watching with watch patterns
@@ -278,7 +281,7 @@ impl Reactor {
         crate::profiling::global_tracker()
             .record_with_component("reactor_setup", "watcher_setup", watcher_start.elapsed())
             .await;
-        
+
         // Transition to running phase
         let running_transition = std::time::Instant::now();
         {
@@ -286,19 +289,23 @@ impl Reactor {
             state.transition_to(ReactorPhase::Running)?;
         }
         crate::profiling::global_tracker()
-            .record_with_component("reactor_phase_transition", "Running", running_transition.elapsed())
+            .record_with_component(
+                "reactor_phase_transition",
+                "Running",
+                running_transition.elapsed(),
+            )
             .await;
-        
+
         // Publish startup event
-        let _ = self.event_bus.publish(Event::new(
-            "reactor",
-            ContainerEvent::ReactorStarted,
-        )).await;
-        
+        let _ = self
+            .event_bus
+            .publish(Event::new("reactor", ContainerEvent::ReactorStarted))
+            .await;
+
         info!("Modular reactor started successfully");
         Ok(())
     }
-    
+
     /// Main processing loop
     pub async fn run(&mut self) -> Result<()> {
         info!("Modular reactor entering main processing loop");
@@ -347,9 +354,9 @@ impl Reactor {
                 } => {
                     match watch_result {
                         WatchResult::Rebuild(batch) => {
-                            info!("File changes detected, triggering rebuild for {} components", 
+                            info!("File changes detected, triggering rebuild for {} components",
                                 batch.affected_components.len());
-                            
+
                             if let Err(e) = self.handle_rebuild(batch).await {
                                 error!("Rebuild failed: {}", e);
                                 // Build failure is handled in handle_rebuild - containers are stopped
@@ -371,19 +378,29 @@ impl Reactor {
                 }
             }
         }
-        
+
         info!("Modular reactor exiting main loop, initiating shutdown");
-        
+
         // Perform cleanup
         self.shutdown().await?;
-        
+
         Ok(())
     }
-    
+
     /// Handle rebuild request for specific components
-    #[instrument(level = "debug", skip(self, batch), fields(operation = "handle_rebuild"))]
-    async fn handle_rebuild(&mut self, mut batch: crate::watcher::handler::ChangeBatch) -> Result<()> {
-        debug!("Handling rebuild for components: {:?}", batch.affected_components);
+    #[instrument(
+        level = "debug",
+        skip(self, batch),
+        fields(operation = "handle_rebuild")
+    )]
+    async fn handle_rebuild(
+        &mut self,
+        mut batch: crate::watcher::handler::ChangeBatch,
+    ) -> Result<()> {
+        debug!(
+            "Handling rebuild for components: {:?}",
+            batch.affected_components
+        );
 
         // Find all downstream components that depend on the affected components
         let downstream_components = if !batch.affected_components.is_empty() {
@@ -401,17 +418,25 @@ impl Reactor {
             // Filter out LocalService components
             let docker_specs: Vec<rush_build::ComponentBuildSpec> = component_specs
                 .iter()
-                .filter(|spec| !matches!(spec.build_type, rush_build::BuildType::LocalService { .. }))
+                .filter(|spec| {
+                    !matches!(spec.build_type, rush_build::BuildType::LocalService { .. })
+                })
                 .cloned()
                 .collect();
 
-            if let Ok(dep_graph) = DependencyGraph::from_specs_with_local_services(docker_specs, &local_services) {
-                let affected_set: HashSet<String> = batch.affected_components.iter().cloned().collect();
+            if let Ok(dep_graph) =
+                DependencyGraph::from_specs_with_local_services(docker_specs, &local_services)
+            {
+                let affected_set: HashSet<String> =
+                    batch.affected_components.iter().cloned().collect();
                 let downstream = dep_graph.get_all_downstream_components(&affected_set);
 
                 if !downstream.is_empty() {
-                    info!("Found {} downstream components that depend on affected components: {:?}",
-                          downstream.len(), downstream);
+                    info!(
+                        "Found {} downstream components that depend on affected components: {:?}",
+                        downstream.len(),
+                        downstream
+                    );
                 }
 
                 downstream
@@ -424,7 +449,10 @@ impl Reactor {
 
         // Add downstream components to the rebuild batch
         if !downstream_components.is_empty() {
-            info!("🔄 CASCADE RESTART: Including {} downstream components in rebuild", downstream_components.len());
+            info!(
+                "🔄 CASCADE RESTART: Including {} downstream components in rebuild",
+                downstream_components.len()
+            );
             for component in &downstream_components {
                 info!("  └─> {} will be restarted due to dependency", component);
             }
@@ -443,22 +471,31 @@ impl Reactor {
                 return Ok(()); // Skip rebuild
             }
         }
-        
+
         // Mark rebuild started in watcher
         if let Some(watcher) = &self.watcher_coordinator {
             watcher.mark_rebuild_started().await;
         }
-        
+
         // Invalidate cache based on changed files
-        let all_changed_files: Vec<std::path::PathBuf> = batch.modified.iter()
+        let all_changed_files: Vec<std::path::PathBuf> = batch
+            .modified
+            .iter()
             .chain(batch.created.iter())
             .chain(batch.deleted.iter())
             .cloned()
             .collect();
-        
+
         if !all_changed_files.is_empty() {
-            info!("Invalidating cache for {} changed files", all_changed_files.len());
-            if let Err(e) = self.build_orchestrator.invalidate_cache_for_files(&all_changed_files).await {
+            info!(
+                "Invalidating cache for {} changed files",
+                all_changed_files.len()
+            );
+            if let Err(e) = self
+                .build_orchestrator
+                .invalidate_cache_for_files(&all_changed_files)
+                .await
+            {
                 warn!("Failed to invalidate cache: {}", e);
                 // Continue with rebuild even if cache invalidation fails
             }
@@ -481,7 +518,10 @@ impl Reactor {
 
         // Stop affected containers before rebuilding
         // We need to stop in reverse dependency order (dependents first)
-        info!("Stopping {} affected components before rebuild", batch.affected_components.len());
+        info!(
+            "Stopping {} affected components before rebuild",
+            batch.affected_components.len()
+        );
         for component_name in &batch.affected_components {
             if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
                 warn!("Failed to stop component {}: {}", component_name, e);
@@ -491,7 +531,9 @@ impl Reactor {
         // Get component specs for affected components (to check if they exist)
         let affected_specs = {
             let state = self.state.read().await;
-            batch.affected_components.iter()
+            batch
+                .affected_components
+                .iter()
                 .filter_map(|name| state.get_component(name))
                 .filter_map(|comp| comp.build_spec.as_ref().cloned())
                 .collect::<Vec<_>>()
@@ -509,40 +551,51 @@ impl Reactor {
 
         // Pass ALL component specs to build orchestrator so artifact rendering has full context
         // The orchestrator will only build the affected components based on cache/image checks
-        let build_result = self.build_orchestrator.build_components(self.component_specs.clone(), false).await;
-        
+        let build_result = self
+            .build_orchestrator
+            .build_components(self.component_specs.clone(), false)
+            .await;
+
         match build_result {
             Ok(successful_builds) => {
-                info!("Build completed successfully for {} components", successful_builds.len());
-                
+                info!(
+                    "Build completed successfully for {} components",
+                    successful_builds.len()
+                );
+
                 // Update built images
                 for (name, image) in &successful_builds {
                     self.built_images.insert(name.clone(), image.clone());
                 }
-                
+
                 // Recreate services from updated specs
                 self.create_services_from_specs()?;
-                
+
                 // Start the rebuilt components using start_services
                 // This will actually create the Docker containers
-                let services_to_start: Vec<ContainerService> = self.services.iter()
+                let services_to_start: Vec<ContainerService> = self
+                    .services
+                    .iter()
                     .filter(|s| successful_builds.contains_key(&s.name))
                     .map(|s| s.inner().clone())
                     .collect();
 
                 if !services_to_start.is_empty() {
-                    let running_services = self.lifecycle_manager.start_services_with_dependencies(
-                        services_to_start,
-                        &self.component_specs,
-                        &self.built_images,
-                    ).await?;
+                    let running_services = self
+                        .lifecycle_manager
+                        .start_services_with_dependencies(
+                            services_to_start,
+                            &self.component_specs,
+                            &self.built_images,
+                        )
+                        .await?;
 
                     info!("Started {} rebuilt containers", running_services.len());
 
                     // Update our services with the actual container IDs
                     self.update_service_container_ids(&running_services);
                 }
-                
+
                 // Clear invalidated components after successful build
                 {
                     let mut cache_guard = self.build_orchestrator.cache.lock().await;
@@ -558,62 +611,81 @@ impl Reactor {
                 }
 
                 // Publish build success event
-                let _ = self.event_bus.publish(Event::new(
-                    "reactor",
-                    ContainerEvent::BuildCompleted {
-                        component: format!("{} components", successful_builds.len()),
-                        success: true,
-                        duration: Duration::from_secs(0), // TODO: track actual duration
-                        error: None,
-                    },
-                )).await;
-                
+                let _ = self
+                    .event_bus
+                    .publish(Event::new(
+                        "reactor",
+                        ContainerEvent::BuildCompleted {
+                            component: format!("{} components", successful_builds.len()),
+                            success: true,
+                            duration: Duration::from_secs(0), // TODO: track actual duration
+                            error: None,
+                        },
+                    ))
+                    .await;
+
                 Ok(())
             }
             Err(e) => {
                 error!("Build failed: {}", e);
-                
+
                 // Record error but stay in current state
                 {
                     let mut state = self.state.write().await;
-                    state.record_error(format!("Build failed: {}", e));
+                    state.record_error(format!("Build failed: {e}"));
                     // Try to transition back to running if we were rebuilding
                     if state.phase() == &ReactorPhase::Rebuilding {
                         state.transition_to(ReactorPhase::Running)?;
                     }
                 }
-                
+
                 // Publish build failure event
-                let _ = self.event_bus.publish(Event::new(
-                    "reactor",
-                    ContainerEvent::BuildCompleted {
-                        component: "multiple".to_string(),
-                        success: false,
-                        duration: Duration::from_secs(0),
-                        error: Some(e.to_string()),
-                    },
-                )).await;
-                
+                let _ = self
+                    .event_bus
+                    .publish(Event::new(
+                        "reactor",
+                        ContainerEvent::BuildCompleted {
+                            component: "multiple".to_string(),
+                            success: false,
+                            duration: Duration::from_secs(0),
+                            error: Some(e.to_string()),
+                        },
+                    ))
+                    .await;
+
                 // For development workflow: ensure no containers are running for failed components
                 // This prevents confusing behavior where old containers might still be running
                 for component_name in &batch.affected_components {
                     if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
-                        warn!("Failed to ensure component {} is stopped after build failure: {}", component_name, e);
+                        warn!(
+                            "Failed to ensure component {} is stopped after build failure: {}",
+                            component_name, e
+                        );
                     }
                 }
-                
-                info!("Build failed for {} components, all containers stopped", batch.affected_components.len());
-                
+
+                info!(
+                    "Build failed for {} components, all containers stopped",
+                    batch.affected_components.len()
+                );
+
                 Err(e)
             }
         }
     }
-    
+
     /// Handle manual rebuild request (not triggered by file changes)
     #[instrument(level = "info", skip(self, components), fields(force_rebuild = %force_rebuild))]
-    async fn handle_manual_rebuild(&mut self, components: std::collections::HashSet<String>, force_rebuild: bool) -> Result<()> {
-        debug!("Handling manual rebuild for components: {:?}, force: {}", components, force_rebuild);
-        
+    async fn handle_manual_rebuild(
+        &mut self,
+        components: std::collections::HashSet<String>,
+        force_rebuild: bool,
+    ) -> Result<()> {
+        debug!(
+            "Handling manual rebuild for components: {:?}, force: {}",
+            components, force_rebuild
+        );
+
         // Transition to rebuilding phase
         {
             let mut state = self.state.write().await;
@@ -626,7 +698,7 @@ impl Reactor {
                 return Ok(()); // Skip rebuild
             }
         }
-        
+
         // Stop affected containers before rebuilding
         for component_name in &components {
             if let Err(e) = self.lifecycle_manager.stop_component(component_name).await {
@@ -637,7 +709,8 @@ impl Reactor {
         // Verify that the affected components exist
         let affected_specs = {
             let state = self.state.read().await;
-            components.iter()
+            components
+                .iter()
                 .filter_map(|name| state.get_component(name))
                 .filter_map(|comp| comp.build_spec.as_ref().cloned())
                 .collect::<Vec<_>>()
@@ -650,84 +723,101 @@ impl Reactor {
 
         // Pass ALL component specs to build orchestrator so artifact rendering has full context
         // The orchestrator will only build the affected components based on force_rebuild flag
-        let build_result = self.build_orchestrator.build_components(self.component_specs.clone(), force_rebuild).await;
-        
+        let build_result = self
+            .build_orchestrator
+            .build_components(self.component_specs.clone(), force_rebuild)
+            .await;
+
         match build_result {
             Ok(successful_builds) => {
-                info!("Manual build completed successfully for {} components", successful_builds.len());
-                
+                info!(
+                    "Manual build completed successfully for {} components",
+                    successful_builds.len()
+                );
+
                 // Update built images
                 for (name, image) in &successful_builds {
                     self.built_images.insert(name.clone(), image.clone());
                 }
-                
+
                 // Recreate services from updated specs
                 self.create_services_from_specs()?;
 
                 // Start only the rebuilt components
-                let services_to_start: Vec<ContainerService> = self.services.iter()
+                let services_to_start: Vec<ContainerService> = self
+                    .services
+                    .iter()
                     .filter(|s| successful_builds.contains_key(&s.name))
                     .map(|s| s.inner().clone())
                     .collect();
 
                 if !services_to_start.is_empty() {
                     // Start the services with dependency-aware ordering
-                    let running_services = self.lifecycle_manager.start_services_with_dependencies(
-                        services_to_start,
-                        &self.component_specs,
-                        &successful_builds,
-                    ).await?;
+                    let running_services = self
+                        .lifecycle_manager
+                        .start_services_with_dependencies(
+                            services_to_start,
+                            &self.component_specs,
+                            &successful_builds,
+                        )
+                        .await?;
 
                     info!("Started {} rebuilt containers", running_services.len());
 
                     // Update our services with the actual container IDs
                     self.update_service_container_ids(&running_services);
                 }
-                
+
                 // Publish build success event
-                let _ = self.event_bus.publish(Event::new(
-                    "build",
-                    ContainerEvent::BuildCompleted {
-                        component: "all".to_string(),
-                        success: true,
-                        duration: std::time::Duration::from_secs(0), // TODO: Track actual duration
-                        error: None,
-                    },
-                )).await;
-                
+                let _ = self
+                    .event_bus
+                    .publish(Event::new(
+                        "build",
+                        ContainerEvent::BuildCompleted {
+                            component: "all".to_string(),
+                            success: true,
+                            duration: std::time::Duration::from_secs(0), // TODO: Track actual duration
+                            error: None,
+                        },
+                    ))
+                    .await;
+
                 // Transition back to running phase
                 {
                     let mut state = self.state.write().await;
                     state.transition_to(ReactorPhase::Running)?;
                 }
-                
+
                 Ok(())
             }
             Err(e) => {
                 error!("Manual build failed: {}", e);
-                
+
                 // Publish build failure event
-                let _ = self.event_bus.publish(Event::new(
-                    "build",
-                    ContainerEvent::BuildCompleted {
-                        component: "all".to_string(),
-                        success: false,
-                        duration: std::time::Duration::from_secs(0),
-                        error: Some(e.to_string()),
-                    },
-                )).await;
-                
+                let _ = self
+                    .event_bus
+                    .publish(Event::new(
+                        "build",
+                        ContainerEvent::BuildCompleted {
+                            component: "all".to_string(),
+                            success: false,
+                            duration: std::time::Duration::from_secs(0),
+                            error: Some(e.to_string()),
+                        },
+                    ))
+                    .await;
+
                 Err(e)
             }
         }
     }
-    
+
     /// Trigger a manual rebuild of all components
     #[instrument(level = "info", skip(self), fields(operation = "rebuild_all"))]
     pub async fn rebuild_all(&mut self) -> Result<()> {
         self.rebuild_all_with_force(self.force_rebuild).await
     }
-    
+
     /// Trigger a manual rebuild of all components with optional force
     pub async fn rebuild_all_with_force(&mut self, force_rebuild: bool) -> Result<()> {
         if force_rebuild {
@@ -735,19 +825,19 @@ impl Reactor {
         } else {
             info!("Manual rebuild of all components requested (force: false)");
         }
-        
+
         let component_names: std::collections::HashSet<String> = {
             let state = self.state.read().await;
             let names = state.components().keys().cloned().collect();
             info!("Found {} components in state", state.components().len());
             names
         };
-        
+
         if component_names.is_empty() {
             warn!("No components found in state - nothing to build");
             return Ok(());
         }
-        
+
         // Check if this is an initial build (Idle state) or a rebuild (Running state)
         let current_phase = {
             let state = self.state.read().await;
@@ -755,7 +845,7 @@ impl Reactor {
             info!("Current reactor phase: {:?}", phase);
             phase
         };
-        
+
         match current_phase {
             ReactorPhase::Idle => {
                 // Initial build
@@ -763,7 +853,8 @@ impl Reactor {
             }
             ReactorPhase::Running => {
                 // Manual rebuild (not triggered by file changes)
-                self.handle_manual_rebuild(component_names, force_rebuild).await
+                self.handle_manual_rebuild(component_names, force_rebuild)
+                    .await
             }
             _ => {
                 warn!("Cannot rebuild in current phase: {:?}", current_phase);
@@ -771,95 +862,114 @@ impl Reactor {
             }
         }
     }
-    
+
     /// Handle initial build of all components (from Idle state)
     async fn initial_build(&mut self, components: std::collections::HashSet<String>) -> Result<()> {
-        info!("Performing initial build for {} components", components.len());
-        
+        info!(
+            "Performing initial build for {} components",
+            components.len()
+        );
+
         // Transition from Idle to Building
         {
             let mut state = self.state.write().await;
             state.transition_to(ReactorPhase::Building)?;
         }
-        
+
         // Get component specs
         let component_specs = {
             let state = self.state.read().await;
-            components.iter()
+            components
+                .iter()
                 .filter_map(|name| state.get_component(name))
                 .filter_map(|comp| comp.build_spec.as_ref().cloned())
                 .collect::<Vec<_>>()
         };
-        
-        let build_result = self.build_orchestrator.build_components(component_specs, false).await;
-        
+
+        let build_result = self
+            .build_orchestrator
+            .build_components(component_specs, false)
+            .await;
+
         match build_result {
             Ok(successful_builds) => {
-                info!("Initial build completed successfully for {} components", successful_builds.len());
-                
+                info!(
+                    "Initial build completed successfully for {} components",
+                    successful_builds.len()
+                );
+
                 // Store built images
                 self.built_images = successful_builds.clone();
-                
+
                 // Create services from built images
                 self.create_services_from_specs()?;
-                
+
                 // Start the services using lifecycle manager with dependency awareness
-                let running_services = self.lifecycle_manager.start_services_with_dependencies(
-                    self.services.iter().map(|s| s.inner().clone()).collect(),
-                    &self.component_specs,
-                    &self.built_images,
-                ).await?;
+                let running_services = self
+                    .lifecycle_manager
+                    .start_services_with_dependencies(
+                        self.services.iter().map(|s| s.inner().clone()).collect(),
+                        &self.component_specs,
+                        &self.built_images,
+                    )
+                    .await?;
 
                 info!("Started {} services", running_services.len());
 
                 // Update our services with the actual container IDs
                 self.update_service_container_ids(&running_services);
-                
+
                 // Transition to Starting (not directly to Running)
                 {
                     let mut state = self.state.write().await;
                     state.transition_to(ReactorPhase::Starting)?;
                 }
-                
+
                 // Publish build success event
-                let _ = self.event_bus.publish(Event::new(
-                    "reactor",
-                    ContainerEvent::BuildCompleted {
-                        component: format!("{} components", successful_builds.len()),
-                        success: true,
-                        duration: Duration::from_secs(0),
-                        error: None,
-                    },
-                )).await;
-                
+                let _ = self
+                    .event_bus
+                    .publish(Event::new(
+                        "reactor",
+                        ContainerEvent::BuildCompleted {
+                            component: format!("{} components", successful_builds.len()),
+                            success: true,
+                            duration: Duration::from_secs(0),
+                            error: None,
+                        },
+                    ))
+                    .await;
+
                 Ok(())
             }
             Err(e) => {
                 error!("Initial build failed: {}", e);
-                
+
                 // Record error and transition to Error state
                 {
                     let mut state = self.state.write().await;
-                    state.record_error(format!("Initial build failed: {}", e));
+                    state.record_error(format!("Initial build failed: {e}"));
                     state.transition_to(ReactorPhase::Error)?;
                 }
-                
+
                 // Publish build failure event
-                let _ = self.event_bus.publish(Event::new(
-                    "reactor",
-                    ContainerEvent::BuildCompleted {
-                        component: "multiple".to_string(),
-                        success: false,
-                        duration: Duration::from_secs(0),
-                        error: Some(e.to_string()),
-                    },
-                )).await;
-                
+                let _ = self
+                    .event_bus
+                    .publish(Event::new(
+                        "reactor",
+                        ContainerEvent::BuildCompleted {
+                            component: "multiple".to_string(),
+                            success: false,
+                            duration: Duration::from_secs(0),
+                            error: Some(e.to_string()),
+                        },
+                    ))
+                    .await;
+
                 Err(e)
             }
         }
     }
-    
+
     /// Get current reactor status
     pub async fn status(&self) -> ReactorStatus {
         let state = self.state.read().await;
@@ -874,7 +984,7 @@ impl Reactor {
             metrics_report: None,
         }
     }
-    
+
     /// Initiate shutdown - simplified to just kill processes
     pub async fn shutdown(&mut self) -> Result<()> {
         info!("Initiating reactor shutdown - killing all containers");
@@ -933,35 +1043,40 @@ impl Reactor {
     pub fn event_bus(&self) -> &EventBus {
         &self.event_bus
     }
-    
+
     /// Get shared state for external access
     pub fn state(&self) -> &SharedReactorState {
         &self.state
     }
-    
+
     /// Create services from component specs and built images
     fn create_services_from_specs(&mut self) -> Result<()> {
         self.services.clear();
-        
+
         for spec in &self.component_specs {
             // Skip components that don't require Docker builds (LocalService, PureKubernetes, etc.)
             if !spec.build_type.requires_docker_build() {
                 continue;
             }
-            
+
             // Get the built image name or skip if not built
             let image = match self.built_images.get(&spec.component_name) {
                 Some(img) => img.clone(),
                 None => {
-                    debug!("Skipping {} - no built image available", spec.component_name);
+                    debug!(
+                        "Skipping {} - no built image available",
+                        spec.component_name
+                    );
                     continue;
                 }
             };
-            
+
             // Ports are already resolved in from_product_dir, just use them
             let host_port = spec.port.expect("Port should have been resolved");
-            let target_port = spec.target_port.expect("Target port should have been resolved");
-            
+            let target_port = spec
+                .target_port
+                .expect("Target port should have been resolved");
+
             let service = crate::ContainerService {
                 id: uuid::Uuid::new_v4().to_string(),
                 name: spec.component_name.clone(),
@@ -977,19 +1092,25 @@ impl Reactor {
             // Wrap in ManagedContainerService with docker client
             let managed_service = crate::service::ManagedContainerService::with_docker_client(
                 service,
-                self.lifecycle_manager.docker_client().clone()
+                self.lifecycle_manager.docker_client().clone(),
             );
 
             self.services.push(managed_service);
         }
-        
+
         Ok(())
     }
 
     /// Cleanup all containers - always called during shutdown regardless of state
     async fn cleanup_all_containers(&mut self) {
-        error!("CRITICAL: Starting forced container cleanup for product: {}", self.config.base.product_name);
-        info!("Starting container cleanup for product: {}", self.config.base.product_name);
+        error!(
+            "CRITICAL: Starting forced container cleanup for product: {}",
+            self.config.base.product_name
+        );
+        info!(
+            "Starting container cleanup for product: {}",
+            self.config.base.product_name
+        );
 
         // Stop all running Docker services via lifecycle manager
         let services_to_stop = {
@@ -998,79 +1119,126 @@ impl Reactor {
         };
 
         if !services_to_stop.is_empty() {
-            info!("Stopping {} Docker services via lifecycle manager", services_to_stop.len());
-            if let Err(e) = self.lifecycle_manager.stop_services(&services_to_stop).await {
+            info!(
+                "Stopping {} Docker services via lifecycle manager",
+                services_to_stop.len()
+            );
+            if let Err(e) = self
+                .lifecycle_manager
+                .stop_services(&services_to_stop)
+                .await
+            {
                 warn!("Failed to stop services during cleanup: {}", e);
             }
         }
 
         // Also explicitly stop containers in our services vector
-        info!("Stopping {} services from self.services", self.services.len());
+        info!(
+            "Stopping {} services from self.services",
+            self.services.len()
+        );
         for service in &self.services {
             let container_name = service.name().to_string();
             // Generate the actual container name using naming convention
             let docker_container_name = rush_core::naming::NamingConvention::container_name(
                 &self.config.base.product_name,
-                &container_name
+                &container_name,
             );
             info!("Explicitly stopping container: {}", docker_container_name);
 
             if let Some(docker_client) = &service.docker_client {
                 // First try to get the container ID by name
-                match docker_client.get_container_by_name(&docker_container_name).await {
+                match docker_client
+                    .get_container_by_name(&docker_container_name)
+                    .await
+                {
                     Ok(container_id) => {
-                        info!("Found container {} with ID: {}", docker_container_name, container_id);
+                        info!(
+                            "Found container {} with ID: {}",
+                            docker_container_name, container_id
+                        );
 
                         // Try graceful stop first
                         match tokio::time::timeout(
                             std::time::Duration::from_secs(5),
-                            docker_client.stop_container(&container_id)
-                        ).await {
-                            Ok(Ok(_)) => info!("Container {} stopped gracefully", docker_container_name),
+                            docker_client.stop_container(&container_id),
+                        )
+                        .await
+                        {
+                            Ok(Ok(_)) => {
+                                info!("Container {} stopped gracefully", docker_container_name)
+                            }
                             Ok(Err(e)) => {
-                                warn!("Failed to stop container {}: {}, attempting force kill", docker_container_name, e);
+                                warn!(
+                                    "Failed to stop container {}: {}, attempting force kill",
+                                    docker_container_name, e
+                                );
                                 // Try force kill
                                 if let Err(e) = docker_client.kill_container(&container_id).await {
-                                    error!("Failed to kill container {}: {}", docker_container_name, e);
+                                    error!(
+                                        "Failed to kill container {}: {}",
+                                        docker_container_name, e
+                                    );
                                 }
                             }
                             Err(_) => {
-                                warn!("Timeout stopping container {}, attempting force kill", docker_container_name);
+                                warn!(
+                                    "Timeout stopping container {}, attempting force kill",
+                                    docker_container_name
+                                );
                                 // Try force kill
                                 if let Err(e) = docker_client.kill_container(&container_id).await {
-                                    error!("Failed to kill container {}: {}", docker_container_name, e);
+                                    error!(
+                                        "Failed to kill container {}: {}",
+                                        docker_container_name, e
+                                    );
                                 }
                             }
                         }
 
                         // Remove container
                         if let Err(e) = docker_client.remove_container(&container_id).await {
-                            debug!("Failed to remove container {} (may not exist): {}", docker_container_name, e);
+                            debug!(
+                                "Failed to remove container {} (may not exist): {}",
+                                docker_container_name, e
+                            );
                         }
                     }
                     Err(e) => {
-                        debug!("Container {} not found by name lookup: {}", docker_container_name, e);
+                        debug!(
+                            "Container {} not found by name lookup: {}",
+                            docker_container_name, e
+                        );
                         // Fallback: try to stop by name directly
-                        info!("Attempting to stop container by name directly: {}", docker_container_name);
+                        info!(
+                            "Attempting to stop container by name directly: {}",
+                            docker_container_name
+                        );
 
                         // Try to stop using docker CLI directly by name
                         let stop_result = tokio::process::Command::new("docker")
-                            .args(&["stop", &docker_container_name])
+                            .args(["stop", &docker_container_name])
                             .output()
                             .await;
 
                         match stop_result {
                             Ok(output) if output.status.success() => {
-                                info!("Successfully stopped container {} via docker CLI", docker_container_name);
+                                info!(
+                                    "Successfully stopped container {} via docker CLI",
+                                    docker_container_name
+                                );
 
                                 // Remove the container
                                 let _ = tokio::process::Command::new("docker")
-                                    .args(&["rm", "-f", &docker_container_name])
+                                    .args(["rm", "-f", &docker_container_name])
                                     .output()
                                     .await;
                             }
                             _ => {
-                                debug!("Container {} may not exist or already stopped", docker_container_name);
+                                debug!(
+                                    "Container {} may not exist or already stopped",
+                                    docker_container_name
+                                );
                             }
                         }
                     }
@@ -1080,9 +1248,17 @@ impl Reactor {
 
         // Final cleanup: stop ALL containers matching our product name pattern
         // This is a safety net in case the above logic missed any containers
-        info!("Final cleanup: stopping all containers for product {}", self.config.base.product_name);
+        info!(
+            "Final cleanup: stopping all containers for product {}",
+            self.config.base.product_name
+        );
         let ps_output = tokio::process::Command::new("docker")
-            .args(&["ps", "-q", "--filter", &format!("name={}", self.config.base.product_name)])
+            .args([
+                "ps",
+                "-q",
+                "--filter",
+                &format!("name={}", self.config.base.product_name),
+            ])
             .output()
             .await;
 
@@ -1092,7 +1268,7 @@ impl Reactor {
                 if !container_id.is_empty() {
                     info!("Force stopping container: {}", container_id);
                     let _ = tokio::process::Command::new("docker")
-                        .args(&["rm", "-f", container_id])
+                        .args(["rm", "-f", container_id])
                         .output()
                         .await;
                 }
@@ -1104,17 +1280,28 @@ impl Reactor {
 
     /// Update service container IDs with actual Docker container IDs
     fn update_service_container_ids(&mut self, docker_services: &[crate::docker::DockerService]) {
-        info!("Updating {} service container IDs from Docker services", docker_services.len());
+        info!(
+            "Updating {} service container IDs from Docker services",
+            docker_services.len()
+        );
 
         for docker_service in docker_services {
             // Find the matching service by name
             for managed_service in &mut self.services {
-                if managed_service.name() == docker_service.name().unwrap_or_else(|| "unknown".to_string()) {
+                if managed_service.name()
+                    == docker_service
+                        .name()
+                        .unwrap_or_else(|| "unknown".to_string())
+                {
                     // Update the container ID to the actual Docker container ID
                     let old_id = managed_service.id.clone();
                     managed_service.id = docker_service.id().to_string();
-                    info!("Updated service {} container ID from {} to {}",
-                        managed_service.name(), old_id, docker_service.id());
+                    info!(
+                        "Updated service {} container ID from {} to {}",
+                        managed_service.name(),
+                        old_id,
+                        docker_service.id()
+                    );
                     break;
                 }
             }
@@ -1124,27 +1311,33 @@ impl Reactor {
     /// Set services (for external configuration) - wraps in RAII management
     pub fn set_services(&mut self, services: Vec<crate::ContainerService>) {
         // Wrap each service in ManagedContainerService with docker client
-        self.services = services.into_iter()
-            .map(|svc| crate::service::ManagedContainerService::with_docker_client(
-                svc,
-                self.lifecycle_manager.docker_client().clone()
-            ))
+        self.services = services
+            .into_iter()
+            .map(|svc| {
+                crate::service::ManagedContainerService::with_docker_client(
+                    svc,
+                    self.lifecycle_manager.docker_client().clone(),
+                )
+            })
             .collect();
     }
-    
+
     /// Set output sink for capturing container and build logs
-    pub fn set_output_sink(&mut self, sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>) {
+    pub fn set_output_sink(
+        &mut self,
+        sink: Arc<tokio::sync::Mutex<Box<dyn rush_output::simple::Sink>>>,
+    ) {
         self.output_sink = sink;
-        
+
         // Store for later propagation to build orchestrator and lifecycle manager
         // This will be done during launch() when they are active
     }
-    
+
     /// Set output sink from Box
     pub fn set_output_sink_boxed(&mut self, sink: Box<dyn rush_output::simple::Sink>) {
         self.output_sink = Arc::new(tokio::sync::Mutex::new(sink));
     }
-    
+
     /// Add an environment variable
     pub fn add_env_var(&mut self, key: String, value: String) {
         // Add to component specs environment
@@ -1152,14 +1345,14 @@ impl Reactor {
             spec.dotenv.insert(key.clone(), value.clone());
         }
     }
-    
+
     /// Set verbose mode
     pub fn set_verbose(&mut self, verbose: bool) {
         // Update configuration for verbose logging
         // This would typically be handled through the configuration system
         info!("Verbose mode set to: {}", verbose);
     }
-    
+
     /// Set force rebuild flag
     pub fn set_force_rebuild(&mut self, force: bool) {
         // Store the force rebuild setting for use in build operations
@@ -1167,22 +1360,22 @@ impl Reactor {
         info!("Force rebuild set to: {}", force);
         self.force_rebuild = force;
     }
-    
+
     /// Get the Docker client (compatibility method)
     pub fn docker_client(&self) -> Arc<dyn crate::docker::DockerClient> {
         self.lifecycle_manager.docker_client()
     }
-    
+
     /// Get component specs
     pub fn component_specs(&self) -> &Vec<ComponentBuildSpec> {
         &self.component_specs
     }
-    
+
     /// Get mutable component specs
     pub fn component_specs_mut(&mut self) -> &mut Vec<ComponentBuildSpec> {
         &mut self.component_specs
     }
-    
+
     /// Get a change processor for file watching
     pub fn change_processor(&self) -> Arc<crate::watcher::ChangeProcessor> {
         // Create a change processor for file watching
@@ -1209,12 +1402,17 @@ impl Reactor {
                                 watch_dirs.insert(parent.to_path_buf());
                             }
                         }
-                        info!("Component '{}' will watch {} directories based on patterns",
-                            spec.component_name, watch_dirs.len());
+                        info!(
+                            "Component '{}' will watch {} directories based on patterns",
+                            spec.component_name,
+                            watch_dirs.len()
+                        );
                     }
                     Err(e) => {
-                        warn!("Failed to expand watch patterns for component '{}': {}",
-                            spec.component_name, e);
+                        warn!(
+                            "Failed to expand watch patterns for component '{}': {}",
+                            spec.component_name, e
+                        );
                     }
                 }
             }
@@ -1228,7 +1426,10 @@ impl Reactor {
                 if let Err(e) = watcher.watch_directory(&self.config.base.product_dir) {
                     warn!("Failed to start file watcher: {}", e);
                 }
-                info!("File watcher active, monitoring {} unique directories", watch_dirs.len());
+                info!(
+                    "File watcher active, monitoring {} unique directories",
+                    watch_dirs.len()
+                );
             }
         } else {
             info!("No watch patterns defined, file watching disabled");
@@ -1250,22 +1451,30 @@ impl Reactor {
             // Check if rebuild is needed based on tag comparison
             match self.needs_rebuild(spec).await {
                 Ok(true) => {
-                    debug!("Component '{}' needs rebuild (tag changed)", spec.component_name);
+                    debug!(
+                        "Component '{}' needs rebuild (tag changed)",
+                        spec.component_name
+                    );
                     changed_components.push(spec.component_name.clone());
                 }
                 Ok(false) => {
                     // No rebuild needed
                 }
                 Err(e) => {
-                    warn!("Failed to check rebuild status for '{}': {}",
-                        spec.component_name, e);
+                    warn!(
+                        "Failed to check rebuild status for '{}': {}",
+                        spec.component_name, e
+                    );
                 }
             }
         }
 
         if !changed_components.is_empty() {
-            info!("Tag changes detected for {} components: {:?}",
-                changed_components.len(), changed_components);
+            info!(
+                "Tag changes detected for {} components: {:?}",
+                changed_components.len(),
+                changed_components
+            );
         }
 
         changed_components
@@ -1280,8 +1489,10 @@ impl Reactor {
             let mut batch = crate::watcher::handler::ChangeBatch::new();
             batch.affected_components = changed_components.into_iter().collect();
 
-            info!("Triggering rebuild for {} components due to tag changes",
-                batch.affected_components.len());
+            info!(
+                "Triggering rebuild for {} components due to tag changes",
+                batch.affected_components.len()
+            );
 
             self.handle_rebuild(batch).await
         } else {
@@ -1298,21 +1509,33 @@ impl Reactor {
         let deployed_tag = self.get_deployed_tag(&spec.component_name).await?;
 
         // Simple comparison
-        debug!("Component '{}': current_tag={}, deployed_tag={}",
-            spec.component_name, current_tag, deployed_tag);
+        debug!(
+            "Component '{}': current_tag={}, deployed_tag={}",
+            spec.component_name, current_tag, deployed_tag
+        );
         Ok(current_tag != deployed_tag)
     }
 
     /// Get the tag of the currently deployed container or cached image
     pub async fn get_deployed_tag(&self, component_name: &str) -> Result<String> {
         // First check if there's a running container
-        let container_name = rush_core::naming::NamingConvention::container_name(&self.config.base.product_name, component_name);
+        let container_name = rush_core::naming::NamingConvention::container_name(
+            &self.config.base.product_name,
+            component_name,
+        );
 
         // Try to get container ID by name and check its status
-        if let Ok(container_id) = self.docker_client().get_container_by_name(&container_name).await {
+        if let Ok(container_id) = self
+            .docker_client()
+            .get_container_by_name(&container_name)
+            .await
+        {
             // Container exists, try to get its image tag
             // We'll just use the container ID as a proxy for now
-            debug!("Found running container for '{}': {}", component_name, container_id);
+            debug!(
+                "Found running container for '{}': {}",
+                component_name, container_id
+            );
             // In a real implementation, we'd need to inspect the container to get its image tag
             // For now, we'll skip this and check other sources
         }
@@ -1321,7 +1544,10 @@ impl Reactor {
         if let Some(image_name) = self.built_images.get(component_name) {
             if let Some(tag_pos) = image_name.rfind(':') {
                 let tag = &image_name[tag_pos + 1..];
-                debug!("Found built image for '{}' with tag: {}", component_name, tag);
+                debug!(
+                    "Found built image for '{}' with tag: {}",
+                    component_name, tag
+                );
                 return Ok(tag.to_string());
             }
         }
@@ -1331,7 +1557,10 @@ impl Reactor {
         if let Some(cached_entry) = cache_guard.get_raw_entry(component_name).await {
             if let Some(tag_pos) = cached_entry.image_name.rfind(':') {
                 let tag = &cached_entry.image_name[tag_pos + 1..];
-                debug!("Found cached image for '{}' with tag: {}", component_name, tag);
+                debug!(
+                    "Found cached image for '{}' with tag: {}",
+                    component_name, tag
+                );
                 return Ok(tag.to_string());
             }
         }
@@ -1340,26 +1569,28 @@ impl Reactor {
         debug!("No deployed or cached image found for '{}'", component_name);
         Ok(String::new())
     }
-    
+
     /// Build all components
     pub async fn build(&mut self) -> Result<()> {
         info!("Building all components");
-        
+
         {
             let mut state = self.state.write().await;
             if state.phase() != &ReactorPhase::Building {
                 state.transition_to(ReactorPhase::Building)?;
             }
         }
-        
+
         // Propagate output sink to build orchestrator
-        self.build_orchestrator.set_output_sink(self.output_sink.clone()).await;
-        
-        let built_images = self.build_orchestrator.build_components(
-            self.component_specs.clone(),
-            self.force_rebuild,
-        ).await?;
-        
+        self.build_orchestrator
+            .set_output_sink(self.output_sink.clone())
+            .await;
+
+        let built_images = self
+            .build_orchestrator
+            .build_components(self.component_specs.clone(), self.force_rebuild)
+            .await?;
+
         self.built_images = built_images;
 
         // No state transition needed - stay in Building state
@@ -1368,7 +1599,7 @@ impl Reactor {
         info!("All components built successfully");
         Ok(())
     }
-    
+
     /// Roll out to production using GitOps workflow
     pub async fn rollout(&mut self) -> Result<()> {
         info!("Starting GitOps rollout...");
@@ -1391,7 +1622,8 @@ impl Reactor {
         infra_repo.checkout().await?;
 
         // Step 5: Copy manifests to infrastructure repository
-        let source_directory = self.k8s_manifest_dir
+        let source_directory = self
+            .k8s_manifest_dir
             .as_ref()
             .ok_or_else(|| Error::Internal("Manifests not built".to_string()))?;
         infra_repo.copy_manifests(source_directory).await?;
@@ -1399,8 +1631,7 @@ impl Reactor {
         // Step 6: Commit and push to trigger GitOps deployment
         let commit_message = format!(
             "Deploying {} for {}",
-            self.config.base.environment,
-            self.config.base.product_name
+            self.config.base.environment, self.config.base.product_name
         );
         infra_repo.commit_and_push(&commit_message).await?;
 
@@ -1414,12 +1645,14 @@ impl Reactor {
         let root_dir = std::env::var("RUSHD_ROOT")
             .map_err(|_| Error::Config("RUSHD_ROOT not set".to_string()))?;
         let config_loader = rush_config::ConfigLoader::new(std::path::PathBuf::from(&root_dir));
-        let config = config_loader.load_config(
-            &self.config.base.product_name,
-            &self.config.base.environment,
-            &self.config.base.docker_registry,
-            8129, // Default port, not used for rollout
-        ).map_err(|e| Error::Config(e.to_string()))?;
+        let config = config_loader
+            .load_config(
+                &self.config.base.product_name,
+                &self.config.base.environment,
+                &self.config.base.docker_registry,
+                8129, // Default port, not used for rollout
+            )
+            .map_err(|e| Error::Config(e.to_string()))?;
 
         let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
 
@@ -1433,78 +1666,90 @@ impl Reactor {
             toolchain,
         ))
     }
-    
+
     /// Perform Docker login if credentials are configured
     async fn docker_login(&self) -> Result<()> {
         // Check if we have credentials configured
         let username = self.config.registry.username.as_ref();
         let password = self.config.registry.password.as_ref();
-        
+
         match (username, password) {
             (Some(user), Some(pass)) => {
                 info!("Logging into Docker registry...");
-                
+
                 let registry_url = self.config.registry.url.as_deref().unwrap_or("");
-                
+
                 // Create a temporary file for the password to avoid shell injection
                 use std::io::Write;
                 let mut temp_file = ::tempfile::NamedTempFile::new()
-                    .map_err(|e| Error::Docker(format!("Failed to create temp file: {}", e)))?;
-                    
-                temp_file.write_all(pass.as_bytes())
-                    .map_err(|e| Error::Docker(format!("Failed to write password: {}", e)))?;
-                    
-                temp_file.flush()
-                    .map_err(|e| Error::Docker(format!("Failed to flush temp file: {}", e)))?;
-                
+                    .map_err(|e| Error::Docker(format!("Failed to create temp file: {e}")))?;
+
+                temp_file
+                    .write_all(pass.as_bytes())
+                    .map_err(|e| Error::Docker(format!("Failed to write password: {e}")))?;
+
+                temp_file
+                    .flush()
+                    .map_err(|e| Error::Docker(format!("Failed to flush temp file: {e}")))?;
+
                 // Build docker login command
                 let mut cmd = tokio::process::Command::new("docker");
                 cmd.arg("login");
-                
+
                 if !registry_url.is_empty() {
                     cmd.arg(registry_url);
                 }
-                
-                cmd.args(&["--username", user, "--password-stdin"]);
-                cmd.stdin(std::process::Stdio::from(temp_file.reopen()
-                    .map_err(|e| Error::Docker(format!("Failed to reopen temp file: {}", e)))?));
-                
-                let output = cmd.output().await
-                    .map_err(|e| Error::Docker(format!("Failed to run docker login: {}", e)))?;
-                
+
+                cmd.args(["--username", user, "--password-stdin"]);
+                cmd.stdin(std::process::Stdio::from(temp_file.reopen().map_err(
+                    |e| Error::Docker(format!("Failed to reopen temp file: {e}")),
+                )?));
+
+                let output = cmd
+                    .output()
+                    .await
+                    .map_err(|e| Error::Docker(format!("Failed to run docker login: {e}")))?;
+
                 if !output.status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     let stdout = String::from_utf8_lossy(&output.stdout);
-                    
+
                     // Check for common errors
                     if stderr.contains("unauthorized") || stdout.contains("unauthorized") {
-                        return Err(Error::Docker("Docker login failed: Invalid credentials".to_string()));
+                        return Err(Error::Docker(
+                            "Docker login failed: Invalid credentials".to_string(),
+                        ));
                     }
-                    
-                    return Err(Error::Docker(format!("Docker login failed: {}", stderr)));
+
+                    return Err(Error::Docker(format!("Docker login failed: {stderr}")));
                 }
-                
+
                 info!("Successfully logged into Docker registry");
             }
             (Some(_), None) => {
                 warn!("Docker registry username configured but no password provided");
                 if !self.config.registry.use_credentials_helper {
-                    return Err(Error::Docker("Registry password required when credentials helper is disabled".to_string()));
+                    return Err(Error::Docker(
+                        "Registry password required when credentials helper is disabled"
+                            .to_string(),
+                    ));
                 }
             }
             (None, Some(_)) => {
                 warn!("Docker registry password configured but no username provided");
             }
             (None, None) => {
-                if self.config.registry.url.is_some() && !self.config.registry.use_credentials_helper {
+                if self.config.registry.url.is_some()
+                    && !self.config.registry.use_credentials_helper
+                {
                     info!("No registry credentials configured, using anonymous access");
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Get the full image tag including registry URL if configured
     fn get_registry_tag(&self, image_name: &str) -> String {
         if let Some(url) = &self.config.registry.url {
@@ -1513,12 +1758,12 @@ impl Reactor {
                 return image_name.to_string();
             }
             if let Some(namespace) = &self.config.registry.namespace {
-                format!("{}/{}/{}", url, namespace, image_name)
+                format!("{url}/{namespace}/{image_name}")
             } else {
-                format!("{}/{}", url, image_name)
+                format!("{url}/{image_name}")
             }
         } else if let Some(namespace) = &self.config.registry.namespace {
-            format!("{}/{}", namespace, image_name)
+            format!("{namespace}/{image_name}")
         } else {
             image_name.to_string()
         }
@@ -1529,7 +1774,8 @@ impl Reactor {
         info!("Building and pushing Docker images for deployment...");
 
         // Filter components that produce pushable images
-        let pushable_components: Vec<ComponentBuildSpec> = self.component_specs
+        let pushable_components: Vec<ComponentBuildSpec> = self
+            .component_specs
             .iter()
             .filter(|spec| Self::produces_pushable_image(&spec.build_type))
             .cloned()
@@ -1540,13 +1786,16 @@ impl Reactor {
             return Ok(());
         }
 
-        info!("Found {} components with pushable images", pushable_components.len());
+        info!(
+            "Found {} components with pushable images",
+            pushable_components.len()
+        );
 
         // Build only pushable components
-        let built_images = self.build_orchestrator.build_components(
-            pushable_components,
-            self.force_rebuild,
-        ).await?;
+        let built_images = self
+            .build_orchestrator
+            .build_components(pushable_components, self.force_rebuild)
+            .await?;
 
         self.built_images = built_images;
 
@@ -1569,21 +1818,23 @@ impl Reactor {
             if registry_tag != *image_name {
                 // Tag the local image with the registry URL
                 let tag_output = tokio::process::Command::new("docker")
-                    .args(&["tag", image_name, &registry_tag])
+                    .args(["tag", image_name, &registry_tag])
                     .output()
                     .await
-                    .map_err(|e| Error::Docker(format!("Failed to tag image: {}", e)))?;
+                    .map_err(|e| Error::Docker(format!("Failed to tag image: {e}")))?;
 
                 if !tag_output.status.success() {
                     let stderr = String::from_utf8_lossy(&tag_output.stderr);
-                    return Err(Error::Docker(format!("Failed to tag image: {}", stderr)));
+                    return Err(Error::Docker(format!("Failed to tag image: {stderr}")));
                 }
             }
 
             // Use the Docker client to push the image
             if let Err(e) = self.docker_client().push_image(&registry_tag).await {
-                error!("Failed to push image {} for component {}: {}",
-                       registry_tag, component_name, e);
+                error!(
+                    "Failed to push image {} for component {}: {}",
+                    registry_tag, component_name, e
+                );
                 return Err(e);
             }
 
@@ -1598,43 +1849,47 @@ impl Reactor {
     fn produces_pushable_image(build_type: &BuildType) -> bool {
         matches!(
             build_type,
-            BuildType::RustBinary { .. } |
-            BuildType::TrunkWasm { .. } |
-            BuildType::DixiousWasm { .. } |
-            BuildType::Script { .. } |
-            BuildType::Zola { .. } |
-            BuildType::Book { .. } |
-            BuildType::Ingress { .. } |
-            BuildType::PureDockerImage { .. }
+            BuildType::RustBinary { .. }
+                | BuildType::TrunkWasm { .. }
+                | BuildType::DixiousWasm { .. }
+                | BuildType::Script { .. }
+                | BuildType::Zola { .. }
+                | BuildType::Book { .. }
+                | BuildType::Ingress { .. }
+                | BuildType::PureDockerImage { .. }
         )
     }
-    
+
     /// Select Kubernetes context for deployment
     pub async fn select_kubernetes_context(&self, context: &str) -> Result<()> {
         info!("Selecting Kubernetes context: {}", context);
-        
+
         // Kubectl context selection implementation would go here
         // This would typically run: kubectl config use-context <context>
-        debug!("Kubernetes context selection not implemented yet: {}", context);
-        
+        debug!(
+            "Kubernetes context selection not implemented yet: {}",
+            context
+        );
+
         Ok(())
     }
-    
+
     /// Apply Kubernetes manifests to the cluster
     pub async fn apply(&mut self) -> Result<()> {
         info!("Applying Kubernetes manifests...");
-        
+
         // Ensure manifests have been built
         let manifest_dir = match &self.k8s_manifest_dir {
             Some(dir) => dir,
             None => {
                 // Build manifests if not already done
                 self.build_manifests().await?;
-                self.k8s_manifest_dir.as_ref()
+                self.k8s_manifest_dir
+                    .as_ref()
                     .ok_or_else(|| Error::Internal("Failed to build manifests".to_string()))?
             }
         };
-        
+
         // Check if manifest directory exists
         if !manifest_dir.exists() {
             return Err(Error::Filesystem(format!(
@@ -1642,149 +1897,169 @@ impl Reactor {
                 manifest_dir.display()
             )));
         }
-        
+
         // Create kubectl wrapper with configuration
         let mut kubectl_config = rush_k8s::KubectlConfig::default();
-        
+
         // Set namespace from environment or use default
-        let namespace = std::env::var("K8S_NAMESPACE")
-            .unwrap_or_else(|_| format!("{}-{}", 
-                self.config.build.product_name, 
+        let namespace = std::env::var("K8S_NAMESPACE").unwrap_or_else(|_| {
+            format!(
+                "{}-{}",
+                self.config.build.product_name,
                 std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string())
-            ));
+            )
+        });
         kubectl_config.namespace = Some(namespace);
-        
+
         // Set context if provided
         if let Ok(context) = std::env::var("K8S_CONTEXT") {
             kubectl_config.context = Some(context);
         }
-        
+
         // Enable dry-run if requested
-        kubectl_config.dry_run = std::env::var("K8S_DRY_RUN")
-            .unwrap_or_else(|_| "false".to_string()) == "true";
-        
+        kubectl_config.dry_run =
+            std::env::var("K8S_DRY_RUN").unwrap_or_else(|_| "false".to_string()) == "true";
+
         kubectl_config.verbose = true;
-        
+
         let kubectl = rush_k8s::Kubectl::new(kubectl_config);
-        
+
         // Apply all manifests in the directory
         let results = kubectl.apply_dir(manifest_dir).await?;
-        
+
         // Check if all applications succeeded
         let failed_count = results.iter().filter(|r| !r.success).count();
         if failed_count > 0 {
             return Err(Error::External(format!(
-                "Failed to apply {} out of {} manifests", 
-                failed_count, 
+                "Failed to apply {} out of {} manifests",
+                failed_count,
                 results.len()
             )));
         }
-        
-        info!("Successfully applied {} Kubernetes manifests", results.len());
-        
+
+        info!(
+            "Successfully applied {} Kubernetes manifests",
+            results.len()
+        );
+
         // Track deployment versions for rollback support
         if !kubectl.config.dry_run {
             let timestamp = chrono::Utc::now();
             let version = std::env::var("GIT_COMMIT")
                 .or_else(|_| std::env::var("DEPLOYMENT_VERSION"))
                 .unwrap_or_else(|_| timestamp.timestamp().to_string());
-            
+
             // Track each deployed component
             for spec in &self.component_specs {
                 // Skip components that don't create deployments
-                match &spec.build_type {
-                    BuildType::LocalService { .. } => continue,
-                    _ => {}
+                if let BuildType::LocalService { .. } = &spec.build_type {
+                    continue;
                 }
-                
+
                 // Calculate manifest hash for change detection
-                let manifest_path = manifest_dir.join(format!("{}-deployment.yaml", spec.component_name));
+                let manifest_path =
+                    manifest_dir.join(format!("{}-deployment.yaml", spec.component_name));
                 let manifest_hash = if manifest_path.exists() {
                     let content = std::fs::read_to_string(&manifest_path)?;
                     format!("{:x}", md5::compute(content.as_bytes()))
                 } else {
                     String::new()
                 };
-                
+
                 let deployment_version = rush_k8s::kubectl::DeploymentVersion {
                     deployment_name: spec.component_name.clone(),
-                    namespace: kubectl.config.namespace.clone().unwrap_or_else(|| "default".to_string()),
+                    namespace: kubectl
+                        .config
+                        .namespace
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string()),
                     version: version.clone(),
                     timestamp,
                     manifest_hash,
                 };
-                
+
                 self.deployment_versions.push(deployment_version);
             }
-            
+
             // Keep only last 10 versions per deployment
-            self.deployment_versions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-            self.deployment_versions.truncate(10 * self.component_specs.len());
+            self.deployment_versions
+                .sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+            self.deployment_versions
+                .truncate(10 * self.component_specs.len());
         }
-        
+
         // Wait for deployments to be ready if not in dry-run mode
         if !kubectl.config.dry_run {
             info!("Waiting for deployments to be ready...");
             for spec in &self.component_specs {
                 // Skip components that don't create deployments
-                match &spec.build_type {
-                    BuildType::LocalService { .. } => continue,
-                    _ => {}
+                if let BuildType::LocalService { .. } = &spec.build_type {
+                    continue;
                 }
-                
+
                 match kubectl.wait_for_deployment(&spec.component_name, 300).await {
                     Ok(_) => info!("Deployment {} is ready", spec.component_name),
                     Err(e) => warn!("Deployment {} may not be ready: {}", spec.component_name, e),
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Remove Kubernetes resources from the cluster
     pub async fn unapply(&mut self) -> Result<()> {
         info!("Removing Kubernetes resources...");
-        
+
         // Use manifest directory if available
         if let Some(manifest_dir) = &self.k8s_manifest_dir {
             if manifest_dir.exists() {
                 // Create kubectl wrapper with same configuration as apply
                 let mut kubectl_config = rush_k8s::KubectlConfig::default();
-                
+
                 // Set namespace from environment or use default
-                let namespace = std::env::var("K8S_NAMESPACE")
-                    .unwrap_or_else(|_| format!("{}-{}", 
-                        self.config.build.product_name, 
+                let namespace = std::env::var("K8S_NAMESPACE").unwrap_or_else(|_| {
+                    format!(
+                        "{}-{}",
+                        self.config.build.product_name,
                         std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string())
-                    ));
+                    )
+                });
                 kubectl_config.namespace = Some(namespace);
-                
+
                 // Set context if provided
                 if let Ok(context) = std::env::var("K8S_CONTEXT") {
                     kubectl_config.context = Some(context);
                 }
-                
+
                 // Enable dry-run if requested
-                kubectl_config.dry_run = std::env::var("K8S_DRY_RUN")
-                    .unwrap_or_else(|_| "false".to_string()) == "true";
-                
+                kubectl_config.dry_run =
+                    std::env::var("K8S_DRY_RUN").unwrap_or_else(|_| "false".to_string()) == "true";
+
                 kubectl_config.verbose = true;
-                
+
                 let kubectl = rush_k8s::Kubectl::new(kubectl_config);
-                
+
                 // Delete all resources from manifests
                 let results = kubectl.delete_dir(manifest_dir).await?;
-                
+
                 // Check results
-                let failed_count = results.iter()
+                let failed_count = results
+                    .iter()
                     .filter(|r| !r.success && !r.stderr.contains("NotFound"))
                     .count();
-                
+
                 if failed_count > 0 {
-                    warn!("Failed to delete {} out of {} manifests", failed_count, results.len());
+                    warn!(
+                        "Failed to delete {} out of {} manifests",
+                        failed_count,
+                        results.len()
+                    );
                 } else {
-                    info!("Successfully removed {} Kubernetes resources", results.len());
+                    info!(
+                        "Successfully removed {} Kubernetes resources",
+                        results.len()
+                    );
                 }
             } else {
                 warn!("Manifest directory does not exist, nothing to remove");
@@ -1792,95 +2067,109 @@ impl Reactor {
         } else {
             warn!("No manifests have been generated, nothing to remove");
         }
-        
+
         Ok(())
     }
-    
+
     /// Rollback to a previous deployment version
     pub async fn rollback(&mut self, version: Option<String>) -> Result<()> {
         info!("Rolling back Kubernetes deployment...");
-        
+
         if self.deployment_versions.is_empty() {
-            return Err(Error::Internal("No deployment versions available for rollback".to_string()));
+            return Err(Error::Internal(
+                "No deployment versions available for rollback".to_string(),
+            ));
         }
-        
+
         // Find the version to rollback to
         let target_version = if let Some(v) = version {
-            self.deployment_versions.iter()
+            self.deployment_versions
+                .iter()
                 .find(|dv| dv.version == v)
-                .ok_or_else(|| Error::Internal(format!("Version {} not found", v)))?
+                .ok_or_else(|| Error::Internal(format!("Version {v} not found")))?
         } else {
             // Rollback to previous version (skip current which is at index 0)
-            self.deployment_versions.get(1)
+            self.deployment_versions
+                .get(1)
                 .ok_or_else(|| Error::Internal("No previous version available".to_string()))?
         };
-        
-        info!("Rolling back to version {} from {}", 
-              target_version.version, 
-              target_version.timestamp);
-        
+
+        info!(
+            "Rolling back to version {} from {}",
+            target_version.version, target_version.timestamp
+        );
+
         // Create kubectl wrapper
         let mut kubectl_config = rush_k8s::KubectlConfig::default();
         kubectl_config.namespace = Some(target_version.namespace.clone());
-        
+
         if let Ok(context) = std::env::var("K8S_CONTEXT") {
             kubectl_config.context = Some(context);
         }
-        
+
         let kubectl = rush_k8s::Kubectl::new(kubectl_config);
-        
+
         // Perform rollback using kubectl rollout undo
         for deployment_version in &self.deployment_versions {
             if deployment_version.version == target_version.version {
-                info!("Rolling back deployment: {}", deployment_version.deployment_name);
-                let result = kubectl.execute(vec![
-                    "rollout".to_string(),
-                    "undo".to_string(),
-                    format!("deployment/{}", deployment_version.deployment_name),
-                ]).await?;
-                
+                info!(
+                    "Rolling back deployment: {}",
+                    deployment_version.deployment_name
+                );
+                let result = kubectl
+                    .execute(vec![
+                        "rollout".to_string(),
+                        "undo".to_string(),
+                        format!("deployment/{}", deployment_version.deployment_name),
+                    ])
+                    .await?;
+
                 if !result.success {
                     return Err(Error::External(format!(
-                        "Failed to rollback {}: {}", 
-                        deployment_version.deployment_name,
-                        result.stderr
+                        "Failed to rollback {}: {}",
+                        deployment_version.deployment_name, result.stderr
                     )));
                 }
-                
+
                 // Wait for rollout to complete
-                kubectl.rollout_status(&deployment_version.deployment_name).await?;
-                info!("Successfully rolled back {}", deployment_version.deployment_name);
+                kubectl
+                    .rollout_status(&deployment_version.deployment_name)
+                    .await?;
+                info!(
+                    "Successfully rolled back {}",
+                    deployment_version.deployment_name
+                );
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Get deployment history
     pub fn get_deployment_history(&self) -> Vec<rush_k8s::kubectl::DeploymentVersion> {
         self.deployment_versions.clone()
     }
-    
+
     /// Install Kubernetes manifests
     pub async fn install_manifests(&mut self) -> Result<()> {
         info!("Installing Kubernetes manifests...");
-        
+
         // TODO: Install manifests
         debug!("Kubernetes manifest installation not implemented yet");
-        
+
         Ok(())
     }
-    
+
     /// Uninstall Kubernetes manifests
     pub async fn uninstall_manifests(&mut self) -> Result<()> {
         info!("Uninstalling Kubernetes manifests...");
-        
+
         // TODO: Uninstall manifests
         debug!("Kubernetes manifest uninstallation not implemented yet");
-        
+
         Ok(())
     }
-    
+
     /// Build Kubernetes manifests
     pub async fn build_manifests(&mut self) -> Result<()> {
         info!("Building Kubernetes manifests...");
@@ -1891,17 +2180,18 @@ impl Reactor {
         // Clear existing manifests
         if output_dir.exists() {
             std::fs::remove_dir_all(&output_dir)
-                .map_err(|e| Error::Filesystem(format!("Failed to remove k8s directory: {}", e)))?;
+                .map_err(|e| Error::Filesystem(format!("Failed to remove k8s directory: {e}")))?;
         }
         std::fs::create_dir_all(&output_dir)
-            .map_err(|e| Error::Filesystem(format!("Failed to create k8s directory: {}", e)))?;
+            .map_err(|e| Error::Filesystem(format!("Failed to create k8s directory: {e}")))?;
 
         // Determine namespace from environment or use default
-        let namespace = std::env::var("K8S_NAMESPACE")
-            .unwrap_or_else(|_| format!("{}-{}",
-                self.config.base.product_name,
-                self.config.base.environment
-            ));
+        let namespace = std::env::var("K8S_NAMESPACE").unwrap_or_else(|_| {
+            format!(
+                "{}-{}",
+                self.config.base.product_name, self.config.base.environment
+            )
+        });
 
         let environment = self.config.base.environment.clone();
         let docker_registry = self.config.base.docker_registry.clone();
@@ -1919,26 +2209,31 @@ impl Reactor {
             // Create component-specific output directory with priority
             let component_dir_name = format!("{}_{}", spec.priority, spec.component_name);
             let component_output_dir = output_dir.join(&component_dir_name);
-            std::fs::create_dir_all(&component_output_dir)
-                .map_err(|e| Error::Filesystem(format!("Failed to create component k8s directory: {}", e)))?;
+            std::fs::create_dir_all(&component_output_dir).map_err(|e| {
+                Error::Filesystem(format!("Failed to create component k8s directory: {e}"))
+            })?;
 
             // Find the template directory
-            let template_dir = std::path::PathBuf::from(&self.config.base.product_dir)
-                .join(k8s_path);
+            let template_dir =
+                std::path::PathBuf::from(&self.config.base.product_dir).join(k8s_path);
 
             if !template_dir.exists() {
-                warn!("K8s template directory not found for {}: {}",
-                      spec.component_name, template_dir.display());
+                warn!(
+                    "K8s template directory not found for {}: {}",
+                    spec.component_name,
+                    template_dir.display()
+                );
                 continue;
             }
 
             // Get component-specific secrets from vault
             let component_secrets = if let Some(vault) = &self.vault {
-                match vault.lock().unwrap().get(
-                    &spec.product_name,
-                    &spec.component_name,
-                    &environment
-                ).await {
+                match vault
+                    .lock()
+                    .unwrap()
+                    .get(&spec.product_name, &spec.component_name, &environment)
+                    .await
+                {
                     Ok(secrets) => {
                         // Apply base64 encoding if we have a secrets encoder
                         if let Some(encoder) = &self.secrets_encoder {
@@ -1948,7 +2243,10 @@ impl Reactor {
                         }
                     }
                     Err(e) => {
-                        debug!("No secrets found for component {}: {}", spec.component_name, e);
+                        debug!(
+                            "No secrets found for component {}: {}",
+                            spec.component_name, e
+                        );
                         HashMap::new()
                     }
                 }
@@ -1962,7 +2260,7 @@ impl Reactor {
 
             // Add additional context variables
             let mut tera_context = tera::Context::from_serialize(&build_context)
-                .map_err(|e| Error::Template(format!("Failed to create context: {}", e)))?;
+                .map_err(|e| Error::Template(format!("Failed to create context: {e}")))?;
             tera_context.insert("namespace", &namespace);
             tera_context.insert("environment", &environment);
             tera_context.insert("docker_registry", &docker_registry);
@@ -1975,15 +2273,21 @@ impl Reactor {
             }
 
             // Process each template file in the directory
-            let template_files = std::fs::read_dir(&template_dir)
-                .map_err(|e| Error::Filesystem(format!("Failed to read template directory: {}", e)))?;
+            let template_files = std::fs::read_dir(&template_dir).map_err(|e| {
+                Error::Filesystem(format!("Failed to read template directory: {e}"))
+            })?;
 
             for entry in template_files {
-                let entry = entry.map_err(|e| Error::Filesystem(format!("Failed to read directory entry: {}", e)))?;
+                let entry = entry.map_err(|e| {
+                    Error::Filesystem(format!("Failed to read directory entry: {e}"))
+                })?;
                 let path = entry.path();
 
                 // Skip non-yaml files
-                if !path.extension().map_or(false, |ext| ext == "yaml" || ext == "yml") {
+                if !path
+                    .extension()
+                    .is_some_and(|ext| ext == "yaml" || ext == "yml")
+                {
                     continue;
                 }
 
@@ -1991,26 +2295,29 @@ impl Reactor {
                 debug!("Processing template: {}", file_name);
 
                 // Read template content
-                let template_content = std::fs::read_to_string(&path)
-                    .map_err(|e| Error::Filesystem(format!("Failed to read template {}: {}", file_name, e)))?;
+                let template_content = std::fs::read_to_string(&path).map_err(|e| {
+                    Error::Filesystem(format!("Failed to read template {file_name}: {e}"))
+                })?;
 
                 // Render template with Tera
                 let mut tera = tera::Tera::default();
                 tera.add_raw_template(file_name, &template_content)
-                    .map_err(|e| Error::Template(format!("Failed to add template: {}", e)))?;
+                    .map_err(|e| Error::Template(format!("Failed to add template: {e}")))?;
 
-                let rendered = tera.render(file_name, &tera_context)
-                    .map_err(|e| Error::Template(format!("Failed to render template {}: {}", file_name, e)))?;
+                let rendered = tera.render(file_name, &tera_context).map_err(|e| {
+                    Error::Template(format!("Failed to render template {file_name}: {e}"))
+                })?;
 
                 // Write rendered manifest to output directory
                 let output_path = component_output_dir.join(file_name);
                 std::fs::write(&output_path, rendered)
-                    .map_err(|e| Error::Filesystem(format!("Failed to write manifest: {}", e)))?;
+                    .map_err(|e| Error::Filesystem(format!("Failed to write manifest: {e}")))?;
 
                 // Apply SealedSecrets encoder if this is a secrets file
                 if file_name.contains("secret") {
                     let use_sealed_secrets = std::env::var("K8S_USE_SEALED_SECRETS")
-                        .unwrap_or_else(|_| "false".to_string()) == "true";
+                        .unwrap_or_else(|_| "false".to_string())
+                        == "true";
 
                     if use_sealed_secrets {
                         debug!("Applying SealedSecrets encoder to {}", file_name);
@@ -2022,7 +2329,11 @@ impl Reactor {
                 }
             }
 
-            info!("Generated manifests for {} in {}", spec.component_name, component_output_dir.display());
+            info!(
+                "Generated manifests for {} in {}",
+                spec.component_name,
+                component_output_dir.display()
+            );
         }
 
         // Count total manifests generated
@@ -2030,36 +2341,41 @@ impl Reactor {
             .map(|entries| entries.count())
             .unwrap_or(0);
 
-        info!("Generated Kubernetes manifests for {} components in {}",
-              manifest_count,
-              output_dir.display());
+        info!(
+            "Generated Kubernetes manifests for {} components in {}",
+            manifest_count,
+            output_dir.display()
+        );
 
         // Store the output directory for later use in apply()
         self.k8s_manifest_dir = Some(output_dir);
 
         Ok(())
     }
-    
+
     /// Deploy to Kubernetes
     pub async fn deploy(&mut self) -> Result<()> {
         info!("Deploying to Kubernetes...");
-        
+
         // Build manifests and apply them
         self.build_manifests().await?;
         self.apply().await?;
-        
+
         Ok(())
     }
-    
+
     /// Check if a rebuild is in progress
     pub fn rebuild_in_progress(&self) -> bool {
         // Check the current phase to determine if rebuilding
         match self.state.try_read() {
-            Ok(state) => matches!(state.phase(), ReactorPhase::Building | ReactorPhase::Rebuilding),
+            Ok(state) => matches!(
+                state.phase(),
+                ReactorPhase::Building | ReactorPhase::Rebuilding
+            ),
             Err(_) => false, // If we can't read the state, assume not rebuilding
         }
     }
-    
+
     /// Set rebuild in progress state
     pub async fn set_rebuild_in_progress(&mut self, in_progress: bool) {
         let mut state = self.state.write().await;
@@ -2067,13 +2383,11 @@ impl Reactor {
             if let Err(e) = state.transition_to(ReactorPhase::Rebuilding) {
                 debug!("Could not transition to rebuilding state: {}", e);
             }
-        } else {
-            if let Err(e) = state.transition_to(ReactorPhase::Idle) {
-                debug!("Could not transition to idle state: {}", e);
-            }
+        } else if let Err(e) = state.transition_to(ReactorPhase::Idle) {
+            debug!("Could not transition to idle state: {}", e);
         }
     }
-    
+
     /// Setup Docker network for the reactor
     #[instrument(level = "info", skip(self))]
     pub async fn setup_network(&self) -> Result<()> {
@@ -2104,7 +2418,7 @@ impl Reactor {
 
         Ok(())
     }
-    
+
     /// Combined launch method that sets up network and runs the reactor
     #[instrument(level = "info", skip(self), fields(phase = "launch"))]
     pub async fn launch(&mut self) -> Result<()> {
@@ -2115,7 +2429,11 @@ impl Reactor {
         let network_setup_start = std::time::Instant::now();
         self.setup_network().await?;
         crate::profiling::global_tracker()
-            .record_with_component("launch_phase", "network_setup", network_setup_start.elapsed())
+            .record_with_component(
+                "launch_phase",
+                "network_setup",
+                network_setup_start.elapsed(),
+            )
             .await;
 
         // Start the reactor lifecycle management
@@ -2134,7 +2452,11 @@ impl Reactor {
             info!("💡 Tip: Fix the build error and save a file to trigger rebuild");
         }
         crate::profiling::global_tracker()
-            .record_with_component("launch_phase", "initial_build", initial_build_start.elapsed())
+            .record_with_component(
+                "launch_phase",
+                "initial_build",
+                initial_build_start.elapsed(),
+            )
             .await;
 
         // Record total launch time
@@ -2145,7 +2467,7 @@ impl Reactor {
         // Run the main reactor loop
         self.run().await
     }
-    
+
     /// Create a Reactor from a product directory
     /// This is the primary factory method for creating a reactor with all components configured
     pub async fn from_product_dir(
@@ -2158,7 +2480,7 @@ impl Reactor {
     ) -> Result<Self> {
         use std::collections::HashSet;
         use std::fs;
-        
+
         use crate::tagging::ImageTagGenerator;
 
         // Create toolchain and tag generator
@@ -2167,29 +2489,29 @@ impl Reactor {
             toolchain.clone(),
             config.product_path().to_path_buf(),
         ));
-        
+
         let product_path = config.product_path();
         let _docker_client = Arc::new(crate::docker::DockerCliClient::new("docker".to_string()));
-        
+
         // Create set of silenced components
         let silenced_components = silence_components.into_iter().collect::<HashSet<_>>();
-        
+
         // Read stack configuration
-        let stack_config = 
+        let stack_config =
             match fs::read_to_string(format!("{}/stack.spec.yaml", product_path.display())) {
                 Ok(config) => config,
                 Err(e) => return Err(format!("Failed to read stack config: {e}").into()),
             };
-        
+
         // Parse stack spec and create component build specs
         let spec = match serde_yaml::from_str::<serde_yaml::Value>(&stack_config) {
             Ok(spec) => spec,
             Err(e) => return Err(format!("Failed to parse stack config: {e}").into()),
         };
-        
+
         // Build component specs from stack configuration
         let mut component_specs = Vec::new();
-        
+
         if let Some(components) = spec.as_mapping() {
             for (name, component_config) in components {
                 if let Some(name_str) = name.as_str() {
@@ -2197,7 +2519,7 @@ impl Reactor {
                     if silenced_components.contains(name_str) {
                         continue;
                     }
-                    
+
                     // Use the proper from_yaml method to create ComponentBuildSpec
                     // This will properly load .env and .env.secrets files
                     // We need to inject the component_name into the YAML since it's not present
@@ -2205,30 +2527,32 @@ impl Reactor {
                     if let serde_yaml::Value::Mapping(ref mut map) = component_config_with_name {
                         map.insert(
                             serde_yaml::Value::String("component_name".to_string()),
-                            serde_yaml::Value::String(name_str.to_string())
+                            serde_yaml::Value::String(name_str.to_string()),
                         );
                     }
-                    
+
                     // Try to use the from_yaml method which properly loads env files
                     let mut spec = rush_build::ComponentBuildSpec::from_yaml(
                         config.clone(),
                         rush_build::Variables::empty(),
-                        &component_config_with_name
+                        &component_config_with_name,
                     );
                     // Compute deterministic tag for this component
-                    let tag = tag_generator.compute_tag(&spec)
-                        .unwrap_or_else(|e| {
-                            warn!("Failed to compute tag for {}: {}, using 'latest'", name_str, e);
-                            "latest".to_string()
-                        });
-                    spec.tagged_image_name = Some(format!("{}:{}", name_str, tag));
-            
+                    let tag = tag_generator.compute_tag(&spec).unwrap_or_else(|e| {
+                        warn!(
+                            "Failed to compute tag for {}: {}, using 'latest'",
+                            name_str, e
+                        );
+                        "latest".to_string()
+                    });
+                    spec.tagged_image_name = Some(format!("{name_str}:{tag}"));
+
                     // Add the spec to our list
                     component_specs.push(spec);
                 }
             }
         }
-        
+
         // Create modular reactor configuration
         let mut modular_config = ModularReactorConfig::default();
         // Use consistent network name from network manager
@@ -2244,7 +2568,7 @@ impl Reactor {
         // Docker configuration removed - SimpleDocker handles this
         modular_config.watcher.auto_rebuild = true;
         modular_config.lifecycle.auto_restart = true;
-        
+
         // Configure Docker registry from config
         // Only set URL if it's not empty (for local environments)
         let registry = config.docker_registry();
@@ -2253,42 +2577,49 @@ impl Reactor {
         } else {
             Some(registry.to_string())
         };
-        modular_config.registry.namespace = config.docker_registry_namespace().map(|s| s.to_string());
+        modular_config.registry.namespace =
+            config.docker_registry_namespace().map(|s| s.to_string());
         modular_config.registry.username = config.docker_registry_username().map(|s| s.to_string());
         modular_config.registry.password = config.docker_registry_password().map(|s| s.to_string());
-        
+
         // Configure build orchestrator with the product directory
         modular_config.build.product_dir = config.product_path().to_path_buf();
         modular_config.build.product_name = config.product_name().to_string();
-        
+
         // Configure lifecycle manager with the product name and network name
         modular_config.lifecycle.product_name = config.product_name().to_string();
         modular_config.lifecycle.network_name = network_name;
-        
+
         // Resolve ports for all components before creating the reactor
         Self::resolve_component_ports(&mut component_specs, &config);
-        
+
         // Create the reactor using the existing new() method
         let mut reactor = Self::new(modular_config, component_specs).await?;
-        
+
         // Set the vault and secrets encoder
         reactor.vault = Some(vault);
         reactor.secrets_encoder = Some(secrets_encoder);
-        
+
         Ok(reactor)
     }
-    
+
     /// Scan a Dockerfile for EXPOSE directive to find the exposed port
-    fn scan_dockerfile_for_expose(spec: &ComponentBuildSpec, product_dir: &std::path::Path) -> Option<u16> {
+    fn scan_dockerfile_for_expose(
+        spec: &ComponentBuildSpec,
+        product_dir: &std::path::Path,
+    ) -> Option<u16> {
         if let Some(dockerfile_path) = spec.build_type.dockerfile_path() {
-            let full_path = product_dir.join(&dockerfile_path);
+            let full_path = product_dir.join(dockerfile_path);
             if let Ok(content) = std::fs::read_to_string(&full_path) {
                 for line in content.lines() {
                     let trimmed = line.trim();
                     if trimmed.starts_with("EXPOSE ") {
                         let port_str = trimmed.trim_start_matches("EXPOSE ").trim();
                         if let Ok(port) = port_str.parse::<u16>() {
-                            debug!("Found EXPOSE {} in Dockerfile for {}", port, spec.component_name);
+                            debug!(
+                                "Found EXPOSE {} in Dockerfile for {}",
+                                port, spec.component_name
+                            );
                             return Some(port);
                         }
                     }
@@ -2297,29 +2628,39 @@ impl Reactor {
         }
         None
     }
-    
+
     /// Resolve ports for all components before building
-    fn resolve_component_ports(specs: &mut Vec<ComponentBuildSpec>, config: &Arc<rush_config::Config>) {
+    fn resolve_component_ports(
+        specs: &mut Vec<ComponentBuildSpec>,
+        config: &Arc<rush_config::Config>,
+    ) {
         let mut next_port = config.start_port();
-        
+
         for spec in specs.iter_mut() {
             // Skip components that don't require Docker builds
             if !spec.build_type.requires_docker_build() {
                 continue;
             }
-            
+
             // Assign host port if not specified
             if spec.port.is_none() {
                 spec.port = Some(next_port);
-                info!("Auto-assigned port {} to component {}", next_port, spec.component_name);
+                info!(
+                    "Auto-assigned port {} to component {}",
+                    next_port, spec.component_name
+                );
                 next_port += 1;
             }
-            
+
             // Determine target port: YAML > Dockerfile EXPOSE > host port
             if spec.target_port.is_none() {
-                let dockerfile_port = Self::scan_dockerfile_for_expose(spec, &config.product_path());
+                let dockerfile_port = Self::scan_dockerfile_for_expose(spec, config.product_path());
                 spec.target_port = Some(dockerfile_port.unwrap_or_else(|| spec.port.unwrap()));
-                info!("Set target_port {} for component {}", spec.target_port.unwrap(), spec.component_name);
+                info!(
+                    "Set target_port {} for component {}",
+                    spec.target_port.unwrap(),
+                    spec.component_name
+                );
             }
         }
     }
@@ -2344,7 +2685,7 @@ mod tests {
     #[tokio::test]
     async fn test_modular_reactor_config_default() {
         let config = ModularReactorConfig::default();
-        assert!(config.docker.use_enhanced_client);
+        // Docker config removed - functionality is now internal
         assert!(config.lifecycle.auto_restart);
     }
 
@@ -2369,5 +2710,4 @@ mod tests {
     // Note: Full integration tests for needs_rebuild are complex due to the need for
     // proper ComponentBuildSpec setup with Config and Variables. The functionality
     // is tested through integration tests elsewhere.
-
 }

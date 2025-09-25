@@ -7,8 +7,7 @@ pub mod bus;
 pub mod types;
 
 // Re-export main types
-pub use bus::{EventBus, EventHandler, FilteredHandler, TypedHandler, Subscription};
+pub use bus::{EventBus, EventHandler, FilteredHandler, Subscription, TypedHandler};
 pub use types::{
-    ContainerEvent, Event, EventLevel, EventMetadata, 
-    RebuildReason, ShutdownReason, StopReason
+    ContainerEvent, Event, EventLevel, EventMetadata, RebuildReason, ShutdownReason, StopReason,
 };

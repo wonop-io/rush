@@ -1,16 +1,24 @@
 //! MCP tools for controlling Rush
 
-use crate::error::{McpError, Result};
-use crate::protocol::{ToolCall, ToolInfo, ToolResult};
-use log::info;
-use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use log::info;
+use serde_json::{json, Value};
+
+use crate::error::{McpError, Result};
+use crate::protocol::{ToolCall, ToolInfo, ToolResult};
 
 /// Tool registry for Rush MCP server
 pub struct ToolRegistry {
     tools: HashMap<String, ToolInfo>,
     handlers: HashMap<String, Arc<dyn ToolHandler>>,
+}
+
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ToolRegistry {
@@ -20,13 +28,13 @@ impl ToolRegistry {
             tools: HashMap::new(),
             handlers: HashMap::new(),
         };
-        
+
         // Register all tools
         registry.register_build_tools();
         registry.register_container_tools();
         registry.register_log_tools();
         registry.register_secret_tools();
-        
+
         registry
     }
 
@@ -75,10 +83,8 @@ impl ToolRegistry {
                 }),
             },
         );
-        self.handlers.insert(
-            "rush_build".to_string(),
-            Arc::new(BuildToolHandler::new()),
-        );
+        self.handlers
+            .insert("rush_build".to_string(), Arc::new(BuildToolHandler::new()));
 
         // rush_dev tool
         self.tools.insert(
@@ -109,10 +115,8 @@ impl ToolRegistry {
                 }),
             },
         );
-        self.handlers.insert(
-            "rush_dev".to_string(),
-            Arc::new(DevToolHandler::new()),
-        );
+        self.handlers
+            .insert("rush_dev".to_string(), Arc::new(DevToolHandler::new()));
 
         // rush_deploy tool
         self.tools.insert(
@@ -195,10 +199,8 @@ impl ToolRegistry {
                 }),
             },
         );
-        self.handlers.insert(
-            "rush_stop".to_string(),
-            Arc::new(StopToolHandler::new()),
-        );
+        self.handlers
+            .insert("rush_stop".to_string(), Arc::new(StopToolHandler::new()));
 
         // rush_restart tool
         self.tools.insert(
@@ -267,10 +269,8 @@ impl ToolRegistry {
                 }),
             },
         );
-        self.handlers.insert(
-            "rush_logs".to_string(),
-            Arc::new(LogsToolHandler::new()),
-        );
+        self.handlers
+            .insert("rush_logs".to_string(), Arc::new(LogsToolHandler::new()));
 
         // rush_clear_logs tool
         self.tools.insert(
@@ -374,7 +374,7 @@ impl ToolHandler for BuildToolHandler {
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
         info!("Building product: {}", product_name);
-        
+
         // TODO: Integrate with actual Rush build system
         Ok(ToolResult {
             tool_result: json!({
@@ -403,7 +403,7 @@ impl ToolHandler for DevToolHandler {
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
         info!("Starting dev environment for: {}", product_name);
-        
+
         // TODO: Integrate with actual Rush dev command
         Ok(ToolResult {
             tool_result: json!({
@@ -434,14 +434,14 @@ impl ToolHandler for DeployToolHandler {
             .get("product_name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
-        
+
         let environment = args
             .get("environment")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("environment required".into()))?;
 
         info!("Deploying {} to {}", product_name, environment);
-        
+
         // TODO: Integrate with actual Rush deploy command
         Ok(ToolResult {
             tool_result: json!({
@@ -465,12 +465,10 @@ impl StatusToolHandler {
 #[async_trait::async_trait]
 impl ToolHandler for StatusToolHandler {
     async fn execute(&self, args: HashMap<String, Value>) -> Result<ToolResult> {
-        let _product_name = args
-            .get("product_name")
-            .and_then(|v| v.as_str());
+        let _product_name = args.get("product_name").and_then(|v| v.as_str());
 
         info!("Getting container status");
-        
+
         // TODO: Integrate with actual Rush status
         Ok(ToolResult {
             tool_result: json!({
@@ -508,7 +506,7 @@ impl ToolHandler for StopToolHandler {
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
         info!("Stopping containers for: {}", product_name);
-        
+
         // TODO: Integrate with actual Rush stop
         Ok(ToolResult {
             tool_result: json!({
@@ -536,7 +534,7 @@ impl ToolHandler for RestartToolHandler {
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
         info!("Restarting containers for: {}", product_name);
-        
+
         // TODO: Integrate with actual Rush restart
         Ok(ToolResult {
             tool_result: json!({
@@ -563,13 +561,10 @@ impl ToolHandler for LogsToolHandler {
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
-        let _lines = args
-            .get("lines")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(100);
+        let _lines = args.get("lines").and_then(|v| v.as_u64()).unwrap_or(100);
 
         info!("Getting logs for: {}", product_name);
-        
+
         // TODO: Integrate with actual log retrieval
         Ok(ToolResult {
             tool_result: json!({
@@ -595,7 +590,7 @@ impl ClearLogsToolHandler {
 impl ToolHandler for ClearLogsToolHandler {
     async fn execute(&self, _args: HashMap<String, Value>) -> Result<ToolResult> {
         info!("Clearing logs");
-        
+
         // TODO: Integrate with actual log clearing
         Ok(ToolResult {
             tool_result: json!({
@@ -623,7 +618,7 @@ impl ToolHandler for SecretsInitToolHandler {
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
         info!("Initializing secrets for: {}", product_name);
-        
+
         // TODO: Integrate with actual secrets init
         Ok(ToolResult {
             tool_result: json!({
@@ -651,7 +646,7 @@ impl ToolHandler for SecretsListToolHandler {
             .ok_or_else(|| McpError::InvalidParams("product_name required".into()))?;
 
         info!("Listing secrets for: {}", product_name);
-        
+
         // TODO: Integrate with actual secrets list
         Ok(ToolResult {
             tool_result: json!({

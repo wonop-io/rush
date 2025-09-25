@@ -1,12 +1,13 @@
 //! Reliable Docker client with retry logic and circuit breaker
 
-use crate::{ContainerStatus, DockerClient};
-use async_trait::async_trait;
-use rush_core::{
-    reliability::{CircuitBreaker, RetryConfig, with_retry, with_timeout}, Result,
-};
 use std::sync::Arc;
 use std::time::Duration;
+
+use async_trait::async_trait;
+use rush_core::reliability::{with_retry, with_timeout, CircuitBreaker, RetryConfig};
+use rush_core::Result;
+
+use crate::{ContainerStatus, DockerClient};
 
 /// Docker client wrapper with reliability features
 pub struct ReliableDockerClient {
@@ -161,7 +162,9 @@ impl DockerClient for ReliableDockerClient {
                 let ports = ports.clone();
                 let volumes = volumes.clone();
                 async move {
-                    inner.run_container(&image, &name, &network, &env_vars, &ports, &volumes).await
+                    inner
+                        .run_container(&image, &name, &network, &env_vars, &ports, &volumes)
+                        .await
                 }
             },
             self.retry_config.clone(),
@@ -199,7 +202,17 @@ impl DockerClient for ReliableDockerClient {
                 let volumes = volumes.clone();
                 let command = command.clone();
                 async move {
-                    inner.run_container_with_command(&image, &name, &network, &env_vars, &ports, &volumes, command.as_deref()).await
+                    inner
+                        .run_container_with_command(
+                            &image,
+                            &name,
+                            &network,
+                            &env_vars,
+                            &ports,
+                            &volumes,
+                            command.as_deref(),
+                        )
+                        .await
                 }
             },
             self.retry_config.clone(),
@@ -303,7 +316,9 @@ impl DockerClient for ReliableDockerClient {
     ) -> Result<()> {
         // Following logs is a streaming operation, we don't wrap it
         // with retry or timeout as it's meant to run indefinitely
-        self.inner.follow_container_logs(container_id, label, color).await
+        self.inner
+            .follow_container_logs(container_id, label, color)
+            .await
     }
 
     async fn send_signal_to_container(&self, container_id: &str, signal: i32) -> Result<()> {

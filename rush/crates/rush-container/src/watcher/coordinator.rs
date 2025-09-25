@@ -3,18 +3,18 @@
 //! This module coordinates between the file watcher and the reactor,
 //! managing rebuilds based on file changes.
 
-use crate::{
-    events::EventBus,
-    reactor::state::{SharedReactorState, ReactorPhase},
-    watcher::handler::{ChangeBatch, FileChangeHandler, HandlerConfig},
-};
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use rush_build::ComponentBuildSpec;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, RwLock};
+
 use log::{debug, error, info};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use rush_build::ComponentBuildSpec;
+use tokio::sync::{broadcast, RwLock};
+
+use crate::events::EventBus;
+use crate::reactor::state::{ReactorPhase, SharedReactorState};
+use crate::watcher::handler::{ChangeBatch, FileChangeHandler, HandlerConfig};
 
 /// Configuration for the watcher coordinator
 #[derive(Debug, Clone)]
@@ -77,7 +77,7 @@ impl WatcherCoordinator {
     ) -> Self {
         Self::new_with_base_dir(config, event_bus, state, shutdown_sender, None)
     }
-    
+
     /// Create a new watcher coordinator with base directory
     pub fn new_with_base_dir(
         config: CoordinatorConfig,
@@ -86,18 +86,18 @@ impl WatcherCoordinator {
         shutdown_sender: broadcast::Sender<()>,
         base_dir: Option<PathBuf>,
     ) -> Self {
-        let mut handler_builder = FileChangeHandler::new(config.handler_config.clone())
-            .with_event_bus(event_bus.clone());
-            
+        let mut handler_builder =
+            FileChangeHandler::new(config.handler_config.clone()).with_event_bus(event_bus.clone());
+
         // Set base directory if provided
         if let Some(base_dir) = &base_dir {
             handler_builder = handler_builder.with_base_dir(base_dir.clone());
         }
-        
+
         let handler = Arc::new(handler_builder);
         let shutdown_receiver = shutdown_sender.subscribe();
         let (event_sender, event_receiver) = tokio::sync::mpsc::unbounded_channel();
-        
+
         Self {
             config,
             handler,
@@ -106,7 +106,7 @@ impl WatcherCoordinator {
             shutdown_receiver,
             // Initialize to a time in the past to allow immediate first rebuild
             last_rebuild_time: Arc::new(RwLock::new(
-                std::time::Instant::now() - Duration::from_secs(60)
+                std::time::Instant::now() - Duration::from_secs(60),
             )),
             pending_changes: Arc::new(RwLock::new(Vec::new())),
             watcher: None,
@@ -123,36 +123,39 @@ impl WatcherCoordinator {
     /// Start watching a directory
     pub fn watch_directory(&mut self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         info!("Starting file watcher for: {}", path.display());
-        
-        let sender = self.event_sender.as_ref()
+
+        let sender = self
+            .event_sender
+            .as_ref()
             .ok_or("Event sender not available")?
             .clone();
-        
+
         // Create the watcher - send events through channel instead of spawning directly
-        let mut watcher = notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
-            match event {
-                Ok(event) => {
-                    // Send event through channel to be processed in Tokio context
-                    if let Err(e) = sender.send(event) {
-                        error!("Failed to send file event: {}", e);
+        let mut watcher =
+            notify::recommended_watcher(move |event: Result<notify::Event, notify::Error>| {
+                match event {
+                    Ok(event) => {
+                        // Send event through channel to be processed in Tokio context
+                        if let Err(e) = sender.send(event) {
+                            error!("Failed to send file event: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        error!("File watcher error: {}", e);
                     }
                 }
-                Err(e) => {
-                    error!("File watcher error: {}", e);
-                }
-            }
-        })?;
-        
+            })?;
+
         // Watch the directory recursively
         watcher.watch(path, RecursiveMode::Recursive)?;
-        
+
         // Store the watcher
         self.watcher = Some(watcher);
-        
+
         // Start the background processor
         let handler = self.handler.clone();
         handler.start_background_processor();
-        
+
         info!("File watcher started successfully");
         Ok(())
     }
@@ -166,7 +169,7 @@ impl WatcherCoordinator {
                     info!("Shutdown requested during file watch");
                     return WatchResult::Shutdown;
                 }
-                
+
                 // Process events from the watcher channel
                 Some(event) = async {
                     match &mut self.event_receiver {
@@ -177,7 +180,7 @@ impl WatcherCoordinator {
                     // Handle the event in the Tokio context
                     self.handler.handle_event(event).await;
                 }
-                
+
                 // Wait for file changes
                 batch = self.handler.wait_for_changes() => {
                     if let Some(batch) = batch {
@@ -188,7 +191,7 @@ impl WatcherCoordinator {
                             // Store the batch but don't rebuild yet
                             let mut pending = self.pending_changes.write().await;
                             pending.push(batch);
-                            
+
                             // Check if we have too many pending changes
                             let total_changes: usize = pending.iter().map(|b| b.len()).sum();
                             if total_changes >= self.config.max_pending_changes {
@@ -202,7 +205,7 @@ impl WatcherCoordinator {
                         }
                     }
                 }
-                
+
                 // Periodic check for pending changes
                 _ = tokio::time::sleep(Duration::from_secs(5)) => {
                     let mut pending = self.pending_changes.write().await;
@@ -230,11 +233,11 @@ impl WatcherCoordinator {
         if !self.config.auto_rebuild {
             return false;
         }
-        
+
         // Check reactor state
         let state = self.state.read().await;
         let phase = state.phase();
-        
+
         // Only rebuild in certain phases
         match phase {
             ReactorPhase::Running | ReactorPhase::Idle => {
@@ -244,13 +247,13 @@ impl WatcherCoordinator {
                     debug!("Rebuild cooldown not met, deferring rebuild");
                     return false;
                 }
-                
+
                 // Check if any components are affected
                 if batch.affected_components.is_empty() {
                     debug!("No components affected by changes");
                     return false;
                 }
-                
+
                 true
             }
             _ => {
@@ -264,7 +267,7 @@ impl WatcherCoordinator {
     pub async fn mark_rebuild_started(&self) {
         let mut last_rebuild = self.last_rebuild_time.write().await;
         *last_rebuild = std::time::Instant::now();
-        
+
         // Clear pending changes
         let mut pending = self.pending_changes.write().await;
         pending.clear();
@@ -286,6 +289,12 @@ pub struct CoordinatorBuilder {
     state: Option<SharedReactorState>,
     shutdown_sender: Option<broadcast::Sender<()>>,
     base_dir: Option<PathBuf>,
+}
+
+impl Default for CoordinatorBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CoordinatorBuilder {
@@ -323,7 +332,7 @@ impl CoordinatorBuilder {
         self.shutdown_sender = Some(sender);
         self
     }
-    
+
     /// Set the base directory
     pub fn with_base_dir(mut self, base_dir: PathBuf) -> Self {
         self.base_dir = Some(base_dir);
@@ -335,7 +344,7 @@ impl CoordinatorBuilder {
         let event_bus = self.event_bus.ok_or("Event bus not set")?;
         let state = self.state.ok_or("Reactor state not set")?;
         let shutdown_sender = self.shutdown_sender.ok_or("Shutdown sender not set")?;
-        
+
         Ok(WatcherCoordinator::new_with_base_dir(
             self.config,
             event_bus,
@@ -365,13 +374,13 @@ mod tests {
         let event_bus = EventBus::new();
         let state = SharedReactorState::new();
         let (shutdown_tx, _) = broadcast::channel(1);
-        
+
         let result = CoordinatorBuilder::new()
             .with_event_bus(event_bus)
             .with_state(state)
             .with_shutdown_sender(shutdown_tx)
             .build();
-        
+
         assert!(result.is_ok());
     }
 
@@ -380,7 +389,7 @@ mod tests {
         let event_bus = EventBus::new();
         let state = SharedReactorState::new();
         let (shutdown_tx, _) = broadcast::channel(1);
-        
+
         // Set state to idle (which allows rebuilds)
         {
             let mut state_guard = state.write().await;
@@ -388,7 +397,7 @@ mod tests {
             // The state starts at Idle by default, so no transition needed
             assert_eq!(state_guard.phase(), &ReactorPhase::Idle);
         }
-        
+
         let coordinator = WatcherCoordinator::new(
             CoordinatorConfig {
                 rebuild_cooldown: Duration::from_millis(100),
@@ -398,22 +407,22 @@ mod tests {
             state,
             shutdown_tx,
         );
-        
+
         let mut batch = ChangeBatch::new();
         batch.affected_components.insert("test".to_string());
-        
+
         // First check should succeed
         assert!(coordinator.should_rebuild(&batch).await);
-        
+
         // Mark rebuild started
         coordinator.mark_rebuild_started().await;
-        
+
         // Immediate check should fail due to cooldown
         assert!(!coordinator.should_rebuild(&batch).await);
-        
+
         // Wait for cooldown
         tokio::time::sleep(Duration::from_millis(150)).await;
-        
+
         // Should succeed after cooldown
         assert!(coordinator.should_rebuild(&batch).await);
     }

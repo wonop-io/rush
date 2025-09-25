@@ -1,5 +1,6 @@
-use rush_local_services::{HealthCheck, HealthStatus};
 use std::time::Duration;
+
+use rush_local_services::{HealthCheck, HealthStatus};
 
 #[test]
 fn test_health_check_creation() {

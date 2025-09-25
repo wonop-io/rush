@@ -1,8 +1,9 @@
-use log::{debug, trace};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+
+use log::{debug, trace};
+use serde::{Deserialize, Serialize};
 
 /// Stores environment variable definitions for different environments
 #[derive(Debug, Serialize, Deserialize)]
@@ -127,9 +128,11 @@ impl Variables {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     #[test]
     fn test_load_variables_from_file() {

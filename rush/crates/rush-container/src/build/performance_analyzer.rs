@@ -141,6 +141,12 @@ impl Default for ResourceUsageData {
     }
 }
 
+impl Default for BuildPerformanceAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BuildPerformanceAnalyzer {
     /// Create a new analyzer
     pub fn new() -> Self {
@@ -165,15 +171,15 @@ impl BuildPerformanceAnalyzer {
 
         // Calculate duration if this is a completion event
         let duration = match &event_type {
-            BuildEventType::Completed | BuildEventType::Failed(_) => {
-                self.find_start_event(&component)
-                    .map(|start| Instant::now() - start.timestamp)
-            }
+            BuildEventType::Completed | BuildEventType::Failed(_) => self
+                .find_start_event(&component)
+                .map(|start| Instant::now() - start.timestamp),
             _ => None,
         };
 
         // Update component metrics based on event
-        let metrics = self.metrics
+        let metrics = self
+            .metrics
             .entry(component.clone())
             .or_insert_with(|| ComponentMetrics::new(component));
 
@@ -214,7 +220,8 @@ impl BuildPerformanceAnalyzer {
         component: String,
         updates: impl FnOnce(&mut ComponentMetrics),
     ) {
-        let metrics = self.metrics
+        let metrics = self
+            .metrics
             .entry(component.clone())
             .or_insert_with(|| ComponentMetrics::new(component));
         updates(metrics);
@@ -225,10 +232,7 @@ impl BuildPerformanceAnalyzer {
         let total_duration = Instant::now() - self.start_time;
 
         // Calculate parallel efficiency
-        let total_component_time: Duration = self.metrics
-            .values()
-            .map(|m| m.duration)
-            .sum();
+        let total_component_time: Duration = self.metrics.values().map(|m| m.duration).sum();
 
         let parallelization_efficiency = if total_duration > Duration::ZERO {
             total_component_time.as_secs_f64() / total_duration.as_secs_f64()
@@ -240,10 +244,7 @@ impl BuildPerformanceAnalyzer {
         let bottlenecks = self.identify_bottlenecks();
 
         // Calculate waste
-        let total_wait_time: Duration = self.metrics
-            .values()
-            .map(|m| m.wait_time)
-            .sum();
+        let total_wait_time: Duration = self.metrics.values().map(|m| m.wait_time).sum();
 
         let waste_percentage = if total_component_time > Duration::ZERO {
             (total_wait_time.as_secs_f64() / total_component_time.as_secs_f64()) * 100.0
@@ -306,8 +307,10 @@ impl BuildPerformanceAnalyzer {
                 bottleneck_type: BottleneckType::Cpu,
                 components: vec![],
                 impact: Duration::from_secs(5),
-                description: format!("CPU bottleneck: peak usage {:.1}%",
-                    self.resource_usage.peak_cpu * 100.0),
+                description: format!(
+                    "CPU bottleneck: peak usage {:.1}%",
+                    self.resource_usage.peak_cpu * 100.0
+                ),
             });
         }
 
@@ -316,8 +319,10 @@ impl BuildPerformanceAnalyzer {
                 bottleneck_type: BottleneckType::Memory,
                 components: vec![],
                 impact: Duration::from_secs(5),
-                description: format!("Memory bottleneck: peak usage {} MB",
-                    self.resource_usage.peak_memory_mb),
+                description: format!(
+                    "Memory bottleneck: peak usage {} MB",
+                    self.resource_usage.peak_memory_mb
+                ),
             });
         }
 
@@ -465,7 +470,10 @@ impl PerformanceAnalysisReport {
         println!("\n=== Build Performance Analysis ===");
         println!("Total Duration: {:?}", self.total_duration);
         println!("Component Time Sum: {:?}", self.total_component_time);
-        println!("Parallelization Efficiency: {:.2}x", self.parallelization_efficiency);
+        println!(
+            "Parallelization Efficiency: {:.2}x",
+            self.parallelization_efficiency
+        );
         println!("Time Wasted Waiting: {:.1}%", self.waste_percentage);
         println!("\nResource Usage:");
         println!("  Peak CPU: {:.1}%", self.peak_cpu * 100.0);
@@ -475,10 +483,9 @@ impl PerformanceAnalysisReport {
         if !self.bottlenecks.is_empty() {
             println!("\nBottlenecks:");
             for bottleneck in &self.bottlenecks {
-                println!("  • {} - {} (Impact: {:?})",
-                    bottleneck.bottleneck_type,
-                    bottleneck.description,
-                    bottleneck.impact
+                println!(
+                    "  • {} - {} (Impact: {:?})",
+                    bottleneck.bottleneck_type, bottleneck.description, bottleneck.impact
                 );
             }
         }
@@ -486,7 +493,8 @@ impl PerformanceAnalysisReport {
         if !self.slowest_components.is_empty() {
             println!("\nSlowest Components:");
             for comp in &self.slowest_components {
-                println!("  • {} - {:?} (Efficiency: {:.1}%)",
+                println!(
+                    "  • {} - {:?} (Efficiency: {:.1}%)",
                     comp.name,
                     comp.duration,
                     comp.efficiency * 100.0
@@ -497,10 +505,9 @@ impl PerformanceAnalysisReport {
         if !self.suggestions.is_empty() {
             println!("\nOptimization Suggestions:");
             for suggestion in &self.suggestions {
-                println!("  [{:?}] {}: {}",
-                    suggestion.priority,
-                    suggestion.category,
-                    suggestion.suggestion
+                println!(
+                    "  [{:?}] {}: {}",
+                    suggestion.priority, suggestion.category, suggestion.suggestion
                 );
             }
         }

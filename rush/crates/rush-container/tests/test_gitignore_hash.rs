@@ -1,9 +1,10 @@
 use std::fs;
-use std::sync::Arc;
 use std::process::Command;
-use tempfile::TempDir;
+use std::sync::Arc;
+
 use rush_container::tagging::ImageTagGenerator;
 use rush_toolchain::ToolchainContext;
+use tempfile::TempDir;
 
 /// Helper function to set up test environment variables
 fn setup_test_env() {
@@ -37,9 +38,21 @@ async fn test_hash_excludes_gitignored_files() {
     fs::write(component_dir.join(".gitignore"), "*.log\n").unwrap();
 
     // Initialize git
-    Command::new("git").args(&["init"]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["add", "."]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["commit", "-m", "test"]).current_dir(&base_path).output().unwrap();
+    Command::new("git")
+        .args(["init"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "test"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
 
     let toolchain = Arc::new(ToolchainContext::default());
     let tag_generator = ImageTagGenerator::new(toolchain.clone(), base_path.to_path_buf());
@@ -51,7 +64,8 @@ async fn test_hash_excludes_gitignored_files() {
         "local",
         "localhost:5000",
         8000,
-    ).expect("Failed to create config");
+    )
+    .expect("Failed to create config");
 
     let spec = rush_build::ComponentBuildSpec {
         build_type: rush_build::BuildType::RustBinary {
@@ -95,25 +109,44 @@ async fn test_hash_excludes_gitignored_files() {
     let hash1 = tag_generator.compute_tag(&spec).unwrap();
 
     // Modify gitignored file
-    fs::write(component_dir.join("temp.log"), "modified log data that should not affect hash").unwrap();
+    fs::write(
+        component_dir.join("temp.log"),
+        "modified log data that should not affect hash",
+    )
+    .unwrap();
 
     // Hash should NOT change
     let hash2 = tag_generator.compute_tag(&spec).unwrap();
     assert_eq!(hash1, hash2, "Hash should not change for gitignored files");
 
     // Modify tracked file
-    fs::write(component_dir.join("main.rs"), "fn main() { println!(\"hi\"); }").unwrap();
+    fs::write(
+        component_dir.join("main.rs"),
+        "fn main() { println!(\"hi\"); }",
+    )
+    .unwrap();
 
     // Add and commit the change to make it part of the repository
-    Command::new("git").args(&["add", "."]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["commit", "-m", "modified"]).current_dir(&base_path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "modified"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
 
     // Create a new tag generator to avoid caching issues
     let tag_generator2 = ImageTagGenerator::new(toolchain.clone(), base_path.to_path_buf());
 
     // Hash SHOULD change after committing
     let hash3 = tag_generator2.compute_tag(&spec).unwrap();
-    assert_ne!(hash2, hash3, "Hash should change for tracked files after commit");
+    assert_ne!(
+        hash2, hash3,
+        "Hash should change for tracked files after commit"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -142,9 +175,21 @@ async fn test_hash_respects_nested_gitignores() {
     fs::write(src_dir.join(".gitignore"), "debug.log\n").unwrap();
 
     // Initialize git
-    Command::new("git").args(&["init"]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["add", "."]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["commit", "-m", "test"]).current_dir(&base_path).output().unwrap();
+    Command::new("git")
+        .args(["init"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "test"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
 
     let toolchain = Arc::new(ToolchainContext::default());
     let tag_generator = ImageTagGenerator::new(toolchain.clone(), base_path.to_path_buf());
@@ -155,7 +200,8 @@ async fn test_hash_respects_nested_gitignores() {
         "local",
         "localhost:5000",
         8000,
-    ).expect("Failed to create config");
+    )
+    .expect("Failed to create config");
 
     let spec = rush_build::ComponentBuildSpec {
         build_type: rush_build::BuildType::RustBinary {
@@ -205,21 +251,35 @@ async fn test_hash_respects_nested_gitignores() {
 
     // Hash should NOT change for any gitignored files
     let hash2 = tag_generator.compute_tag(&spec).unwrap();
-    assert_eq!(hash1, hash2, "Hash should not change for files ignored at any level");
+    assert_eq!(
+        hash1, hash2,
+        "Hash should not change for files ignored at any level"
+    );
 
     // Modify a tracked file
     fs::write(src_dir.join("lib.rs"), "pub fn lib() { /* modified */ }").unwrap();
 
     // Add and commit the change
-    Command::new("git").args(&["add", "."]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["commit", "-m", "modified"]).current_dir(&base_path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "modified"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
 
     // Create a new tag generator to avoid caching issues
     let tag_generator2 = ImageTagGenerator::new(toolchain.clone(), base_path.to_path_buf());
 
     // Hash SHOULD change after committing
     let hash3 = tag_generator2.compute_tag(&spec).unwrap();
-    assert_ne!(hash2, hash3, "Hash should change for tracked files in nested directories after commit");
+    assert_ne!(
+        hash2, hash3,
+        "Hash should change for tracked files in nested directories after commit"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -239,7 +299,11 @@ async fn test_hash_with_target_directory() {
 
     // Create source files
     fs::write(component_dir.join("main.rs"), "fn main() {}").unwrap();
-    fs::write(component_dir.join("Cargo.toml"), "[package]\nname = \"test\"\n").unwrap();
+    fs::write(
+        component_dir.join("Cargo.toml"),
+        "[package]\nname = \"test\"\n",
+    )
+    .unwrap();
 
     // Create build artifacts that should be ignored
     fs::write(debug_dir.join("binary"), "compiled binary data").unwrap();
@@ -249,9 +313,21 @@ async fn test_hash_with_target_directory() {
     fs::write(component_dir.join(".gitignore"), "target/\n*.log\n").unwrap();
 
     // Initialize git
-    Command::new("git").args(&["init"]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["add", "."]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["commit", "-m", "test"]).current_dir(&base_path).output().unwrap();
+    Command::new("git")
+        .args(["init"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "test"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
 
     let toolchain = Arc::new(ToolchainContext::default());
     let tag_generator = ImageTagGenerator::new(toolchain.clone(), base_path.to_path_buf());
@@ -262,7 +338,8 @@ async fn test_hash_with_target_directory() {
         "local",
         "localhost:5000",
         8000,
-    ).expect("Failed to create config");
+    )
+    .expect("Failed to create config");
 
     let spec = rush_build::ComponentBuildSpec {
         build_type: rush_build::BuildType::RustBinary {
@@ -306,22 +383,44 @@ async fn test_hash_with_target_directory() {
     let hash1 = tag_generator.compute_tag(&spec).unwrap();
 
     // Modify build artifacts (should not affect hash)
-    fs::write(debug_dir.join("binary"), "recompiled binary with different data").unwrap();
+    fs::write(
+        debug_dir.join("binary"),
+        "recompiled binary with different data",
+    )
+    .unwrap();
     fs::write(debug_dir.join("deps.d"), "dependency file").unwrap();
 
     let hash2 = tag_generator.compute_tag(&spec).unwrap();
-    assert_eq!(hash1, hash2, "Hash should not change when target/ directory contents change");
+    assert_eq!(
+        hash1, hash2,
+        "Hash should not change when target/ directory contents change"
+    );
 
     // Modify source file (should affect hash)
-    fs::write(component_dir.join("main.rs"), "fn main() { println!(\"changed\"); }").unwrap();
+    fs::write(
+        component_dir.join("main.rs"),
+        "fn main() { println!(\"changed\"); }",
+    )
+    .unwrap();
 
     // Add and commit the change
-    Command::new("git").args(&["add", "."]).current_dir(&base_path).output().unwrap();
-    Command::new("git").args(&["commit", "-m", "modified source"]).current_dir(&base_path).output().unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "modified source"])
+        .current_dir(base_path)
+        .output()
+        .unwrap();
 
     // Create a new tag generator to avoid caching issues
     let tag_generator2 = ImageTagGenerator::new(toolchain.clone(), base_path.to_path_buf());
 
     let hash3 = tag_generator2.compute_tag(&spec).unwrap();
-    assert_ne!(hash2, hash3, "Hash should change when source files change after commit");
+    assert_ne!(
+        hash2, hash3,
+        "Hash should change when source files change after commit"
+    );
 }

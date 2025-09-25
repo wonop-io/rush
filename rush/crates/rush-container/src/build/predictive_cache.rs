@@ -4,16 +4,18 @@
 //! which components are likely to be built next and preemptively
 //! prepare resources to minimize build time.
 
-use crate::build::cache::CacheEntry;
-use rush_core::Result;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{RwLock, Semaphore};
-use log::{debug, info};
-use serde::{Deserialize, Serialize};
+
 use chrono::{Local, Timelike};
+use log::{debug, info};
+use rush_core::Result;
+use serde::{Deserialize, Serialize};
+use tokio::sync::{RwLock, Semaphore};
+
+use crate::build::cache::CacheEntry;
 
 /// Predictive cache that learns from build patterns
 pub struct PredictiveCache {
@@ -44,6 +46,12 @@ pub struct BuildPatterns {
     last_builds: HashMap<String, SystemTime>,
 }
 
+impl Default for BuildPatterns {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BuildPatterns {
     pub fn new() -> Self {
         Self {
@@ -57,7 +65,7 @@ impl BuildPatterns {
 
     /// Record a build sequence
     pub fn record_sequence(&mut self, from: String, to: String) {
-        let entry = self.sequences.entry(from).or_insert_with(Vec::new);
+        let entry = self.sequences.entry(from).or_default();
 
         // Update or add transition probability
         if let Some(transition) = entry.iter_mut().find(|(comp, _)| comp == &to) {
@@ -78,13 +86,14 @@ impl BuildPatterns {
         *self.build_frequency.entry(component.clone()).or_insert(0) += 1;
 
         // Update last build time
-        self.last_builds.insert(component.clone(), SystemTime::now());
+        self.last_builds
+            .insert(component.clone(), SystemTime::now());
 
         // Update temporal pattern
         let hour = Local::now().hour();
         self.temporal_patterns
             .entry(hour)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(component);
     }
 
@@ -167,6 +176,12 @@ pub struct CacheMetadata {
     pub cache_ages: HashMap<String, Duration>,
 }
 
+impl Default for CacheMetadata {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CacheMetadata {
     pub fn new() -> Self {
         Self {
@@ -200,8 +215,7 @@ impl CacheMetadata {
 impl PredictiveCache {
     /// Create a new predictive cache
     pub fn new(cache_dir: PathBuf) -> Result<Self> {
-        std::fs::create_dir_all(&cache_dir)
-            .map_err(|e| rush_core::Error::Io(e))?;
+        std::fs::create_dir_all(&cache_dir).map_err(rush_core::Error::Io)?;
 
         let patterns = Self::load_patterns(&cache_dir).unwrap_or_else(|_| BuildPatterns::new());
         let metadata = Self::load_metadata(&cache_dir).unwrap_or_else(|_| CacheMetadata::new());
@@ -219,10 +233,9 @@ impl PredictiveCache {
     fn load_patterns(cache_dir: &PathBuf) -> Result<BuildPatterns> {
         let path = cache_dir.join("patterns.json");
         if path.exists() {
-            let data = std::fs::read_to_string(&path)
-                .map_err(|e| rush_core::Error::Io(e))?;
+            let data = std::fs::read_to_string(&path).map_err(rush_core::Error::Io)?;
             serde_json::from_str(&data)
-                .map_err(|e| rush_core::Error::Config(format!("Failed to parse patterns: {}", e)))
+                .map_err(|e| rush_core::Error::Config(format!("Failed to parse patterns: {e}")))
         } else {
             Ok(BuildPatterns::new())
         }
@@ -232,10 +245,9 @@ impl PredictiveCache {
     fn load_metadata(cache_dir: &PathBuf) -> Result<CacheMetadata> {
         let path = cache_dir.join("metadata.json");
         if path.exists() {
-            let data = std::fs::read_to_string(&path)
-                .map_err(|e| rush_core::Error::Io(e))?;
+            let data = std::fs::read_to_string(&path).map_err(rush_core::Error::Io)?;
             serde_json::from_str(&data)
-                .map_err(|e| rush_core::Error::Config(format!("Failed to parse metadata: {}", e)))
+                .map_err(|e| rush_core::Error::Config(format!("Failed to parse metadata: {e}")))
         } else {
             Ok(CacheMetadata::new())
         }
@@ -246,9 +258,8 @@ impl PredictiveCache {
         let patterns = self.patterns.read().await;
         let path = self.cache_dir.join("patterns.json");
         let data = serde_json::to_string_pretty(&*patterns)
-            .map_err(|e| rush_core::Error::Config(format!("Failed to serialize patterns: {}", e)))?;
-        std::fs::write(path, data)
-            .map_err(|e| rush_core::Error::Io(e))?;
+            .map_err(|e| rush_core::Error::Config(format!("Failed to serialize patterns: {e}")))?;
+        std::fs::write(path, data).map_err(rush_core::Error::Io)?;
         Ok(())
     }
 
@@ -257,9 +268,8 @@ impl PredictiveCache {
         let metadata = self.metadata.read().await;
         let path = self.cache_dir.join("metadata.json");
         let data = serde_json::to_string_pretty(&*metadata)
-            .map_err(|e| rush_core::Error::Config(format!("Failed to serialize metadata: {}", e)))?;
-        std::fs::write(path, data)
-            .map_err(|e| rush_core::Error::Io(e))?;
+            .map_err(|e| rush_core::Error::Config(format!("Failed to serialize metadata: {e}")))?;
+        std::fs::write(path, data).map_err(rush_core::Error::Io)?;
         Ok(())
     }
 
@@ -290,7 +300,7 @@ impl PredictiveCache {
 
     /// Get from cache (simplified implementation)
     async fn get_from_cache(&self, component: &str) -> Option<CacheEntry> {
-        let cache_path = self.cache_dir.join(format!("{}.cache", component));
+        let cache_path = self.cache_dir.join(format!("{component}.cache"));
         if cache_path.exists() {
             // In real implementation, would deserialize CacheEntry
             debug!("Cache hit for component: {}", component);
@@ -399,15 +409,15 @@ impl PredictiveCache {
         }
 
         // Check for stale entries
-        let stale_count = metadata.cache_ages
+        let stale_count = metadata
+            .cache_ages
             .values()
             .filter(|age| **age > Duration::from_secs(86400))
             .count();
 
         if stale_count > metadata.entry_count / 4 {
             recommendations.push(format!(
-                "{} cache entries are over 24 hours old. Consider cache cleanup.",
-                stale_count
+                "{stale_count} cache entries are over 24 hours old. Consider cache cleanup."
             ));
         }
 
@@ -415,8 +425,7 @@ impl PredictiveCache {
         for (component, freq) in &patterns.build_frequency {
             if *freq > 10 && !metadata.mru_components.contains(component) {
                 recommendations.push(format!(
-                    "Component '{}' is frequently built but not cached. Consider persistent caching.",
-                    component
+                    "Component '{component}' is frequently built but not cached. Consider persistent caching."
                 ));
             }
         }
@@ -431,17 +440,20 @@ impl PredictiveCache {
         while metadata.total_size > target_size && !metadata.mru_components.is_empty() {
             // Remove least recently used
             if let Some(component) = metadata.mru_components.pop_back() {
-                let cache_path = self.cache_dir.join(format!("{}.cache", component));
+                let cache_path = self.cache_dir.join(format!("{component}.cache"));
                 if cache_path.exists() {
                     let size = std::fs::metadata(&cache_path)
-                        .map_err(|e| rush_core::Error::Io(e))?.len();
-                    std::fs::remove_file(cache_path)
-                        .map_err(|e| rush_core::Error::Io(e))?;
+                        .map_err(rush_core::Error::Io)?
+                        .len();
+                    std::fs::remove_file(cache_path).map_err(rush_core::Error::Io)?;
                     metadata.total_size -= size;
                     metadata.entry_count -= 1;
                     metadata.cache_ages.remove(&component);
 
-                    info!("Evicted cache entry for '{}' (freed {} bytes)", component, size);
+                    info!(
+                        "Evicted cache entry for '{}' (freed {} bytes)",
+                        component, size
+                    );
                 }
             }
         }
@@ -474,22 +486,28 @@ impl CachePerformanceReport {
     pub fn print(&self) {
         println!("\n=== Cache Performance Report ===");
         println!("Hit Rate: {:.1}%", self.hit_rate * 100.0);
-        println!("Cache Size: {} MB ({} entries)",
-            self.total_size / 1_000_000, self.entry_count);
+        println!(
+            "Cache Size: {} MB ({} entries)",
+            self.total_size / 1_000_000,
+            self.entry_count
+        );
         println!("Average Cache Age: {:?}", self.avg_cache_age);
-        println!("Prediction Accuracy: {:.1}%", self.prediction_accuracy * 100.0);
+        println!(
+            "Prediction Accuracy: {:.1}%",
+            self.prediction_accuracy * 100.0
+        );
 
         if !self.hot_components.is_empty() {
             println!("\nHot Components:");
             for component in &self.hot_components {
-                println!("  - {}", component);
+                println!("  - {component}");
             }
         }
 
         if !self.recommendations.is_empty() {
             println!("\nRecommendations:");
             for rec in &self.recommendations {
-                println!("  • {}", rec);
+                println!("  • {rec}");
             }
         }
     }
@@ -497,8 +515,9 @@ impl CachePerformanceReport {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_build_patterns() {
@@ -522,8 +541,12 @@ mod tests {
 
         // Record some builds
         cache.record_build(None, "database".to_string()).await;
-        cache.record_build(Some("database".to_string()), "api".to_string()).await;
-        cache.record_build(Some("api".to_string()), "frontend".to_string()).await;
+        cache
+            .record_build(Some("database".to_string()), "api".to_string())
+            .await;
+        cache
+            .record_build(Some("api".to_string()), "frontend".to_string())
+            .await;
 
         // Save and reload
         cache.save_patterns().await.unwrap();
@@ -558,7 +581,13 @@ mod tests {
 
         let metadata = cache.metadata.read().await;
         // After eviction, total size should be reduced (but may not be exactly 500MB due to file sizes)
-        assert!(metadata.total_size < 1_000_000_000, "Cache size should be reduced after eviction");
-        assert!(metadata.entry_count < 10, "Some entries should have been evicted");
+        assert!(
+            metadata.total_size < 1_000_000_000,
+            "Cache size should be reduced after eviction"
+        );
+        assert!(
+            metadata.entry_count < 10,
+            "Some entries should have been evicted"
+        );
     }
 }

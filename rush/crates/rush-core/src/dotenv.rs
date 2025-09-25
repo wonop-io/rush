@@ -1,8 +1,9 @@
-use log::{debug, error, trace};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+
+use log::{debug, error, trace};
 
 /// Loads environment variables from a .env file
 ///

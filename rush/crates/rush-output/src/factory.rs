@@ -1,6 +1,8 @@
-use super::{BufferedOutputDirector, FileOutputDirector, OutputDirector, StdOutputDirector};
-use rush_core::error::Result;
 use std::path::Path;
+
+use rush_core::error::Result;
+
+use super::{BufferedOutputDirector, FileOutputDirector, OutputDirector, StdOutputDirector};
 
 /// Configuration for output director creation
 #[derive(Debug, Clone)]
@@ -222,8 +224,9 @@ impl OutputDirector for CombinedOutputDirector {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_factory_create_stdout() {

@@ -1,11 +1,13 @@
-use crate::commands;
-use crate::context::CliContext;
-use crate::args::DescribeCommand;
+use std::process;
+use std::sync::Arc;
+
 use clap::ArgMatches;
 use log::{error, trace};
 use rush_core::error::Result;
-use std::process;
-use std::sync::Arc;
+
+use crate::args::DescribeCommand;
+use crate::commands;
+use crate::context::CliContext;
 
 /// Execute the appropriate command based on command line arguments
 pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
@@ -35,13 +37,17 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
             DescribeCommand::Images
         } else if describe_matches.subcommand_matches("services").is_some() {
             DescribeCommand::Services
-        } else if let Some(build_script_matches) = describe_matches.subcommand_matches("build-script") {
+        } else if let Some(build_script_matches) =
+            describe_matches.subcommand_matches("build-script")
+        {
             let component_name = build_script_matches
                 .get_one::<String>("component")
                 .unwrap_or(&String::new())
                 .clone();
             DescribeCommand::BuildScript { component_name }
-        } else if let Some(build_context_matches) = describe_matches.subcommand_matches("build-context") {
+        } else if let Some(build_context_matches) =
+            describe_matches.subcommand_matches("build-context")
+        {
             let component_name = build_context_matches
                 .get_one::<String>("component")
                 .unwrap_or(&String::new())
@@ -67,7 +73,7 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         #[derive(Debug)]
         struct DummySecretsProvider;
 
-        use rush_security::secrets::{SecretError, Environment};
+        use rush_security::secrets::{Environment, SecretError};
 
         #[async_trait::async_trait]
         impl rush_security::SecretsProvider for DummySecretsProvider {
@@ -76,7 +82,8 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
                 _product_name: &str,
                 _component_name: &str,
                 _environment: &Environment,
-            ) -> std::result::Result<std::collections::HashMap<String, String>, SecretError> {
+            ) -> std::result::Result<std::collections::HashMap<String, String>, SecretError>
+            {
                 Ok(std::collections::HashMap::new())
             }
 
@@ -100,7 +107,8 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
             }
         }
 
-        let dummy_provider: Arc<dyn rush_security::SecretsProvider> = Arc::new(DummySecretsProvider);
+        let dummy_provider: Arc<dyn rush_security::SecretsProvider> =
+            Arc::new(DummySecretsProvider);
 
         // Execute the describe command
         // Most describe commands don't actually need services or secrets
@@ -110,7 +118,8 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
             &[], // Empty services array - describe doesn't need running services
             &ctx.toolchain,
             &dummy_provider,
-        ).await
+        )
+        .await
     } else if let Some(vault_matches) = matches.subcommand_matches("vault") {
         trace!("Executing vault command");
         commands::vault::execute(vault_matches, ctx).await
@@ -140,11 +149,11 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         // Note: Local services are already started in context_builder before .env generation
         // We just need to launch the application containers now
         let result = ctx.reactor.launch().await;
-        
+
         // Stop local services when the reactor exits
         // The component that started them is responsible for stopping them
         ctx.stop_local_services().await;
-        
+
         match result {
             Ok(_) => {
                 trace!("Development environment completed successfully");
@@ -177,41 +186,41 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
         commands::install::uninstall(ctx).await
     } else if let Some(deploy_matches) = matches.subcommand_matches("deploy") {
         trace!("Executing deploy command");
-        
+
         // Parse deployment configuration from command line arguments
         let mut deployment_config = commands::deploy::DeploymentConfig::default();
-        
+
         // Check for dry-run flag
         if deploy_matches.get_flag("dry-run") {
             deployment_config.dry_run = true;
         }
-        
+
         // Check for force rebuild flag
         if deploy_matches.get_flag("force-rebuild") {
             deployment_config.force_rebuild = true;
         }
-        
+
         // Check for skip-push flag
         if deploy_matches.get_flag("skip-push") {
             deployment_config.skip_push = true;
         }
-        
+
         // Check for no-wait flag
         if deploy_matches.get_flag("no-wait") {
             deployment_config.wait_for_ready = false;
         }
-        
+
         // Check for no-rollback flag
         if deploy_matches.get_flag("no-rollback") {
             deployment_config.auto_rollback = false;
         }
-        
+
         // Check for deployment strategy
         if let Some(strategy) = deploy_matches.get_one::<String>("strategy") {
             deployment_config.strategy = match strategy.as_str() {
-                "rolling" => commands::deploy::DeploymentStrategy::RollingUpdate { 
-                    max_surge: 1, 
-                    max_unavailable: 1 
+                "rolling" => commands::deploy::DeploymentStrategy::RollingUpdate {
+                    max_surge: 1,
+                    max_unavailable: 1,
                 },
                 "blue-green" => commands::deploy::DeploymentStrategy::BlueGreen,
                 "canary" => commands::deploy::DeploymentStrategy::Canary { percentage: 10 },
@@ -219,27 +228,27 @@ pub async fn execute_command(matches: &ArgMatches, ctx: &mut CliContext) -> Resu
                 _ => commands::deploy::DeploymentStrategy::default(),
             };
         }
-        
+
         // Execute deployment
         commands::deploy::execute(ctx.config.clone(), deployment_config).await
     } else if let Some(apply_matches) = matches.subcommand_matches("apply") {
         trace!("Executing apply command");
-        
+
         // Check for dry-run flag
         if apply_matches.get_flag("dry-run") {
             std::env::set_var("K8S_DRY_RUN", "true");
         }
-        
+
         // Apply Kubernetes manifests without building
         ctx.reactor.apply().await
     } else if let Some(unapply_matches) = matches.subcommand_matches("unapply") {
         trace!("Executing unapply command");
-        
+
         // Check for dry-run flag
         if unapply_matches.get_flag("dry-run") {
             std::env::set_var("K8S_DRY_RUN", "true");
         }
-        
+
         // Remove Kubernetes resources
         ctx.reactor.unapply().await
     } else if matches.subcommand_matches("build").is_some() {

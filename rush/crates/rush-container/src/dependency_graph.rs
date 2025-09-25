@@ -5,9 +5,10 @@
 //! cycle detection and wave-based startup planning for optimal parallelization.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+
+use log::{debug, error, info, warn};
 use rush_build::ComponentBuildSpec;
 use rush_core::error::{Error, Result};
-use log::{debug, error, info, warn};
 
 /// Represents the state of a node in the dependency graph
 #[derive(Debug, Clone, PartialEq)]
@@ -81,15 +82,20 @@ impl DependencyGraph {
     /// with support for LocalService mappings
     pub fn from_specs_with_local_services(
         specs: Vec<ComponentBuildSpec>,
-        local_services: &HashMap<String, String>,  // Maps service names to their types (e.g., "database" -> "postgresql")
+        local_services: &HashMap<String, String>, // Maps service names to their types (e.g., "database" -> "postgresql")
     ) -> Result<Self> {
         let mut graph = Self::new();
 
         // Log what components we're processing
-        info!("Building dependency graph from {} component specs", specs.len());
+        info!(
+            "Building dependency graph from {} component specs",
+            specs.len()
+        );
         for spec in &specs {
-            debug!("  Component '{}': type={:?}, depends_on={:?}",
-                spec.component_name, spec.build_type, spec.depends_on);
+            debug!(
+                "  Component '{}': type={:?}, depends_on={:?}",
+                spec.component_name, spec.build_type, spec.depends_on
+            );
         }
 
         // Create nodes for all components
@@ -98,22 +104,26 @@ impl DependencyGraph {
             let name = node.name.clone();
 
             // Store dependencies (reverse edges), filtering out local services
-            let filtered_deps: Vec<String> = spec.depends_on
+            let filtered_deps: Vec<String> = spec
+                .depends_on
                 .iter()
                 .filter(|dep| {
                     // Check if this dependency refers to a local service
-                    let is_local_service = local_services.contains_key(*dep) ||
-                        local_services.values().any(|service_type| {
+                    let is_local_service = local_services.contains_key(*dep)
+                        || local_services.values().any(|service_type| {
                             // Map common service type names to dependencies
                             // e.g., "postgresql" service type satisfies "postgres" dependency
-                            (service_type == "postgresql" && *dep == "postgres") ||
-                            (service_type == "mysql" && *dep == "mysql") ||
-                            (service_type == "redis" && *dep == "redis") ||
-                            (service_type == "mongodb" && *dep == "mongo")
+                            (service_type == "postgresql" && *dep == "postgres")
+                                || (service_type == "mysql" && *dep == "mysql")
+                                || (service_type == "redis" && *dep == "redis")
+                                || (service_type == "mongodb" && *dep == "mongo")
                         });
 
                     if is_local_service {
-                        debug!("Filtering out local service dependency '{}' for component '{}'", dep, name);
+                        debug!(
+                            "Filtering out local service dependency '{}' for component '{}'",
+                            dep, name
+                        );
                         false
                     } else {
                         true
@@ -145,18 +155,22 @@ impl DependencyGraph {
                     // Log detailed error with available components
                     error!("Dependency validation failed:");
                     error!("  Component '{}' depends on '{}'", dependent, dep);
-                    error!("  '{}' does not exist in available components: {:?}", dep, available_nodes);
+                    error!(
+                        "  '{}' does not exist in available components: {:?}",
+                        dep, available_nodes
+                    );
                     error!("  Hint: Check if '{}' is a LocalService that might have a different name in stack.spec.yaml", dep);
 
                     return Err(Error::Config(format!(
-                        "Component '{}' depends on '{}', which does not exist. Available components: {:?}",
-                        dependent, dep, available_nodes
+                        "Component '{dependent}' depends on '{dep}', which does not exist. Available components: {available_nodes:?}"
                     )));
                 }
 
                 // Add forward edge
-                graph.edges.entry(dep.clone())
-                    .or_insert_with(Vec::new)
+                graph
+                    .edges
+                    .entry(dep.clone())
+                    .or_default()
                     .push(dependent.clone());
             }
         }
@@ -164,7 +178,10 @@ impl DependencyGraph {
         // Validate no cycles exist
         graph.validate_acyclic()?;
 
-        info!("Built dependency graph with {} components", graph.nodes.len());
+        info!(
+            "Built dependency graph with {} components",
+            graph.nodes.len()
+        );
         Ok(graph)
     }
 
@@ -200,13 +217,10 @@ impl DependencyGraph {
             }
 
             // Check if all dependencies are healthy
-            let deps_ready = self.get_dependencies(name)
+            let deps_ready = self
+                .get_dependencies(name)
                 .iter()
-                .all(|dep| {
-                    self.nodes.get(dep)
-                        .map(|n| n.is_ready())
-                        .unwrap_or(false)
-                });
+                .all(|dep| self.nodes.get(dep).map(|n| n.is_ready()).unwrap_or(false));
 
             if deps_ready {
                 ready.push(name.clone());
@@ -219,16 +233,12 @@ impl DependencyGraph {
 
     /// Get the dependencies of a component
     pub fn get_dependencies(&self, name: &str) -> Vec<String> {
-        self.reverse_edges.get(name)
-            .cloned()
-            .unwrap_or_default()
+        self.reverse_edges.get(name).cloned().unwrap_or_default()
     }
 
     /// Get the dependents of a component (components that depend on it)
     pub fn get_dependents(&self, name: &str) -> Vec<String> {
-        self.edges.get(name)
-            .cloned()
-            .unwrap_or_default()
+        self.edges.get(name).cloned().unwrap_or_default()
     }
 
     /// Get all downstream components that depend on the given components (transitively)
@@ -260,13 +270,16 @@ impl DependencyGraph {
         match self.nodes.get_mut(name) {
             Some(node) => {
                 if node.state != NodeState::Pending {
-                    warn!("Component {} is not pending (current state: {:?})", name, node.state);
+                    warn!(
+                        "Component {} is not pending (current state: {:?})",
+                        name, node.state
+                    );
                 }
                 node.state = NodeState::Starting;
                 debug!("Component {} marked as starting", name);
                 Ok(())
             }
-            None => Err(Error::Internal(format!("Component {} not found", name)))
+            None => Err(Error::Internal(format!("Component {name} not found"))),
         }
     }
 
@@ -278,7 +291,7 @@ impl DependencyGraph {
                 debug!("Component {} marked as waiting for health", name);
                 Ok(())
             }
-            None => Err(Error::Internal(format!("Component {} not found", name)))
+            None => Err(Error::Internal(format!("Component {name} not found"))),
         }
     }
 
@@ -290,7 +303,7 @@ impl DependencyGraph {
                 info!("Component {} marked as healthy", name);
                 Ok(())
             }
-            None => Err(Error::Internal(format!("Component {} not found", name)))
+            None => Err(Error::Internal(format!("Component {name} not found"))),
         }
     }
 
@@ -302,7 +315,7 @@ impl DependencyGraph {
                 warn!("Component {} marked as failed: {}", name, error);
                 Ok(())
             }
-            None => Err(Error::Internal(format!("Component {} not found", name)))
+            None => Err(Error::Internal(format!("Component {name} not found"))),
         }
     }
 
@@ -318,7 +331,8 @@ impl DependencyGraph {
         }
 
         // Find nodes with no dependencies (in-degree = 0)
-        let mut queue: VecDeque<String> = in_degree.iter()
+        let mut queue: VecDeque<String> = in_degree
+            .iter()
             .filter(|(_, &degree)| degree == 0)
             .map(|(name, _)| name.clone())
             .collect();
@@ -342,14 +356,15 @@ impl DependencyGraph {
 
         // Check if all nodes were processed
         if result.len() != self.nodes.len() {
-            let unprocessed: Vec<String> = self.nodes.keys()
+            let unprocessed: Vec<String> = self
+                .nodes
+                .keys()
                 .filter(|k| !result.contains(k))
                 .cloned()
                 .collect();
 
             return Err(Error::Config(format!(
-                "Circular dependency detected. Unprocessed components: {:?}",
-                unprocessed
+                "Circular dependency detected. Unprocessed components: {unprocessed:?}"
             )));
         }
 
@@ -383,7 +398,7 @@ impl DependencyGraph {
             if wave.is_empty() {
                 // This shouldn't happen if topological sort succeeded
                 return Err(Error::Internal(
-                    "Failed to calculate startup waves - possible logic error".to_string()
+                    "Failed to calculate startup waves - possible logic error".to_string(),
                 ));
             }
 
@@ -406,12 +421,10 @@ impl DependencyGraph {
         let mut rec_stack = HashSet::new();
 
         for name in self.nodes.keys() {
-            if !visited.contains(name) {
-                if self.has_cycle_dfs(name, &mut visited, &mut rec_stack)? {
-                    return Err(Error::Config(
-                        "Circular dependency detected in component dependencies".to_string()
-                    ));
-                }
+            if !visited.contains(name) && self.has_cycle_dfs(name, &mut visited, &mut rec_stack)? {
+                return Err(Error::Config(
+                    "Circular dependency detected in component dependencies".to_string(),
+                ));
             }
         }
 
@@ -462,17 +475,16 @@ impl DependencyGraph {
                 NodeState::Failed(_) => "red",
             };
             dot.push_str(&format!(
-                "  \"{}\" [style=filled, fillcolor={}];\n",
-                name, color
+                "  \"{name}\" [style=filled, fillcolor={color}];\n"
             ));
         }
 
-        dot.push_str("\n");
+        dot.push('\n');
 
         // Add edges
-        for (name, _) in &self.nodes {
+        for name in self.nodes.keys() {
             for dep in self.get_dependencies(name) {
-                dot.push_str(&format!("  \"{}\" -> \"{}\";\n", dep, name));
+                dot.push_str(&format!("  \"{dep}\" -> \"{name}\";\n"));
             }
         }
 
@@ -484,21 +496,18 @@ impl DependencyGraph {
     pub fn stats(&self) -> GraphStats {
         let total_components = self.nodes.len();
         let components_with_deps = self.reverse_edges.len();
-        let total_dependencies: usize = self.reverse_edges.values()
-            .map(|deps| deps.len())
-            .sum();
+        let total_dependencies: usize = self.reverse_edges.values().map(|deps| deps.len()).sum();
 
-        let max_dependencies = self.reverse_edges.values()
+        let max_dependencies = self
+            .reverse_edges
+            .values()
             .map(|deps| deps.len())
             .max()
             .unwrap_or(0);
 
         let waves = self.get_startup_waves().unwrap_or_default();
         let wave_count = waves.len();
-        let max_wave_size = waves.iter()
-            .map(|w| w.len())
-            .max()
-            .unwrap_or(0);
+        let max_wave_size = waves.iter().map(|w| w.len()).max().unwrap_or(0);
 
         GraphStats {
             total_components,
@@ -530,10 +539,12 @@ impl Default for DependencyGraph {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::Arc;
+
     use rush_build::{BuildType, Variables};
     use rush_config::Config;
-    use std::sync::Arc;
+
+    use super::*;
 
     fn create_test_spec(name: &str, depends_on: Vec<String>) -> ComponentBuildSpec {
         ComponentBuildSpec {
@@ -629,9 +640,7 @@ mod tests {
     #[test]
     fn test_missing_dependency() {
         // Create spec with non-existent dependency
-        let specs = vec![
-            create_test_spec("A", vec!["NonExistent".to_string()]),
-        ];
+        let specs = vec![create_test_spec("A", vec!["NonExistent".to_string()])];
 
         let result = DependencyGraph::from_specs(specs);
         assert!(result.is_err());
@@ -698,7 +707,10 @@ mod tests {
             create_test_spec("redis", vec![]),
             create_test_spec("backend", vec!["database".to_string(), "redis".to_string()]),
             create_test_spec("frontend", vec!["backend".to_string()]),
-            create_test_spec("ingress", vec!["backend".to_string(), "frontend".to_string()]),
+            create_test_spec(
+                "ingress",
+                vec!["backend".to_string(), "frontend".to_string()],
+            ),
         ];
 
         let graph = DependencyGraph::from_specs(specs).unwrap();
@@ -723,9 +735,7 @@ mod tests {
 
     #[test]
     fn test_node_state_transitions() {
-        let specs = vec![
-            create_test_spec("A", vec![]),
-        ];
+        let specs = vec![create_test_spec("A", vec![])];
 
         let mut graph = DependencyGraph::from_specs(specs).unwrap();
 
@@ -738,7 +748,10 @@ mod tests {
 
         // Mark as waiting for health
         graph.mark_waiting_for_health("A").unwrap();
-        assert_eq!(graph.get_node("A").unwrap().state, NodeState::WaitingForHealth);
+        assert_eq!(
+            graph.get_node("A").unwrap().state,
+            NodeState::WaitingForHealth
+        );
 
         // Mark as healthy
         graph.mark_healthy("A").unwrap();

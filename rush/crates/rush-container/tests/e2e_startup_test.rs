@@ -8,12 +8,12 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use rush_build::{BuildType, ComponentBuildSpec, HealthCheckConfig, HealthCheckType, Variables};
-    use rush_container::{
-        dependency_graph::DependencyGraph,
-        metrics::MetricsCollector,
+    use rush_build::{
+        BuildType, ComponentBuildSpec, HealthCheckConfig, HealthCheckType, Variables,
     };
     use rush_config::Config;
+    use rush_container::dependency_graph::DependencyGraph;
+    use rush_container::metrics::MetricsCollector;
 
     /// Create a realistic microservices architecture for testing
     fn create_microservices_architecture() -> Vec<ComponentBuildSpec> {
@@ -65,7 +65,11 @@ mod tests {
             create_component(
                 "user-service",
                 8002,
-                vec!["postgres".to_string(), "redis".to_string(), "auth-service".to_string()],
+                vec![
+                    "postgres".to_string(),
+                    "redis".to_string(),
+                    "auth-service".to_string(),
+                ],
                 Some(create_http_health_check("/health", 200)),
                 2,
                 config.clone(),
@@ -153,7 +157,7 @@ mod tests {
     ) -> ComponentBuildSpec {
         ComponentBuildSpec {
             build_type: BuildType::PureDockerImage {
-                image_name_with_tag: format!("{}:latest", name),
+                image_name_with_tag: format!("{name}:latest"),
                 command: None,
                 entrypoint: None,
             },
@@ -182,7 +186,7 @@ mod tests {
             dotenv: HashMap::new(),
             cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
-            domain: format!("{}.test.local", name),
+            domain: format!("{name}.test.local"),
             health_check,
             startup_probe: None,
         }
@@ -234,7 +238,11 @@ mod tests {
         let waves = graph.get_startup_waves().unwrap();
 
         // Verify we have at least 6 waves (may have more due to implementation details)
-        assert!(waves.len() >= 6, "Should have at least 6 startup waves, got {}", waves.len());
+        assert!(
+            waves.len() >= 6,
+            "Should have at least 6 startup waves, got {}",
+            waves.len()
+        );
 
         // Verify foundation services start first
         let wave0: Vec<String> = waves[0].clone();
@@ -265,12 +273,17 @@ mod tests {
         assert!(ingress_wave.is_some(), "ingress should be in a wave");
 
         // User service must start after auth service
-        assert!(user_wave.unwrap() > auth_wave.unwrap(),
-                "user-service should start after auth-service");
+        assert!(
+            user_wave.unwrap() > auth_wave.unwrap(),
+            "user-service should start after auth-service"
+        );
 
         // Ingress must be in the last wave
-        assert_eq!(ingress_wave.unwrap(), waves.len() - 1,
-                   "ingress should be in the last wave");
+        assert_eq!(
+            ingress_wave.unwrap(),
+            waves.len() - 1,
+            "ingress should be in the last wave"
+        );
     }
 
     #[test]
@@ -285,10 +298,42 @@ mod tests {
         //    \ /
         //     D
         let components = vec![
-            create_component("A", 8001, vec![], None, 0, config.clone(), variables.clone()),
-            create_component("B", 8002, vec!["A".to_string()], None, 1, config.clone(), variables.clone()),
-            create_component("C", 8003, vec!["A".to_string()], None, 1, config.clone(), variables.clone()),
-            create_component("D", 8004, vec!["B".to_string(), "C".to_string()], None, 2, config.clone(), variables.clone()),
+            create_component(
+                "A",
+                8001,
+                vec![],
+                None,
+                0,
+                config.clone(),
+                variables.clone(),
+            ),
+            create_component(
+                "B",
+                8002,
+                vec!["A".to_string()],
+                None,
+                1,
+                config.clone(),
+                variables.clone(),
+            ),
+            create_component(
+                "C",
+                8003,
+                vec!["A".to_string()],
+                None,
+                1,
+                config.clone(),
+                variables.clone(),
+            ),
+            create_component(
+                "D",
+                8004,
+                vec!["B".to_string(), "C".to_string()],
+                None,
+                2,
+                config.clone(),
+                variables.clone(),
+            ),
         ];
 
         let graph = DependencyGraph::from_specs(components).unwrap();
@@ -310,7 +355,7 @@ mod tests {
         metrics.record_startup_begin(components.len(), 6).await;
 
         // Simulate wave-by-wave startup
-        let waves = vec![
+        let waves = [
             vec!["postgres", "redis", "rabbitmq"],
             vec!["auth-service", "product-service"],
             vec!["user-service"],
@@ -320,11 +365,18 @@ mod tests {
         ];
 
         for (wave_num, components_in_wave) in waves.iter().enumerate() {
-            metrics.record_wave_start(wave_num, components_in_wave.iter().map(|s| s.to_string()).collect()).await;
+            metrics
+                .record_wave_start(
+                    wave_num,
+                    components_in_wave.iter().map(|s| s.to_string()).collect(),
+                )
+                .await;
 
             for component in components_in_wave {
                 // Simulate component startup
-                metrics.record_component_start(component, wave_num, vec![]).await;
+                metrics
+                    .record_component_start(component, wave_num, vec![])
+                    .await;
                 tokio::time::sleep(Duration::from_millis(10)).await;
                 metrics.record_container_created(component).await;
 
@@ -343,7 +395,7 @@ mod tests {
         metrics.record_startup_complete().await;
 
         let elapsed = start.elapsed();
-        println!("Simulated startup took {:?}", elapsed);
+        println!("Simulated startup took {elapsed:?}");
 
         // Export metrics
         let json_metrics = metrics.export_json().await;
@@ -362,8 +414,9 @@ mod tests {
         // Verify components are properly prioritized
         let mut priority_map: HashMap<u64, Vec<String>> = HashMap::new();
         for component in &components {
-            priority_map.entry(component.priority)
-                .or_insert_with(Vec::new)
+            priority_map
+                .entry(component.priority)
+                .or_default()
                 .push(component.component_name.clone());
         }
 
@@ -407,9 +460,33 @@ mod tests {
 
         // Create a scenario where a critical service would fail
         let mut components = vec![
-            create_component("database", 5432, vec![], None, 0, config.clone(), variables.clone()),
-            create_component("api", 8000, vec!["database".to_string()], None, 1, config.clone(), variables.clone()),
-            create_component("frontend", 3000, vec!["api".to_string()], None, 2, config.clone(), variables.clone()),
+            create_component(
+                "database",
+                5432,
+                vec![],
+                None,
+                0,
+                config.clone(),
+                variables.clone(),
+            ),
+            create_component(
+                "api",
+                8000,
+                vec!["database".to_string()],
+                None,
+                1,
+                config.clone(),
+                variables.clone(),
+            ),
+            create_component(
+                "frontend",
+                3000,
+                vec!["api".to_string()],
+                None,
+                2,
+                config.clone(),
+                variables.clone(),
+            ),
         ];
 
         // Simulate database failure by removing it

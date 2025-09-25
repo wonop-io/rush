@@ -1,9 +1,11 @@
-use crate::dotenv::save_dotenv;
-use log::trace;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Error;
 use std::path::PathBuf;
+
+use log::trace;
+
+use crate::dotenv::save_dotenv;
 
 /// Simple environment generator that creates dotenv files from environment YAML
 pub struct EnvironmentGenerator {

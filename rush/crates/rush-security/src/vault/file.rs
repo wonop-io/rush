@@ -1,11 +1,13 @@
-use crate::vault::vault_trait::Vault;
-use async_trait::async_trait;
-use log::{debug, trace};
-use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use async_trait::async_trait;
+use log::{debug, trace};
+use serde_json::{json, Value};
+
+use crate::vault::vault_trait::Vault;
 
 /// Implements the Vault trait using a filesystem-based storage mechanism
 #[derive(Debug)]
@@ -195,8 +197,9 @@ impl Vault for FileVault {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_create_vault() {

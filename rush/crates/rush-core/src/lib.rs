@@ -20,7 +20,7 @@ pub mod types;
 pub use constants::*;
 pub use error::{Error, Result};
 pub use error_context::{ErrorContext, OptionContext};
-pub use events::{EventBus, EventHandler, SystemEvent, global_event_bus, publish_event};
+pub use events::{global_event_bus, publish_event, EventBus, EventHandler, SystemEvent};
 pub use shutdown::{global_shutdown, ShutdownCoordinator, ShutdownReason};
 
 /// Rush version

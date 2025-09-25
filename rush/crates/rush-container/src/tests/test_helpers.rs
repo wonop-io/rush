@@ -1,14 +1,16 @@
 //! Test helper utilities
 
-use crate::tests::mock_docker::MockDockerClient;
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
+
 use rush_build::{BuildType, ComponentBuildSpec};
 use rush_config::Config;
 use rush_core::shutdown;
 use rush_output::simple::{LogEntry, Sink};
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
 use tokio::sync::Mutex;
+
+use crate::tests::mock_docker::MockDockerClient;
 
 /// Test sink that captures all output for assertions
 #[derive(Clone)]

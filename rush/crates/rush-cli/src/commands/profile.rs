@@ -1,12 +1,14 @@
 //! Performance profiling command implementation
 
-use crate::context::CliContext;
+use std::fs;
+
 use clap::ArgMatches;
-use rush_core::error::Result;
 use log::{info, warn};
 use rush_container::profiling;
+use rush_core::error::Result;
 use serde_json;
-use std::fs;
+
+use crate::context::CliContext;
 
 /// Execute the profile command
 pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
@@ -20,13 +22,19 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
         .map(|s| s.as_str())
         .unwrap_or("json");
 
-    info!("Starting performance profiling (output: {}, format: {})", output_file, format);
+    info!(
+        "Starting performance profiling (output: {}, format: {})",
+        output_file, format
+    );
 
     // Enable profiling globally - this needs to be set BEFORE any tracing initialization
     std::env::set_var("RUSH_PROFILE", "1");
 
     // Set up tracing for better span capture
-    std::env::set_var("RUST_LOG", "rush_container=trace,rush_docker=trace,rush_cli=debug");
+    std::env::set_var(
+        "RUST_LOG",
+        "rush_container=trace,rush_docker=trace,rush_cli=debug",
+    );
 
     // Enable the performance tracker
     profiling::global_tracker().enable();
@@ -35,7 +43,9 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     let subcommand = matches
         .get_one::<String>("command")
         .map(|s| s.as_str())
-        .ok_or_else(|| rush_core::error::Error::InvalidInput("No command specified to profile".to_string()))?;
+        .ok_or_else(|| {
+            rush_core::error::Error::InvalidInput("No command specified to profile".to_string())
+        })?;
 
     // Get any additional arguments
     let additional_args: Vec<String> = matches
@@ -43,7 +53,10 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
         .map(|vals| vals.cloned().collect())
         .unwrap_or_default();
 
-    info!("Profiling command: {} with args: {:?}", subcommand, additional_args);
+    info!(
+        "Profiling command: {} with args: {:?}",
+        subcommand, additional_args
+    );
 
     // Check for common flags in additional args
     let force_rebuild = additional_args.iter().any(|arg| arg == "--force-rebuild");
@@ -70,7 +83,10 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
         }
         _ => {
             warn!("Unknown command to profile: {}", subcommand);
-            return Err(rush_core::error::Error::InvalidInput(format!("Unknown command: {}", subcommand)));
+            return Err(rush_core::error::Error::InvalidInput(format!(
+                "Unknown command: {}",
+                subcommand
+            )));
         }
     }
 
@@ -81,10 +97,10 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
     // Save the report based on format
     match format {
         "json" => {
-            let json = serde_json::to_string_pretty(&report)
-                .map_err(|e| rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-            fs::write(output_file, json)
-                .map_err(|e| rush_core::error::Error::Io(e))?;
+            let json = serde_json::to_string_pretty(&report).map_err(|e| {
+                rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+            })?;
+            fs::write(output_file, json).map_err(|e| rush_core::error::Error::Io(e))?;
             info!("Performance report saved to: {}", output_file);
 
             // Print summary to console
@@ -92,25 +108,28 @@ pub async fn execute(matches: &ArgMatches, ctx: &mut CliContext) -> Result<()> {
         }
         "flamegraph" => {
             warn!("Flamegraph format requires running with RUSH_FLAMEGRAPH=1 environment variable");
-            warn!("Rerun with: RUSH_FLAMEGRAPH=1 rush profile --format flamegraph {}", subcommand);
+            warn!(
+                "Rerun with: RUSH_FLAMEGRAPH=1 rush profile --format flamegraph {}",
+                subcommand
+            );
         }
         "chrome-trace" => {
             // Convert to Chrome trace format
             let trace = convert_to_chrome_trace(&report);
-            let json = serde_json::to_string_pretty(&trace)
-                .map_err(|e| rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            let json = serde_json::to_string_pretty(&trace).map_err(|e| {
+                rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+            })?;
             let trace_file = output_file.replace(".json", ".trace.json");
-            fs::write(&trace_file, json)
-                .map_err(|e| rush_core::error::Error::Io(e))?;
+            fs::write(&trace_file, json).map_err(|e| rush_core::error::Error::Io(e))?;
             info!("Chrome trace saved to: {}", trace_file);
             info!("Open chrome://tracing and load this file to visualize");
         }
         _ => {
             warn!("Unknown format: {}, using JSON", format);
-            let json = serde_json::to_string_pretty(&report)
-                .map_err(|e| rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-            fs::write(output_file, json)
-                .map_err(|e| rush_core::error::Error::Io(e))?;
+            let json = serde_json::to_string_pretty(&report).map_err(|e| {
+                rush_core::error::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+            })?;
+            fs::write(output_file, json).map_err(|e| rush_core::error::Error::Io(e))?;
         }
     }
 
@@ -144,16 +163,18 @@ fn print_summary(report: &rush_container::profiling::PerformanceReport) {
 #[derive(serde::Serialize)]
 struct ChromeTraceEvent {
     name: String,
-    cat: String,     // category
-    ph: String,      // phase: "B" for begin, "E" for end, "X" for complete
-    ts: u64,         // timestamp in microseconds
+    cat: String,      // category
+    ph: String,       // phase: "B" for begin, "E" for end, "X" for complete
+    ts: u64,          // timestamp in microseconds
     dur: Option<u64>, // duration for "X" events
-    pid: u32,        // process id
-    tid: u32,        // thread id
+    pid: u32,         // process id
+    tid: u32,         // thread id
     args: serde_json::Value,
 }
 
-fn convert_to_chrome_trace(report: &rush_container::profiling::PerformanceReport) -> Vec<ChromeTraceEvent> {
+fn convert_to_chrome_trace(
+    report: &rush_container::profiling::PerformanceReport,
+) -> Vec<ChromeTraceEvent> {
     let mut events = Vec::new();
     let pid = std::process::id();
 
@@ -197,11 +218,13 @@ pub async fn execute_continuous(_ctx: &mut CliContext) -> Result<()> {
 
             // Export current metrics
             if let Ok(json) = profiling::global_tracker().export_json().await {
-                let filename = format!("rush-profile-{}.json",
+                let filename = format!(
+                    "rush-profile-{}.json",
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()
-                        .as_secs());
+                        .as_secs()
+                );
                 if let Err(e) = fs::write(&filename, json) {
                     warn!("Failed to write profile: {}", e);
                 } else {

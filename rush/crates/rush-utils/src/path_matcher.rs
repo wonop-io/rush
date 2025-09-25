@@ -1,7 +1,8 @@
-use glob::{glob_with, MatchOptions, Pattern as GlobPattern};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use glob::{glob_with, MatchOptions, Pattern as GlobPattern};
 
 /// Represents a .gitignore file and its patterns
 #[derive(Debug, Clone)]
@@ -278,8 +279,9 @@ impl PathMatcher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     fn create_gitignore(temp_dir: &TempDir, content: &str) {
         fs::write(temp_dir.path().join(".gitignore"), content).unwrap();
@@ -391,7 +393,11 @@ mod tests {
         fs::write(temp_dir.path().join("src").join("main.ts"), "content").unwrap();
         fs::write(temp_dir.path().join("src").join("util.js"), "content").unwrap();
         fs::write(
-            temp_dir.path().join("src").join("components").join("Button.tsx"),
+            temp_dir
+                .path()
+                .join("src")
+                .join("components")
+                .join("Button.tsx"),
             "content",
         )
         .unwrap();
@@ -407,7 +413,13 @@ mod tests {
         assert_eq!(expanded.len(), 3);
         assert!(expanded.contains(&temp_dir.path().join("index.ts")));
         assert!(expanded.contains(&temp_dir.path().join("src").join("main.ts")));
-        assert!(expanded.contains(&temp_dir.path().join("src").join("components").join("Button.tsx")));
+        assert!(expanded.contains(
+            &temp_dir
+                .path()
+                .join("src")
+                .join("components")
+                .join("Button.tsx")
+        ));
         assert!(!expanded.contains(&temp_dir.path().join("src").join("util.js")));
     }
 
@@ -456,7 +468,7 @@ mod tests {
         let expanded = matcher.expand_patterns().unwrap();
 
         // Debug: print what we got
-        eprintln!("Expanded paths: {:?}", expanded);
+        eprintln!("Expanded paths: {expanded:?}");
 
         // Directory pattern "logs/" becomes "logs/**" which should match everything inside logs
         // If no files matched, the pattern might not be working as expected
@@ -505,8 +517,24 @@ mod tests {
         fs::write(temp_dir.path().join("main_app.rs"), "content").unwrap();
         fs::write(temp_dir.path().join("src").join("user_api.rs"), "content").unwrap();
         fs::write(temp_dir.path().join("src").join("admin_api.rs"), "content").unwrap();
-        fs::write(temp_dir.path().join("src").join("components").join("button_app.tsx"), "content").unwrap();
-        fs::write(temp_dir.path().join("src").join("components").join("form.tsx"), "content").unwrap();
+        fs::write(
+            temp_dir
+                .path()
+                .join("src")
+                .join("components")
+                .join("button_app.tsx"),
+            "content",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir
+                .path()
+                .join("src")
+                .join("components")
+                .join("form.tsx"),
+            "content",
+        )
+        .unwrap();
 
         // Create PathMatcher with watch patterns like in the example
         let patterns = vec!["**/*_app*".to_string(), "**/*_api*".to_string()];
@@ -520,8 +548,20 @@ mod tests {
         assert!(expanded.contains(&temp_dir.path().join("main_app.rs")));
         assert!(expanded.contains(&temp_dir.path().join("src").join("user_api.rs")));
         assert!(expanded.contains(&temp_dir.path().join("src").join("admin_api.rs")));
-        assert!(expanded.contains(&temp_dir.path().join("src").join("components").join("button_app.tsx")));
-        assert!(!expanded.contains(&temp_dir.path().join("src").join("components").join("form.tsx")));
+        assert!(expanded.contains(
+            &temp_dir
+                .path()
+                .join("src")
+                .join("components")
+                .join("button_app.tsx")
+        ));
+        assert!(!expanded.contains(
+            &temp_dir
+                .path()
+                .join("src")
+                .join("components")
+                .join("form.tsx")
+        ));
     }
 
     #[test]

@@ -4,13 +4,15 @@
 //! within running containers and determining when they are ready to
 //! receive traffic or serve as dependencies for other containers.
 
-use crate::docker::DockerClient;
-use rush_build::{HealthCheckConfig, HealthCheckType};
-use rush_core::error::{Error, Result};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::{debug, info, warn, error, trace};
+
+use log::{debug, error, info, trace, warn};
+use rush_build::{HealthCheckConfig, HealthCheckType};
+use rush_core::error::{Error, Result};
 use tokio::time::sleep;
+
+use crate::docker::DockerClient;
 
 /// Result of a health check attempt
 #[derive(Debug, Clone, PartialEq)]
@@ -60,15 +62,17 @@ impl HealthCheckManager {
 
         loop {
             total_attempts += 1;
-            trace!("Health check attempt {}/{} for {}",
-                total_attempts, config.max_retries, component_name);
+            trace!(
+                "Health check attempt {}/{} for {}",
+                total_attempts,
+                config.max_retries,
+                component_name
+            );
 
             // Perform the health check
-            let result = self.perform_health_check(
-                container_id,
-                &config.check_type,
-                config.timeout,
-            ).await;
+            let result = self
+                .perform_health_check(container_id, &config.check_type, config.timeout)
+                .await;
 
             match result {
                 HealthCheckResult::Healthy => {
@@ -114,7 +118,7 @@ impl HealthCheckManager {
                     );
                     return Err(Error::HealthCheckFailed(
                         component_name.to_string(),
-                        format!("Fatal error: {}", reason)
+                        format!("Fatal error: {reason}"),
                     ));
                 }
             }
@@ -128,7 +132,7 @@ impl HealthCheckManager {
                 );
                 return Err(Error::HealthCheckFailed(
                     component_name.to_string(),
-                    format!("Failed after {} attempts", config.max_retries)
+                    format!("Failed after {} attempts", config.max_retries),
                 ));
             }
 
@@ -151,7 +155,8 @@ impl HealthCheckManager {
         let result = tokio::time::timeout(
             timeout_duration,
             self.execute_check(container_id, check_type),
-        ).await;
+        )
+        .await;
 
         match result {
             Ok(Ok(true)) => HealthCheckResult::Healthy,
@@ -164,7 +169,7 @@ impl HealthCheckManager {
                     HealthCheckResult::Fatal(e.to_string())
                 }
             }
-            Err(_) => HealthCheckResult::Unhealthy(format!("Check timed out after {}s", timeout)),
+            Err(_) => HealthCheckResult::Unhealthy(format!("Check timed out after {timeout}s")),
         }
     }
 
@@ -175,18 +180,13 @@ impl HealthCheckManager {
         check_type: &HealthCheckType,
     ) -> Result<bool> {
         match check_type {
-            HealthCheckType::Http { path, expected_status } => {
-                self.check_http(container_id, path, *expected_status).await
-            }
-            HealthCheckType::Tcp { port } => {
-                self.check_tcp(container_id, *port).await
-            }
-            HealthCheckType::Exec { command } => {
-                self.check_exec(container_id, command).await
-            }
-            HealthCheckType::Dns { hosts } => {
-                self.check_dns(container_id, hosts).await
-            }
+            HealthCheckType::Http {
+                path,
+                expected_status,
+            } => self.check_http(container_id, path, *expected_status).await,
+            HealthCheckType::Tcp { port } => self.check_tcp(container_id, *port).await,
+            HealthCheckType::Exec { command } => self.check_exec(container_id, command).await,
+            HealthCheckType::Dns { hosts } => self.check_dns(container_id, hosts).await,
         }
     }
 
@@ -197,21 +197,32 @@ impl HealthCheckManager {
         path: &str,
         expected_status: u16,
     ) -> Result<bool> {
-        trace!("Performing HTTP health check on {} path: {}", container_id, path);
+        trace!(
+            "Performing HTTP health check on {} path: {}",
+            container_id,
+            path
+        );
 
         // Try curl first, then wget as fallback
         let cmd_string = format!(
-            "curl -f -s -o /dev/null -w '%{{http_code}}' http://localhost{} 2>/dev/null || \
-             wget -q -O /dev/null --server-response http://localhost{} 2>&1 | \
-             awk '/^  HTTP/{{print $2}}' | tail -1",
-            path, path
+            "curl -f -s -o /dev/null -w '%{{http_code}}' http://localhost{path} 2>/dev/null || \
+             wget -q -O /dev/null --server-response http://localhost{path} 2>&1 | \
+             awk '/^  HTTP/{{print $2}}' | tail -1"
         );
         let curl_command = vec!["sh", "-c", &cmd_string];
 
-        match self.docker_client.exec_in_container(container_id, &curl_command).await {
+        match self
+            .docker_client
+            .exec_in_container(container_id, &curl_command)
+            .await
+        {
             Ok(output) => {
                 let status_code = output.trim().parse::<u16>().unwrap_or(0);
-                trace!("HTTP check returned status: {} (expected: {})", status_code, expected_status);
+                trace!(
+                    "HTTP check returned status: {} (expected: {})",
+                    status_code,
+                    expected_status
+                );
                 Ok(status_code == expected_status)
             }
             Err(e) => {
@@ -222,23 +233,26 @@ impl HealthCheckManager {
     }
 
     /// Perform TCP port check
-    async fn check_tcp(
-        &self,
-        container_id: &str,
-        port: u16,
-    ) -> Result<bool> {
-        trace!("Performing TCP health check on {} port: {}", container_id, port);
+    async fn check_tcp(&self, container_id: &str, port: u16) -> Result<bool> {
+        trace!(
+            "Performing TCP health check on {} port: {}",
+            container_id,
+            port
+        );
 
         // Try multiple tools for better compatibility
         let cmd_string = format!(
-            "nc -z localhost {} 2>/dev/null || \
-             nc -zv localhost {} 2>/dev/null || \
-             (echo > /dev/tcp/localhost/{}) 2>/dev/null",
-            port, port, port
+            "nc -z localhost {port} 2>/dev/null || \
+             nc -zv localhost {port} 2>/dev/null || \
+             (echo > /dev/tcp/localhost/{port}) 2>/dev/null"
         );
         let command = vec!["sh", "-c", &cmd_string];
 
-        match self.docker_client.exec_in_container(container_id, &command).await {
+        match self
+            .docker_client
+            .exec_in_container(container_id, &command)
+            .await
+        {
             Ok(_) => {
                 trace!("TCP port {} is open", port);
                 Ok(true)
@@ -251,17 +265,21 @@ impl HealthCheckManager {
     }
 
     /// Perform command execution health check
-    async fn check_exec(
-        &self,
-        container_id: &str,
-        command: &[String],
-    ) -> Result<bool> {
-        trace!("Performing exec health check on {}: {:?}", container_id, command);
+    async fn check_exec(&self, container_id: &str, command: &[String]) -> Result<bool> {
+        trace!(
+            "Performing exec health check on {}: {:?}",
+            container_id,
+            command
+        );
 
         // Convert &[String] to Vec<&str>
         let cmd_refs: Vec<&str> = command.iter().map(|s| s.as_str()).collect();
 
-        match self.docker_client.exec_in_container(container_id, &cmd_refs).await {
+        match self
+            .docker_client
+            .exec_in_container(container_id, &cmd_refs)
+            .await
+        {
             Ok(output) => {
                 trace!("Exec health check succeeded with output: {}", output.trim());
                 Ok(true)
@@ -274,25 +292,28 @@ impl HealthCheckManager {
     }
 
     /// Perform DNS resolution check
-    async fn check_dns(
-        &self,
-        container_id: &str,
-        hosts: &[String],
-    ) -> Result<bool> {
-        trace!("Performing DNS health check on {} for hosts: {:?}", container_id, hosts);
+    async fn check_dns(&self, container_id: &str, hosts: &[String]) -> Result<bool> {
+        trace!(
+            "Performing DNS health check on {} for hosts: {:?}",
+            container_id,
+            hosts
+        );
 
         for host in hosts {
             // Try multiple DNS resolution methods
             let cmd_string = format!(
-                "nslookup {} 2>/dev/null | grep -q 'Address' || \
-                 getent hosts {} >/dev/null 2>&1 || \
-                 host {} 2>/dev/null | grep -q 'has address' || \
-                 ping -c 1 -W 1 {} >/dev/null 2>&1",
-                host, host, host, host
+                "nslookup {host} 2>/dev/null | grep -q 'Address' || \
+                 getent hosts {host} >/dev/null 2>&1 || \
+                 host {host} 2>/dev/null | grep -q 'has address' || \
+                 ping -c 1 -W 1 {host} >/dev/null 2>&1"
             );
             let command = vec!["sh", "-c", &cmd_string];
 
-            match self.docker_client.exec_in_container(container_id, &command).await {
+            match self
+                .docker_client
+                .exec_in_container(container_id, &command)
+                .await
+            {
                 Ok(_) => {
                     trace!("DNS resolution successful for {}", host);
                 }
@@ -340,7 +361,8 @@ impl HealthCheckManagerBuilder {
 
     /// Build the HealthCheckManager
     pub fn build(self) -> Result<HealthCheckManager> {
-        let docker_client = self.docker_client
+        let docker_client = self
+            .docker_client
             .ok_or_else(|| Error::Internal("Docker client is required".to_string()))?;
 
         Ok(HealthCheckManager::new(docker_client))
@@ -355,10 +377,12 @@ impl Default for HealthCheckManagerBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+
     use super::*;
     use crate::docker::DockerClient;
-    use async_trait::async_trait;
-    use std::sync::Mutex;
 
     /// Mock Docker client for testing
     #[derive(Debug)]
@@ -382,11 +406,7 @@ mod tests {
 
     #[async_trait]
     impl DockerClient for MockDockerClient {
-        async fn exec_in_container(
-            &self,
-            container_id: &str,
-            command: &[&str],
-        ) -> Result<String> {
+        async fn exec_in_container(&self, container_id: &str, command: &[&str]) -> Result<String> {
             // Record the call
             self.exec_calls.lock().unwrap().push((
                 container_id.to_string(),
@@ -402,11 +422,21 @@ mod tests {
         }
 
         // Implement other required methods with defaults
-        async fn create_network(&self, _name: &str) -> Result<()> { Ok(()) }
-        async fn delete_network(&self, _name: &str) -> Result<()> { Ok(()) }
-        async fn network_exists(&self, _name: &str) -> Result<bool> { Ok(true) }
-        async fn pull_image(&self, _image: &str) -> Result<()> { Ok(()) }
-        async fn build_image(&self, _tag: &str, _dockerfile: &str, _context: &str) -> Result<()> { Ok(()) }
+        async fn create_network(&self, _name: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn delete_network(&self, _name: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn network_exists(&self, _name: &str) -> Result<bool> {
+            Ok(true)
+        }
+        async fn pull_image(&self, _image: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn build_image(&self, _tag: &str, _dockerfile: &str, _context: &str) -> Result<()> {
+            Ok(())
+        }
         async fn run_container(
             &self,
             _image: &str,
@@ -430,13 +460,24 @@ mod tests {
         ) -> Result<String> {
             Ok("container-id".to_string())
         }
-        async fn stop_container(&self, _container_id: &str) -> Result<()> { Ok(()) }
-        async fn kill_container(&self, _container_id: &str) -> Result<()> { Ok(()) }
-        async fn remove_container(&self, _container_id: &str) -> Result<()> { Ok(()) }
-        async fn container_status(&self, _container_id: &str) -> Result<rush_docker::ContainerStatus> {
+        async fn stop_container(&self, _container_id: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn kill_container(&self, _container_id: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn remove_container(&self, _container_id: &str) -> Result<()> {
+            Ok(())
+        }
+        async fn container_status(
+            &self,
+            _container_id: &str,
+        ) -> Result<rush_docker::ContainerStatus> {
             Ok(rush_docker::ContainerStatus::Running)
         }
-        async fn container_exists(&self, _name: &str) -> Result<bool> { Ok(true) }
+        async fn container_exists(&self, _name: &str) -> Result<bool> {
+            Ok(true)
+        }
         async fn container_logs(&self, _container_id: &str, _lines: usize) -> Result<String> {
             Ok("logs".to_string())
         }
@@ -473,7 +514,9 @@ mod tests {
             .with_interval(1)
             .with_success_threshold(1);
 
-        let result = manager.wait_for_healthy("test-container", "test", &config).await;
+        let result = manager
+            .wait_for_healthy("test-container", "test", &config)
+            .await;
         assert!(result.is_ok());
 
         let calls = client.get_exec_calls();
@@ -492,7 +535,9 @@ mod tests {
             .with_interval(1)
             .with_success_threshold(1);
 
-        let result = manager.wait_for_healthy("test-container", "test", &config).await;
+        let result = manager
+            .wait_for_healthy("test-container", "test", &config)
+            .await;
         assert!(result.is_ok());
 
         let calls = client.get_exec_calls();
@@ -517,7 +562,9 @@ mod tests {
         .with_interval(1)
         .with_success_threshold(1);
 
-        let result = manager.wait_for_healthy("test-container", "test", &config).await;
+        let result = manager
+            .wait_for_healthy("test-container", "test", &config)
+            .await;
         assert!(result.is_ok());
 
         let calls = client.get_exec_calls();
@@ -527,7 +574,7 @@ mod tests {
     #[tokio::test]
     async fn test_retry_on_failure() {
         let responses = vec![
-            Ok("200".to_string()), // Third attempt succeeds
+            Ok("200".to_string()),                                // Third attempt succeeds
             Err(Error::Docker("Connection refused".to_string())), // Second attempt fails
             Err(Error::Docker("Connection refused".to_string())), // First attempt fails
         ];
@@ -540,7 +587,9 @@ mod tests {
             .with_success_threshold(1)
             .with_max_retries(5);
 
-        let result = manager.wait_for_healthy("test-container", "test", &config).await;
+        let result = manager
+            .wait_for_healthy("test-container", "test", &config)
+            .await;
         assert!(result.is_ok());
 
         let calls = client.get_exec_calls();
@@ -562,7 +611,9 @@ mod tests {
             .with_success_threshold(1)
             .with_max_retries(2);
 
-        let result = manager.wait_for_healthy("test-container", "test", &config).await;
+        let result = manager
+            .wait_for_healthy("test-container", "test", &config)
+            .await;
         assert!(result.is_err());
 
         let err = result.unwrap_err();
@@ -584,7 +635,9 @@ mod tests {
             .with_interval(0)
             .with_success_threshold(3); // Require 3 consecutive successes
 
-        let result = manager.wait_for_healthy("test-container", "test", &config).await;
+        let result = manager
+            .wait_for_healthy("test-container", "test", &config)
+            .await;
         assert!(result.is_ok());
 
         let calls = client.get_exec_calls();
@@ -606,7 +659,9 @@ mod tests {
         .with_interval(1)
         .with_success_threshold(1);
 
-        let result = manager.wait_for_healthy("test-container", "test", &config).await;
+        let result = manager
+            .wait_for_healthy("test-container", "test", &config)
+            .await;
         assert!(result.is_ok());
 
         let calls = client.get_exec_calls();

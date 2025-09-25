@@ -3,12 +3,13 @@
 //! This module sets up the unified logging system that routes all logs
 //! through the output sink.
 
+use std::env;
+use std::sync::Arc;
+
 use clap::ArgMatches;
 use log::Level;
 use rush_output::log_bridge;
 use rush_output::simple::{Sink, SplitSink, StdoutSink};
-use std::env;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Create the global output sink based on command line arguments
@@ -61,7 +62,7 @@ pub fn setup_logging_with_sink(
 
     // Initialize the sink-based logger
     log_bridge::init_with_sink(sink, log_level)?;
-    
+
     // Test the logger is working
     log::info!("Rush logging initialized at level: {:?}", log_level);
     log::debug!("Debug logging is enabled");

@@ -3,12 +3,13 @@
 //! This module provides a way to manage environment-specific variables used in build processes.
 //! It supports different sets of variables for different environments (dev, staging, prod, local).
 
-use log::{debug, trace};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+
+use log::{debug, trace};
+use serde::{Deserialize, Serialize};
 
 /// Contains environment-specific variable sets
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,9 +146,11 @@ impl Variables {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     #[test]
     fn test_load_variables() {

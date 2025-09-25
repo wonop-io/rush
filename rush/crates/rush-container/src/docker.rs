@@ -2,19 +2,19 @@
 //!
 //! This module provides Docker client implementations and service abstractions.
 
-use log::{debug, error, info, trace, warn};
-use rush_core::error::{Error, Result};
-use rush_output::{OutputDirector, OutputSource, OutputStream};
 use std::collections::HashMap;
 use std::fmt;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 use std::sync::Arc;
-use tokio::process::Command;
+use std::time::Duration;
 
+use log::{debug, error, info, trace, warn};
+use rush_core::error::{Error, Result};
 // Re-export the DockerClient trait and ContainerStatus from rush-docker
 pub use rush_docker::{ContainerStatus, DockerClient};
+use rush_output::{OutputDirector, OutputSource, OutputStream};
+use tokio::process::Command;
 
 // Include the enhanced Docker modules
 pub mod client_wrapper;
@@ -23,10 +23,10 @@ pub mod log_streamer;
 pub mod metrics;
 
 // Re-export commonly used types from submodules
-pub use client_wrapper::{DockerClientWrapper, DockerWrapperConfig, DockerStats};
+pub use client_wrapper::{DockerClientWrapper, DockerStats, DockerWrapperConfig};
 pub use connection_pool::{ConnectionPool, PoolConfig, PooledDockerClient};
-pub use log_streamer::{LogStream, LogStreamManager, LogStreamConfig, LogEntry, LogLevel};
-pub use metrics::{MetricsCollector, OperationType, MetricsReport};
+pub use log_streamer::{LogEntry, LogLevel, LogStream, LogStreamConfig, LogStreamManager};
+pub use metrics::{MetricsCollector, MetricsReport, OperationType};
 
 /// Health status of a container
 #[derive(Debug, Clone, PartialEq)]
@@ -351,14 +351,14 @@ impl DockerClient for DockerCliClient {
 
         // Add image name at the end
         args.push(image);
-        
+
         // Add command if specified
         if let Some(cmd) = command {
             for arg in cmd {
                 args.push(arg);
             }
         }
-        
+
         println!("RUNNING: {}", args.join(" "));
         let output = Command::new(&self.docker_path)
             .args(&args)
@@ -423,7 +423,10 @@ impl DockerClient for DockerCliClient {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Don't treat as error if container doesn't exist or is already stopped
             if stderr.contains("No such container") || stderr.contains("is not running") {
-                debug!("Container {} already stopped or doesn't exist", container_id);
+                debug!(
+                    "Container {} already stopped or doesn't exist",
+                    container_id
+                );
                 return Ok(());
             }
             error!("Failed to kill Docker container: {}", stderr);
@@ -478,10 +481,14 @@ impl DockerClient for DockerCliClient {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             // Handle various "not found" errors from Docker
-            if stderr.contains("No such container") ||
-               stderr.contains("No such object") ||
-               stderr.contains("not found") {
-                debug!("Container {} not found (may have been removed)", container_id);
+            if stderr.contains("No such container")
+                || stderr.contains("No such object")
+                || stderr.contains("not found")
+            {
+                debug!(
+                    "Container {} not found (may have been removed)",
+                    container_id
+                );
                 return Ok(ContainerStatus::Unknown);
             }
             error!("Failed to inspect Docker container: {}", stderr);
@@ -715,7 +722,7 @@ impl DockerClient for DockerCliClient {
 
         Ok(container_id)
     }
-    
+
     async fn push_image(&self, image: &str) -> Result<()> {
         info!("Pushing Docker image: {}", image);
 
@@ -1096,7 +1103,7 @@ mod tests {
             async fn get_container_by_name(&self, _name: &str) -> Result<String> {
                 unimplemented!()
             }
-            
+
             async fn push_image(&self, _image: &str) -> Result<()> {
                 unimplemented!()
             }
@@ -1234,7 +1241,7 @@ mod tests {
             async fn get_container_by_name(&self, _name: &str) -> Result<String> {
                 unimplemented!()
             }
-            
+
             async fn push_image(&self, _image: &str) -> Result<()> {
                 unimplemented!()
             }
@@ -1342,14 +1349,24 @@ impl Drop for ManagedDockerService {
                     // Try graceful stop first (1 second timeout)
                     match tokio::time::timeout(
                         Duration::from_secs(1),
-                        docker_client.stop_container(&container_id)
-                    ).await {
-                        Ok(Ok(_)) => debug!("Container {} stopped gracefully during cleanup", container_id),
+                        docker_client.stop_container(&container_id),
+                    )
+                    .await
+                    {
+                        Ok(Ok(_)) => debug!(
+                            "Container {} stopped gracefully during cleanup",
+                            container_id
+                        ),
                         _ => {
                             // Force kill if graceful fails
                             match docker_client.kill_container(&container_id).await {
-                                Ok(_) => warn!("Container {} force killed during cleanup", container_id),
-                                Err(e) => error!("Failed to kill container {} during cleanup: {}", container_id, e),
+                                Ok(_) => {
+                                    warn!("Container {} force killed during cleanup", container_id)
+                                }
+                                Err(e) => error!(
+                                    "Failed to kill container {} during cleanup: {}",
+                                    container_id, e
+                                ),
                             }
                         }
                     }
@@ -1357,7 +1374,10 @@ impl Drop for ManagedDockerService {
                     // Always try to remove
                     match docker_client.remove_container(&container_id).await {
                         Ok(_) => debug!("Container {} removed during cleanup", container_id),
-                        Err(e) => debug!("Failed to remove container {} during cleanup: {}", container_id, e),
+                        Err(e) => debug!(
+                            "Failed to remove container {} during cleanup: {}",
+                            container_id, e
+                        ),
                     }
                 });
             } else {
@@ -1367,7 +1387,10 @@ impl Drop for ManagedDockerService {
                     let docker_client = self.docker_client.clone();
 
                     rt.block_on(async move {
-                        warn!("RAII cleanup (new runtime): Force stopping container {}", container_id);
+                        warn!(
+                            "RAII cleanup (new runtime): Force stopping container {}",
+                            container_id
+                        );
 
                         // Best effort cleanup
                         let _ = docker_client.kill_container(&container_id).await;

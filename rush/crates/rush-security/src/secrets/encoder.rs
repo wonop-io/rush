@@ -3,8 +3,9 @@
 //! This module provides implementations for encoding secrets in formats
 //! required by different systems, such as base64 encoding for Kubernetes.
 
-use base64::prelude::*;
 use std::collections::HashMap;
+
+use base64::prelude::*;
 
 /// Trait for secret encoders that transform secret values for storage or transmission
 pub trait SecretsEncoder {

@@ -1,13 +1,15 @@
 //! Tests for reactor functionality including container crash detection and build failure recovery
 
-use crate::docker::{ContainerStatus, DockerClient};
-use crate::tests::mock_docker::{MockDockerClient, MockResponses};
-use crate::tests::test_helpers::*;
+use std::sync::Arc;
+
 use rush_core::error::Result;
 use rush_core::shutdown::{self, ShutdownReason};
 use serial_test::serial;
-use std::sync::Arc;
 use tempfile::TempDir;
+
+use crate::docker::{ContainerStatus, DockerClient};
+use crate::tests::mock_docker::{MockDockerClient, MockResponses};
+use crate::tests::test_helpers::*;
 
 #[tokio::test]
 #[serial]

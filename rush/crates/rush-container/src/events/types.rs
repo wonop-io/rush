@@ -14,7 +14,7 @@ pub enum ContainerEvent {
         component: String,
         timestamp: Instant,
     },
-    
+
     /// A build has completed (successfully or with error)
     BuildCompleted {
         component: String,
@@ -22,14 +22,14 @@ pub enum ContainerEvent {
         duration: Duration,
         error: Option<String>,
     },
-    
+
     /// A container has been started
     ContainerStarted {
         component: String,
         container_id: String,
         timestamp: Instant,
     },
-    
+
     /// A container has stopped
     ContainerStopped {
         component: String,
@@ -37,46 +37,42 @@ pub enum ContainerEvent {
         exit_code: Option<i32>,
         reason: StopReason,
     },
-    
+
     /// Container health status changed
     ContainerHealthChanged {
         component: String,
         container_id: String,
         healthy: bool,
     },
-    
+
     /// Files have changed triggering a potential rebuild
     FilesChanged {
         component: String,
         paths: Vec<PathBuf>,
         timestamp: Instant,
     },
-    
+
     /// File changes detected (new watcher system)
     FileChangesDetected {
         files: Vec<PathBuf>,
         components: Vec<String>,
     },
-    
+
     /// A rebuild has been triggered
     RebuildTriggered {
         component: String,
         reason: RebuildReason,
     },
-    
+
     /// Network has been created or verified
-    NetworkReady {
-        network_name: String,
-    },
-    
+    NetworkReady { network_name: String },
+
     /// Reactor has started
     ReactorStarted,
-    
+
     /// Shutdown has been initiated
-    ShutdownInitiated {
-        reason: ShutdownReason,
-    },
-    
+    ShutdownInitiated { reason: ShutdownReason },
+
     /// An error occurred that doesn't fit other categories
     Error {
         component: Option<String>,
@@ -215,9 +211,12 @@ mod tests {
     #[test]
     fn test_error_event() {
         let event = Event::error("test", "Something went wrong", true);
-        
+
         assert_eq!(event.metadata.level, EventLevel::Error);
-        if let ContainerEvent::Error { error, recoverable, .. } = event.payload {
+        if let ContainerEvent::Error {
+            error, recoverable, ..
+        } = event.payload
+        {
             assert_eq!(error, "Something went wrong");
             assert!(recoverable);
         } else {

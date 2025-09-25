@@ -1,6 +1,7 @@
-use rush_core::constants::*;
 use std::env;
 use std::path::{Path, PathBuf};
+
+use rush_core::constants::*;
 
 /// Expands a path that may contain environment variables or the tilde character
 /// for the user's home directory.

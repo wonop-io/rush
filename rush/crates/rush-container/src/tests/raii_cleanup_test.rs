@@ -1,12 +1,14 @@
 //! Tests for RAII cleanup behavior of managed services
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
+
 use crate::docker::{DockerService, DockerServiceConfig, ManagedDockerService};
 use crate::service::{ContainerService, ManagedContainerService, ServiceConfig};
 use crate::tests::mock_docker::MockDockerClient;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use tokio::sync::Mutex;
 
 /// Test state tracker for cleanup validation
 struct CleanupTracker {
@@ -59,7 +61,10 @@ impl CleanupTracker {
 }
 
 /// Create a test DockerService
-fn create_test_docker_service(id: &str, client: Arc<dyn rush_docker::DockerClient>) -> DockerService {
+fn create_test_docker_service(
+    id: &str,
+    client: Arc<dyn rush_docker::DockerClient>,
+) -> DockerService {
     let config = DockerServiceConfig {
         name: "test-service".to_string(),
         image: "test:latest".to_string(),
@@ -95,7 +100,9 @@ async fn test_managed_docker_service_cleanup_on_drop() {
 
     // Add a test container to the mock
     let container_id = "test-container-123";
-    mock_client.add_container_logs(container_id, vec!["Starting...".to_string()]).await;
+    mock_client
+        .add_container_logs(container_id, vec!["Starting...".to_string()])
+        .await;
 
     // Track cleanup calls
     let tracker = CleanupTracker::new();
@@ -115,9 +122,9 @@ async fn test_managed_docker_service_cleanup_on_drop() {
     let history = mock_client.call_history.lock().await;
 
     // The managed service should have attempted cleanup
-    let _has_stop_or_kill = history.iter().any(|call|
-        call.contains("stop_container") || call.contains("kill_container")
-    );
+    let _has_stop_or_kill = history
+        .iter()
+        .any(|call| call.contains("stop_container") || call.contains("kill_container"));
     let _has_remove = history.iter().any(|call| call.contains("remove_container"));
 
     // Since the Drop trait runs in a different context and we're using a mock,
@@ -146,14 +153,20 @@ async fn test_managed_docker_service_disable_cleanup() {
 
     // Verify no cleanup calls were made
     let history = mock_client.call_history.lock().await;
-    let cleanup_calls = history.iter().filter(|call|
-        call.contains("stop_container") ||
-        call.contains("kill_container") ||
-        call.contains("remove_container")
-    ).count();
+    let cleanup_calls = history
+        .iter()
+        .filter(|call| {
+            call.contains("stop_container")
+                || call.contains("kill_container")
+                || call.contains("remove_container")
+        })
+        .count();
 
     // When cleanup is disabled, no cleanup should occur
-    assert_eq!(cleanup_calls, 0, "No cleanup calls should be made when disabled");
+    assert_eq!(
+        cleanup_calls, 0,
+        "No cleanup calls should be made when disabled"
+    );
 }
 
 #[tokio::test]
@@ -165,7 +178,7 @@ async fn test_managed_container_service_cleanup_on_drop() {
         let container_service = create_test_container_service(container_id);
         let _managed = ManagedContainerService::with_docker_client(
             container_service,
-            mock_client.clone() as Arc<dyn rush_docker::DockerClient>
+            mock_client.clone() as Arc<dyn rush_docker::DockerClient>,
         );
         // ManagedContainerService should cleanup on drop
     }
@@ -174,7 +187,10 @@ async fn test_managed_container_service_cleanup_on_drop() {
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
     // The structure for RAII cleanup is in place
-    assert!(true, "ManagedContainerService RAII cleanup structure is in place");
+    assert!(
+        true,
+        "ManagedContainerService RAII cleanup structure is in place"
+    );
 }
 
 #[tokio::test]
@@ -186,7 +202,7 @@ async fn test_managed_container_service_disable_cleanup() {
         let container_service = create_test_container_service(container_id);
         let managed = ManagedContainerService::with_docker_client(
             container_service,
-            mock_client.clone() as Arc<dyn rush_docker::DockerClient>
+            mock_client.clone() as Arc<dyn rush_docker::DockerClient>,
         );
 
         // Disable cleanup
@@ -200,7 +216,10 @@ async fn test_managed_container_service_disable_cleanup() {
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
     // When cleanup is disabled, no cleanup should occur
-    assert!(true, "ManagedContainerService respects cleanup disabled flag");
+    assert!(
+        true,
+        "ManagedContainerService respects cleanup disabled flag"
+    );
 }
 
 // This test is commented out because ManagedDockerService doesn't implement Clone

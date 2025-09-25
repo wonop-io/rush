@@ -3,8 +3,9 @@
 //! This module provides tools for managing Docker build environments
 //! when cross-compiling between different architectures.
 
-use log::{debug, trace};
 use std::env;
+
+use log::{debug, trace};
 
 /// Guards Docker cross-compilation environment variables
 ///

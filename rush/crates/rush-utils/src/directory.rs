@@ -1,6 +1,7 @@
-use log::{debug, trace};
 use std::env;
 use std::path::{Path, PathBuf};
+
+use log::{debug, trace};
 use rush_core::{Error, Result};
 
 /// RAII guard for safely changing directories.
@@ -75,18 +76,16 @@ impl Directory {
     /// * `Err(Error)` - If unable to get current directory or change to new directory
     pub fn try_chdir(dir: &str) -> Result<Self> {
         trace!("Changing directory to: {}", dir);
-        let previous = env::current_dir()
-            .map_err(|e| Error::FileSystem {
-                path: PathBuf::from("."),
-                message: format!("Failed to get current directory: {}", e),
-            })?;
+        let previous = env::current_dir().map_err(|e| Error::FileSystem {
+            path: PathBuf::from("."),
+            message: format!("Failed to get current directory: {e}"),
+        })?;
         debug!("Previous directory: {:?}", previous);
 
-        env::set_current_dir(dir)
-            .map_err(|e| Error::FileSystem {
-                path: PathBuf::from(dir),
-                message: format!("Failed to change directory: {}", e),
-            })?;
+        env::set_current_dir(dir).map_err(|e| Error::FileSystem {
+            path: PathBuf::from(dir),
+            message: format!("Failed to change directory: {e}"),
+        })?;
 
         Ok(Directory { previous })
     }
@@ -103,7 +102,7 @@ impl Directory {
     /// # Panics
     ///
     /// Panics if:
-    /// - Failed to get the current directory  
+    /// - Failed to get the current directory
     /// - Failed to change to the specified directory
     ///
     /// # Examples
@@ -139,18 +138,16 @@ impl Directory {
     /// * `Err(Error)` - If unable to get current directory or change to new directory
     pub fn try_chpath(dir: &Path) -> Result<Self> {
         trace!("Changing directory to: {:?}", dir);
-        let previous = env::current_dir()
-            .map_err(|e| Error::FileSystem {
-                path: dir.to_path_buf(),
-                message: format!("Failed to get current directory: {}", e),
-            })?;
+        let previous = env::current_dir().map_err(|e| Error::FileSystem {
+            path: dir.to_path_buf(),
+            message: format!("Failed to get current directory: {e}"),
+        })?;
         debug!("Previous directory: {:?}", previous);
 
-        env::set_current_dir(dir)
-            .map_err(|e| Error::FileSystem {
-                path: dir.to_path_buf(),
-                message: format!("Failed to change directory: {}", e),
-            })?;
+        env::set_current_dir(dir).map_err(|e| Error::FileSystem {
+            path: dir.to_path_buf(),
+            message: format!("Failed to change directory: {e}"),
+        })?;
 
         Ok(Directory { previous })
     }
@@ -165,10 +162,12 @@ impl Drop for Directory {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serial_test::serial;
     use std::fs;
+
+    use serial_test::serial;
     use tempfile::tempdir;
+
+    use super::*;
 
     /// Helper to compare current directory with expected, handling macOS canonicalization
     fn assert_current_dir_eq(expected: impl AsRef<Path>) {

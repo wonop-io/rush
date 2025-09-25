@@ -2,9 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::health_check::{HealthCheckConfig, HealthCheckType, parse_health_check};
-    use crate::spec::ComponentBuildSpec;
-    use serde_yaml;
+    use crate::health_check::{parse_health_check, HealthCheckType};
 
     #[test]
     fn test_parse_http_health_check_from_yaml() {
@@ -24,7 +22,10 @@ mod tests {
         let config = parse_health_check(&value).expect("Should parse HTTP health check");
 
         match config.check_type {
-            HealthCheckType::Http { path, expected_status } => {
+            HealthCheckType::Http {
+                path,
+                expected_status,
+            } => {
                 assert_eq!(path, "/health");
                 assert_eq!(expected_status, 200);
             }
@@ -150,10 +151,8 @@ mod tests {
 
         // This would normally be done by ComponentBuildSpec::parse_from_yaml
         // but we're testing that the fields are parsed correctly
-        let health_check = backend.get("health_check")
-            .and_then(|v| parse_health_check(v));
-        let startup_probe = backend.get("startup_probe")
-            .and_then(|v| parse_health_check(v));
+        let health_check = backend.get("health_check").and_then(parse_health_check);
+        let startup_probe = backend.get("startup_probe").and_then(parse_health_check);
 
         assert!(health_check.is_some());
         assert!(startup_probe.is_some());

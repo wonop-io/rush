@@ -1,10 +1,11 @@
+use std::sync::{Arc, Mutex};
+
 use rush_config::Config;
 use rush_container::Reactor;
 use rush_local_services::LocalServiceManager;
 use rush_output::simple::Sink;
 use rush_security::{SecretsDefinitions, Vault};
 use rush_toolchain::ToolchainContext;
-use std::sync::{Arc, Mutex};
 use tokio::sync::Mutex as TokioMutex;
 
 pub struct CliContext {
@@ -43,7 +44,7 @@ impl CliContext {
             local_services,
         }
     }
-    
+
     /// Stop local services if they are running
     pub async fn stop_local_services(&mut self) {
         if let Some(ref mut local_services) = self.local_services {

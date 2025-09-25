@@ -1,22 +1,24 @@
 //! Transport layer for MCP communication
 
-use crate::error::{McpError, Result};
-use crate::protocol::{McpRequest, McpResponse};
+use std::io::{self, BufRead, BufReader, Write};
+
 use async_trait::async_trait;
 use serde_json::Value;
-use std::io::{self, BufRead, BufReader, Write};
 use tokio::sync::mpsc;
 use tokio::task;
+
+use crate::error::{McpError, Result};
+use crate::protocol::{McpRequest, McpResponse};
 
 /// Transport trait for MCP communication
 #[async_trait]
 pub trait Transport: Send + Sync {
     /// Receive a request from the client
     async fn receive(&mut self) -> Result<Option<McpRequest>>;
-    
+
     /// Send a response to the client
     async fn send(&mut self, response: McpResponse) -> Result<()>;
-    
+
     /// Close the transport
     async fn close(&mut self) -> Result<()>;
 }
@@ -39,7 +41,7 @@ impl StdioTransport {
         let reader_handle = task::spawn_blocking(move || {
             let stdin = io::stdin();
             let reader = BufReader::new(stdin);
-            
+
             for line in reader.lines() {
                 match line {
                     Ok(line) if !line.trim().is_empty() => {
@@ -51,12 +53,12 @@ impl StdioTransport {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Failed to parse request: {}", e);
+                                eprintln!("Failed to parse request: {e}");
                             }
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to read from stdin: {}", e);
+                        eprintln!("Failed to read from stdin: {e}");
                         break;
                     }
                     _ => {} // Empty line, ignore
@@ -68,11 +70,11 @@ impl StdioTransport {
         let mut response_rx = response_rx;
         let writer_handle = task::spawn_blocking(move || {
             let mut stdout = io::stdout();
-            
+
             while let Some(response) = response_rx.blocking_recv() {
                 match serde_json::to_string(&response) {
                     Ok(json) => {
-                        if writeln!(stdout, "{}", json).is_err() {
+                        if writeln!(stdout, "{json}").is_err() {
                             break;
                         }
                         if stdout.flush().is_err() {
@@ -80,7 +82,7 @@ impl StdioTransport {
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to serialize response: {}", e);
+                        eprintln!("Failed to serialize response: {e}");
                     }
                 }
             }

@@ -1,7 +1,8 @@
-use log::{debug, error, trace};
 use std::io;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
+
+use log::{debug, error, trace};
 
 /// Executes a command and returns the output
 ///

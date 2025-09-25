@@ -3,11 +3,12 @@
 //! This module provides functionality for managing container services, including
 //! configuration, launch parameters, and runtime state.
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 pub use rush_build::ServiceSpec;
 use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Represents runtime configuration for a container service
 #[derive(Debug, Clone)]
@@ -233,22 +234,40 @@ impl Drop for ManagedContainerService {
                         // Try graceful stop first (1 second timeout)
                         match tokio::time::timeout(
                             std::time::Duration::from_secs(1),
-                            client.stop_container(&container_id)
-                        ).await {
-                            Ok(Ok(_)) => log::debug!("Container {} stopped gracefully during cleanup", container_id),
+                            client.stop_container(&container_id),
+                        )
+                        .await
+                        {
+                            Ok(Ok(_)) => log::debug!(
+                                "Container {} stopped gracefully during cleanup",
+                                container_id
+                            ),
                             _ => {
                                 // Force kill if graceful fails
                                 match client.kill_container(&container_id).await {
-                                    Ok(_) => log::warn!("Container {} force killed during cleanup", container_id),
-                                    Err(e) => log::error!("Failed to kill container {} during cleanup: {}", container_id, e),
+                                    Ok(_) => log::warn!(
+                                        "Container {} force killed during cleanup",
+                                        container_id
+                                    ),
+                                    Err(e) => log::error!(
+                                        "Failed to kill container {} during cleanup: {}",
+                                        container_id,
+                                        e
+                                    ),
                                 }
                             }
                         }
 
                         // Always try to remove
                         match client.remove_container(&container_id).await {
-                            Ok(_) => log::debug!("Container {} removed during cleanup", container_id),
-                            Err(e) => log::debug!("Failed to remove container {} during cleanup: {}", container_id, e),
+                            Ok(_) => {
+                                log::debug!("Container {} removed during cleanup", container_id)
+                            }
+                            Err(e) => log::debug!(
+                                "Failed to remove container {} during cleanup: {}",
+                                container_id,
+                                e
+                            ),
                         }
                     });
                 } else {
@@ -258,7 +277,10 @@ impl Drop for ManagedContainerService {
                         let client = client.clone();
 
                         rt.block_on(async move {
-                            log::warn!("RAII cleanup (new runtime): Force stopping container {}", container_id);
+                            log::warn!(
+                                "RAII cleanup (new runtime): Force stopping container {}",
+                                container_id
+                            );
 
                             // Best effort cleanup
                             let _ = client.kill_container(&container_id).await;
@@ -289,11 +311,11 @@ impl Clone for ManagedContainerService {
     fn clone(&self) -> Self {
         // When cloning, disable cleanup on the clone by default
         // to avoid double cleanup
-        let cloned = Self {
+
+        Self {
             inner: self.inner.clone(),
             cleanup_on_drop: Arc::new(AtomicBool::new(false)),
             docker_client: self.docker_client.clone(),
-        };
-        cloned
+        }
     }
 }

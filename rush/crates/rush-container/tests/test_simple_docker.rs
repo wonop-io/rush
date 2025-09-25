@@ -1,9 +1,10 @@
 //! Integration tests for SimpleDocker implementation
 
-use rush_container::simple_docker::{SimpleDocker, RunOptions};
+use std::sync::Arc;
+
+use rush_container::simple_docker::{RunOptions, SimpleDocker};
 use rush_core::error::Result;
 use rush_output::simple::{LogEntry, Sink};
-use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Test sink that collects output
@@ -20,7 +21,8 @@ impl TestSink {
 #[async_trait::async_trait]
 impl Sink for TestSink {
     async fn write(&mut self, entry: LogEntry) -> Result<()> {
-        self.lines.push(format!("{}: {}", entry.component, entry.content));
+        self.lines
+            .push(format!("{}: {}", entry.component, entry.content));
         Ok(())
     }
 
@@ -93,7 +95,7 @@ async fn test_run_quick_command() {
 
     // This test requires Docker to be available
     if std::process::Command::new("docker")
-        .args(&["version"])
+        .args(["version"])
         .output()
         .is_err()
     {
@@ -103,7 +105,10 @@ async fn test_run_quick_command() {
 
     // Run a simple echo command
     let output = docker
-        .run_command("alpine:latest", vec!["echo".to_string(), "test".to_string()])
+        .run_command(
+            "alpine:latest",
+            vec!["echo".to_string(), "test".to_string()],
+        )
         .await
         .unwrap();
 
@@ -116,7 +121,7 @@ async fn test_interactive_container() {
 
     // This test requires Docker to be available
     if std::process::Command::new("docker")
-        .args(&["version"])
+        .args(["version"])
         .output()
         .is_err()
     {

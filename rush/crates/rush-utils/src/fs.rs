@@ -1,8 +1,9 @@
-use log::{debug, error, trace};
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+
+use log::{debug, error, trace};
 
 /// Reads the contents of a file to a string
 ///

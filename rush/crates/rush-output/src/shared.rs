@@ -1,7 +1,9 @@
-use super::{OutputDirector, OutputSource, OutputStream};
-use rush_core::error::Result;
 use std::sync::Arc;
+
+use rush_core::error::Result;
 use tokio::sync::Mutex;
+
+use super::{OutputDirector, OutputSource, OutputStream};
 
 /// A thread-safe wrapper for OutputDirector that can be shared across tasks
 pub struct SharedOutputDirector {

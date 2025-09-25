@@ -1,10 +1,12 @@
 //! Mock Docker client for testing
 
-use crate::docker::{ContainerStatus, DockerClient};
-use rush_core::error::{Error, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use rush_core::error::{Error, Result};
 use tokio::sync::Mutex;
+
+use crate::docker::{ContainerStatus, DockerClient};
 
 /// Mock Docker client for testing
 #[derive(Debug, Clone)]
@@ -370,7 +372,7 @@ impl DockerClient for MockDockerClient {
 
         Ok(container_id)
     }
-    
+
     async fn push_image(&self, image: &str) -> Result<()> {
         self.record_call(format!("push_image({image})")).await;
 

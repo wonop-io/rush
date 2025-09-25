@@ -1,7 +1,8 @@
+use std::path::Path;
+
 use log::{error, info};
 use rush_core::error::{Error, Result};
 use rush_k8s::validation::{K8sValidator, KubeconformValidator, KubevalValidator};
-use std::path::Path;
 
 /// Command implementation for validating Kubernetes manifests
 pub async fn execute(

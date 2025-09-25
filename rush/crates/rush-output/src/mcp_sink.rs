@@ -3,13 +3,15 @@
 //! This sink buffers logs and makes them available to MCP clients,
 //! supporting both retrieval and streaming modes.
 
-use crate::simple::{LogEntry, LogOrigin, Sink};
+use std::collections::VecDeque;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use rush_core::error::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
-use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex, RwLock};
+
+use crate::simple::{LogEntry, LogOrigin, Sink};
 
 /// Configuration for the MCP sink
 #[derive(Debug, Clone)]
@@ -101,7 +103,11 @@ impl McpSink {
     }
 
     /// Get logs filtered by component
-    pub async fn get_component_logs(&self, component: &str, count: Option<usize>) -> Vec<McpLogEntry> {
+    pub async fn get_component_logs(
+        &self,
+        component: &str,
+        count: Option<usize>,
+    ) -> Vec<McpLogEntry> {
         let buffer = self.buffer.read().await;
         buffer
             .iter()
@@ -140,25 +146,29 @@ impl McpSink {
             component: entry.component,
             content: entry.content.trim_end().to_string(),
             is_error: entry.is_error,
-            metadata: self.config.product_name.as_ref().map(|product| McpMetadata {
-                product: Some(product.clone()),
-                container_id: None,
-                build_id: None,
-            }),
+            metadata: self
+                .config
+                .product_name
+                .as_ref()
+                .map(|product| McpMetadata {
+                    product: Some(product.clone()),
+                    container_id: None,
+                    build_id: None,
+                }),
         }
     }
 
     /// Add entry to buffer with overflow handling
     async fn buffer_entry(&self, entry: McpLogEntry) {
         let mut buffer = self.buffer.write().await;
-        
+
         // Remove oldest entries if at capacity
         while buffer.len() >= self.config.max_buffer_size {
             buffer.pop_front();
             let mut stats = self.stats.lock().await;
             stats.buffer_overflows += 1;
         }
-        
+
         buffer.push_back(entry);
     }
 }
@@ -243,8 +253,9 @@ impl Default for McpSinkBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chrono::Utc;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_mcp_sink_buffering() {
@@ -256,8 +267,8 @@ mod tests {
         // Write some entries
         for i in 0..15 {
             let entry = LogEntry {
-                component: format!("component-{}", i),
-                content: format!("Log message {}", i),
+                component: format!("component-{i}"),
+                content: format!("Log message {i}"),
                 timestamp: Utc::now(),
                 is_error: i % 3 == 0,
                 log_origin: LogOrigin::Docker,
@@ -285,7 +296,7 @@ mod tests {
             for i in 0..3 {
                 let entry = LogEntry {
                     component: component.to_string(),
-                    content: format!("Message {}", i),
+                    content: format!("Message {i}"),
                     timestamp: Utc::now(),
                     is_error: false,
                     log_origin: LogOrigin::Docker,

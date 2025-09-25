@@ -4,21 +4,21 @@
 //! the SimpleDocker implementation for container management.
 //! Reduces complexity from 1000+ lines to ~400 lines.
 
-use crate::{
-    events::{ContainerEvent, Event, EventBus},
-    reactor::state::{ReactorPhase, SharedReactorState},
-    service::ContainerService,
-    simple_docker::{RunOptions, SimpleDocker},
-};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
 use log::{debug, error, info, warn};
 use rush_core::error::{Error, Result};
 use rush_core::naming::NamingConvention;
 use rush_output::simple::Sink;
 use rush_security::Vault;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use tokio::sync::broadcast;
+
+use crate::events::{ContainerEvent, Event, EventBus};
+use crate::reactor::state::{ReactorPhase, SharedReactorState};
+use crate::service::ContainerService;
+use crate::simple_docker::{RunOptions, SimpleDocker};
 
 /// Configuration for the simple lifecycle manager
 #[derive(Debug, Clone)]
@@ -106,11 +106,14 @@ impl SimpleLifecycleManager {
     ) -> Result<Vec<crate::docker::DockerService>> {
         // For now, just delegate to start_services
         // In future, could implement dependency ordering here if needed
-        let container_names = self.start_services(services, component_specs, built_images).await?;
+        let container_names = self
+            .start_services(services, component_specs, built_images)
+            .await?;
 
         // Convert container names to DockerService for compatibility
         // This is a temporary shim until we fully migrate away from DockerService
-        let docker_services = container_names.into_iter()
+        let docker_services = container_names
+            .into_iter()
             .map(|name| {
                 crate::docker::DockerService::new(
                     name.clone(),
@@ -187,10 +190,13 @@ impl SimpleLifecycleManager {
         info!("Starting {} services with SimpleDocker", services.len());
 
         // Create network first
-        self.docker.create_network(&self.config.network_name).await?;
+        self.docker
+            .create_network(&self.config.network_name)
+            .await?;
 
         // Publish network ready event
-        let _ = self.event_bus
+        let _ = self
+            .event_bus
             .publish(Event::new(
                 "lifecycle",
                 ContainerEvent::NetworkReady {
@@ -203,7 +209,11 @@ impl SimpleLifecycleManager {
 
         for service in services {
             // Check if redirected
-            if self.config.redirected_components.contains_key(&service.name) {
+            if self
+                .config
+                .redirected_components
+                .contains_key(&service.name)
+            {
                 info!("Skipping {} (redirected)", service.name);
                 continue;
             }
@@ -221,7 +231,10 @@ impl SimpleLifecycleManager {
             }
 
             // Start the service
-            match self.start_service(&service, component_specs, built_images).await {
+            match self
+                .start_service(&service, component_specs, built_images)
+                .await
+            {
                 Ok(container_name) => {
                     info!("Started {} as container {}", service.name, container_name);
 
@@ -232,7 +245,8 @@ impl SimpleLifecycleManager {
                     }
 
                     // Publish event
-                    let _ = self.event_bus
+                    let _ = self
+                        .event_bus
                         .publish(Event::new(
                             "lifecycle",
                             ContainerEvent::ContainerStarted {
@@ -255,7 +269,8 @@ impl SimpleLifecycleManager {
                     }
 
                     // Publish error event
-                    let _ = self.event_bus
+                    let _ = self
+                        .event_bus
                         .publish(Event::error(
                             "lifecycle",
                             format!("Failed to start {}: {}", service.name, e),
@@ -268,7 +283,10 @@ impl SimpleLifecycleManager {
             }
         }
 
-        info!("Started {} containers successfully", running_containers.len());
+        info!(
+            "Started {} containers successfully",
+            running_containers.len()
+        );
         Ok(running_containers)
     }
 
@@ -310,25 +328,25 @@ impl SimpleLifecycleManager {
         if let Some(spec) = component_spec {
             // Add dotenv variables
             for (key, value) in &spec.dotenv {
-                env_vars.push(format!("{}={}", key, value));
+                env_vars.push(format!("{key}={value}"));
             }
 
             // Add dotenv secrets
             for (key, value) in &spec.dotenv_secrets {
-                env_vars.push(format!("{}={}", key, value));
+                env_vars.push(format!("{key}={value}"));
             }
 
             // Add env variables from YAML
             if let Some(env) = &spec.env {
                 for (key, value) in env {
-                    env_vars.push(format!("{}={}", key, value));
+                    env_vars.push(format!("{key}={value}"));
                 }
             }
         }
 
         // Add secrets
         for (key, value) in secrets {
-            env_vars.push(format!("{}={}", key, value));
+            env_vars.push(format!("{key}={value}"));
         }
 
         // Get the actual image name
@@ -364,7 +382,10 @@ impl SimpleLifecycleManager {
 
         // Run the container interactively with output streaming
         let container_id = self.docker.run_interactive(run_options).await?;
-        info!("Container {} started with ID: {}", container_name, container_id);
+        info!(
+            "Container {} started with ID: {}",
+            container_name, container_id
+        );
 
         Ok(container_name)
     }
@@ -385,7 +406,8 @@ impl SimpleLifecycleManager {
         let _ = self.shutdown_sender.send(());
 
         // Publish shutdown event
-        let _ = self.event_bus
+        let _ = self
+            .event_bus
             .publish(Event::new(
                 "lifecycle",
                 ContainerEvent::ShutdownInitiated {
@@ -419,7 +441,8 @@ impl SimpleLifecycleManager {
                         }
 
                         // Publish stopped event
-                        let _ = self.event_bus
+                        let _ = self
+                            .event_bus
                             .publish(Event::new(
                                 "lifecycle",
                                 ContainerEvent::ContainerStopped {
@@ -473,7 +496,8 @@ impl SimpleLifecycleManager {
         }
 
         // Publish event
-        let _ = self.event_bus
+        let _ = self
+            .event_bus
             .publish(Event::new(
                 "lifecycle",
                 ContainerEvent::ContainerStopped {
@@ -505,7 +529,7 @@ impl SimpleLifecycleManager {
         let service = services
             .iter()
             .find(|s| s.name == component_name)
-            .ok_or_else(|| Error::Docker(format!("Service {} not found", component_name)))?;
+            .ok_or_else(|| Error::Docker(format!("Service {component_name} not found")))?;
 
         // Start it again
         self.start_service(service, component_specs, built_images)

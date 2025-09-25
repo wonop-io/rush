@@ -1,11 +1,12 @@
-use log::{debug, error, trace};
-use rush_core::constants::*;
-use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::types::Config;
+use log::{debug, error, trace};
+use rush_core::constants::*;
 use rush_utils::find_project_root;
+use serde::{Deserialize, Serialize};
+
+use crate::types::Config;
 
 /// Loads configuration files for Rush CLI
 pub struct ConfigLoader {

@@ -1,9 +1,9 @@
 use colored::Colorize;
 use log::{debug, error, info, warn};
-
-use crate::ImageBuilder;
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
+
+use crate::ImageBuilder;
 
 /// Manages the build process for containers
 pub struct BuildProcessor {}

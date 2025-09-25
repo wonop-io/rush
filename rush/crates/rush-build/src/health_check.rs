@@ -74,13 +74,27 @@ pub enum HealthCheckType {
 }
 
 // Default values for health check configuration
-fn default_initial_delay() -> u32 { 0 }
-fn default_interval() -> u32 { 10 }
-fn default_success_threshold() -> u32 { 1 }
-fn default_failure_threshold() -> u32 { 3 }
-fn default_timeout() -> u32 { 5 }
-fn default_max_retries() -> u32 { 30 }
-fn default_http_status() -> u16 { 200 }
+fn default_initial_delay() -> u32 {
+    0
+}
+fn default_interval() -> u32 {
+    10
+}
+fn default_success_threshold() -> u32 {
+    1
+}
+fn default_failure_threshold() -> u32 {
+    3
+}
+fn default_timeout() -> u32 {
+    5
+}
+fn default_max_retries() -> u32 {
+    30
+}
+fn default_http_status() -> u16 {
+    200
+}
 
 impl Default for HealthCheckConfig {
     fn default() -> Self {
@@ -179,31 +193,40 @@ pub fn parse_health_check(value: &serde_yaml::Value) -> Option<HealthCheckConfig
     if let Some(type_str) = value.get("type").and_then(|v| v.as_str()) {
         match type_str {
             "http" => {
-                let path = value.get("path")
+                let path = value
+                    .get("path")
                     .and_then(|v| v.as_str())
                     .unwrap_or("/health")
                     .to_string();
-                let expected_status = value.get("expected_status")
+                let expected_status = value
+                    .get("expected_status")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(200) as u16;
 
                 let mut config = HealthCheckConfig::http(path);
-                if let HealthCheckType::Http { expected_status: ref mut status, .. } = config.check_type {
+                if let HealthCheckType::Http {
+                    expected_status: ref mut status,
+                    ..
+                } = config.check_type
+                {
                     *status = expected_status;
                 }
 
                 parse_common_fields(value, config)
             }
             "tcp" => {
-                let port = value.get("port")
+                let port = value
+                    .get("port")
                     .and_then(|v| v.as_u64())
-                    .expect("port is required for tcp health check") as u16;
+                    .expect("port is required for tcp health check")
+                    as u16;
 
                 let config = HealthCheckConfig::tcp(port);
                 parse_common_fields(value, config)
             }
             "exec" => {
-                let command = value.get("command")
+                let command = value
+                    .get("command")
                     .and_then(|v| v.as_sequence())
                     .expect("command is required for exec health check")
                     .iter()
@@ -214,7 +237,8 @@ pub fn parse_health_check(value: &serde_yaml::Value) -> Option<HealthCheckConfig
                 parse_common_fields(value, config)
             }
             "dns" => {
-                let hosts = value.get("hosts")
+                let hosts = value
+                    .get("hosts")
                     .and_then(|v| v.as_sequence())
                     .expect("hosts is required for dns health check")
                     .iter()
@@ -232,7 +256,10 @@ pub fn parse_health_check(value: &serde_yaml::Value) -> Option<HealthCheckConfig
 }
 
 /// Parse common health check fields from YAML
-fn parse_common_fields(value: &serde_yaml::Value, mut config: HealthCheckConfig) -> Option<HealthCheckConfig> {
+fn parse_common_fields(
+    value: &serde_yaml::Value,
+    mut config: HealthCheckConfig,
+) -> Option<HealthCheckConfig> {
     if let Some(initial_delay) = value.get("initial_delay").and_then(|v| v.as_u64()) {
         config.initial_delay = initial_delay as u32;
     }
@@ -279,7 +306,11 @@ mod tests {
         assert_eq!(config.initial_delay, 5);
         assert_eq!(config.interval, 3);
 
-        if let HealthCheckType::Http { path, expected_status } = config.check_type {
+        if let HealthCheckType::Http {
+            path,
+            expected_status,
+        } = config.check_type
+        {
             assert_eq!(path, "/health");
             assert_eq!(expected_status, 200);
         } else {
@@ -289,8 +320,7 @@ mod tests {
 
     #[test]
     fn test_tcp_health_check() {
-        let config = HealthCheckConfig::tcp(8080)
-            .with_max_retries(60);
+        let config = HealthCheckConfig::tcp(8080).with_max_retries(60);
 
         assert_eq!(config.max_retries, 60);
 

@@ -1,10 +1,11 @@
-use ignore::{WalkBuilder, Walk};
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use std::path::{Path, PathBuf};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use rush_core::error::Result;
+
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use ignore::{Walk, WalkBuilder};
 use log::{debug, trace, warn};
+use rush_core::error::Result;
 
 /// Cache for parsed gitignore files to improve performance
 #[derive(Clone)]
@@ -130,10 +131,16 @@ impl GitignoreManager {
         let gitignore_path = component_dir.join(".gitignore");
 
         if let Some(gitignore) = self.cache.get_or_create(&gitignore_path, component_dir) {
-            debug!("Successfully loaded component .gitignore from {:?}", gitignore_path);
+            debug!(
+                "Successfully loaded component .gitignore from {:?}",
+                gitignore_path
+            );
             self.component_gitignores.push(gitignore);
         } else if gitignore_path.exists() {
-            warn!("Component .gitignore exists at {:?} but could not be parsed", gitignore_path);
+            warn!(
+                "Component .gitignore exists at {:?} but could not be parsed",
+                gitignore_path
+            );
         } else {
             trace!("No component .gitignore found at {:?}", gitignore_path);
         }
@@ -200,25 +207,30 @@ impl GitignoreManager {
 
     /// Create a Walk iterator that respects gitignore
     pub fn walk(&self, dir: &Path) -> Walk {
-        debug!("Creating gitignore-aware walker for {:?} (global: {})", dir, self.use_global_gitignore);
+        debug!(
+            "Creating gitignore-aware walker for {:?} (global: {})",
+            dir, self.use_global_gitignore
+        );
 
         // Use the ignore crate's built-in gitignore support
         WalkBuilder::new(dir)
-            .standard_filters(true)  // Applies .gitignore, .ignore, .git/info/exclude
-            .hidden(false)           // Don't skip hidden files by default
-            .parents(true)           // Check parent .gitignore files
-            .ignore(true)            // Enable .ignore file checking
-            .git_ignore(true)        // Enable .gitignore checking
-            .git_global(self.use_global_gitignore)  // Respect env var setting
-            .git_exclude(true)       // Check .git/info/exclude
-            .max_depth(Some(10))     // Limit recursion depth
+            .standard_filters(true) // Applies .gitignore, .ignore, .git/info/exclude
+            .hidden(false) // Don't skip hidden files by default
+            .parents(true) // Check parent .gitignore files
+            .ignore(true) // Enable .ignore file checking
+            .git_ignore(true) // Enable .gitignore checking
+            .git_global(self.use_global_gitignore) // Respect env var setting
+            .git_exclude(true) // Check .git/info/exclude
+            .max_depth(Some(10)) // Limit recursion depth
             .build()
     }
 
     /// Create a Walk iterator with custom settings
     pub fn walk_with_settings(&self, dir: &Path, respect_gitignore: bool) -> Walk {
-        debug!("Creating walker for {:?} (gitignore: {}, global: {})",
-               dir, respect_gitignore, self.use_global_gitignore);
+        debug!(
+            "Creating walker for {:?} (gitignore: {}, global: {})",
+            dir, respect_gitignore, self.use_global_gitignore
+        );
 
         WalkBuilder::new(dir)
             .standard_filters(respect_gitignore)
@@ -247,9 +259,11 @@ impl Default for GitignoreManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tempfile::TempDir;
     use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_gitignore_excludes_files() {
@@ -265,10 +279,14 @@ mod tests {
 
         let manager = GitignoreManager::new(base_path).unwrap();
 
-        assert!(!manager.should_ignore(&base_path.join("included.rs"), false),
-                "included.rs should not be ignored");
-        assert!(manager.should_ignore(&base_path.join("excluded.tmp"), false),
-                "excluded.tmp should be ignored by .gitignore");
+        assert!(
+            !manager.should_ignore(&base_path.join("included.rs"), false),
+            "included.rs should not be ignored"
+        );
+        assert!(
+            manager.should_ignore(&base_path.join("excluded.tmp"), false),
+            "excluded.tmp should be ignored by .gitignore"
+        );
     }
 
     #[test]
@@ -292,10 +310,14 @@ mod tests {
         let mut manager = GitignoreManager::new(base_path).unwrap();
         manager.add_component_gitignore(&sub_dir).unwrap();
 
-        assert!(!manager.should_ignore(&sub_dir.join("file.rs"), false),
-                "file.rs should not be ignored");
-        assert!(manager.should_ignore(&sub_dir.join("ignored.log"), false),
-                "ignored.log should be ignored by nested .gitignore");
+        assert!(
+            !manager.should_ignore(&sub_dir.join("file.rs"), false),
+            "file.rs should not be ignored"
+        );
+        assert!(
+            manager.should_ignore(&sub_dir.join("ignored.log"), false),
+            "ignored.log should be ignored by nested .gitignore"
+        );
     }
 
     #[test]
@@ -347,10 +369,16 @@ mod tests {
         }
 
         // Should include included.rs and .gitignore but not excluded.log
-        assert!(files.iter().any(|p| p.ends_with("included.rs")),
-                "Walk should include included.rs, found files: {:?}", files);
-        assert!(!files.iter().any(|p| p.ends_with("excluded.log")),
-                 "Walk should exclude excluded.log, found files: {:?}", files);
+        assert!(
+            files.iter().any(|p| p.ends_with("included.rs")),
+            "Walk should include included.rs, found files: {:?}",
+            files
+        );
+        assert!(
+            !files.iter().any(|p| p.ends_with("excluded.log")),
+            "Walk should exclude excluded.log, found files: {:?}",
+            files
+        );
     }
 
     #[test]
@@ -391,10 +419,14 @@ mod tests {
             }
         }
 
-        assert!(found_files.iter().any(|p| p.ends_with("source.rs")),
-                "source.rs should be found");
-        assert!(!found_files.iter().any(|p| p.ends_with("output.txt")),
-                "output.txt in build/ should be ignored by gitignore");
+        assert!(
+            found_files.iter().any(|p| p.ends_with("source.rs")),
+            "source.rs should be found"
+        );
+        assert!(
+            !found_files.iter().any(|p| p.ends_with("output.txt")),
+            "output.txt in build/ should be ignored by gitignore"
+        );
     }
 
     #[test]
@@ -445,13 +477,23 @@ mod tests {
         manager.add_component_gitignore(&component_dir).unwrap();
 
         // The manager should have loaded multiple gitignores
-        assert!(manager.root_gitignore.is_some(), "Should have root gitignore");
-        assert!(!manager.component_gitignores.is_empty(), "Should have component gitignores");
+        assert!(
+            manager.root_gitignore.is_some(),
+            "Should have root gitignore"
+        );
+        assert!(
+            !manager.component_gitignores.is_empty(),
+            "Should have component gitignores"
+        );
 
         // Test that files at different levels are properly ignored
-        assert!(manager.should_ignore(&base_path.join("test.root"), false),
-                "Root-level ignored file should be ignored");
-        assert!(manager.should_ignore(&component_dir.join("test.component"), false),
-                "Component-level ignored file should be ignored");
+        assert!(
+            manager.should_ignore(&base_path.join("test.root"), false),
+            "Root-level ignored file should be ignored"
+        );
+        assert!(
+            manager.should_ignore(&component_dir.join("test.component"), false),
+            "Component-level ignored file should be ignored"
+        );
     }
 }

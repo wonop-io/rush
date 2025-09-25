@@ -1,10 +1,12 @@
-use super::{OutputDirector, OutputSource, OutputStream};
-use async_trait::async_trait;
-use rush_core::error::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+use async_trait::async_trait;
+use rush_core::error::Result;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncWriteExt, BufWriter};
+
+use super::{OutputDirector, OutputSource, OutputStream};
 
 /// File-based output director that writes to separate log files per source
 pub struct FileOutputDirector {
@@ -159,10 +161,11 @@ fn sanitize_filename(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{OutputSource, OutputStream};
     use tempfile::TempDir;
     use tokio::fs;
+
+    use super::*;
+    use crate::{OutputSource, OutputStream};
 
     #[tokio::test]
     async fn test_file_output_director_creation() {

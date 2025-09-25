@@ -3,17 +3,18 @@
 //! This module provides a persistent cache that stores build metadata
 //! on disk and implements LRU eviction for space management.
 
-use rush_build::ComponentBuildSpec;
-use rush_core::{Error, Result};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::sync::RwLock;
+
 use log::{debug, info, warn};
+use rush_build::ComponentBuildSpec;
+use rush_core::{Error, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
 
 /// Persistent cache configuration
 #[derive(Debug, Clone)]
@@ -32,7 +33,7 @@ impl Default for PersistentCacheConfig {
     fn default() -> Self {
         Self {
             cache_dir: PathBuf::from(".rush/build-cache"),
-            max_size: 10 * 1024 * 1024 * 1024, // 10GB
+            max_size: 10 * 1024 * 1024 * 1024,              // 10GB
             max_age: Duration::from_secs(7 * 24 * 60 * 60), // 7 days
             compress: true,
         }
@@ -83,11 +84,10 @@ impl PersistentBuildCache {
     /// Create a new persistent build cache
     pub async fn new(config: PersistentCacheConfig) -> Result<Self> {
         // Ensure cache directory exists
-        fs::create_dir_all(&config.cache_dir)
-            .map_err(|e| Error::FileSystem {
-                path: config.cache_dir.clone(),
-                message: format!("Failed to create cache directory: {}", e),
-            })?;
+        fs::create_dir_all(&config.cache_dir).map_err(|e| Error::FileSystem {
+            path: config.cache_dir.clone(),
+            message: format!("Failed to create cache directory: {e}"),
+        })?;
 
         let mut cache = Self {
             config,
@@ -114,15 +114,14 @@ impl PersistentBuildCache {
             return Ok(());
         }
 
-        let index_data = fs::read_to_string(&index_path)
-            .map_err(|e| Error::FileSystem {
-                path: index_path.clone(),
-                message: format!("Failed to read cache index: {}", e),
-            })?;
+        let index_data = fs::read_to_string(&index_path).map_err(|e| Error::FileSystem {
+            path: index_path.clone(),
+            message: format!("Failed to read cache index: {e}"),
+        })?;
 
         let loaded_index: HashMap<String, BuildArtifactMetadata> =
             serde_json::from_str(&index_data)
-                .map_err(|e| Error::Serialization(format!("Failed to parse cache index: {}", e)))?;
+                .map_err(|e| Error::Serialization(format!("Failed to parse cache index: {e}")))?;
 
         let mut index = self.index.write().await;
         let mut lru_queue = self.lru_queue.write().await;
@@ -144,7 +143,8 @@ impl PersistentBuildCache {
 
         *self.current_size.write().await = total_size;
 
-        info!("Loaded {} cache entries ({:.2} MB)",
+        info!(
+            "Loaded {} cache entries ({:.2} MB)",
             index.len(),
             total_size as f64 / (1024.0 * 1024.0)
         );
@@ -158,13 +158,12 @@ impl PersistentBuildCache {
         let index = self.index.read().await;
 
         let index_data = serde_json::to_string_pretty(&*index)
-            .map_err(|e| Error::Serialization(format!("Failed to serialize cache index: {}", e)))?;
+            .map_err(|e| Error::Serialization(format!("Failed to serialize cache index: {e}")))?;
 
-        fs::write(&index_path, index_data)
-            .map_err(|e| Error::FileSystem {
-                path: index_path,
-                message: format!("Failed to write cache index: {}", e),
-            })?;
+        fs::write(&index_path, index_data).map_err(|e| Error::FileSystem {
+            path: index_path,
+            message: format!("Failed to write cache index: {e}"),
+        })?;
 
         Ok(())
     }
@@ -198,12 +197,12 @@ impl PersistentBuildCache {
 
     /// Get the path for cached data
     fn get_data_path(&self, key: &str) -> PathBuf {
-        self.config.cache_dir.join(format!("{}.cache", key))
+        self.config.cache_dir.join(format!("{key}.cache"))
     }
 
     /// Get the path for cached metadata
     fn get_metadata_path(&self, key: &str) -> PathBuf {
-        self.config.cache_dir.join(format!("{}.meta", key))
+        self.config.cache_dir.join(format!("{key}.meta"))
     }
 
     /// Get cached build artifact
@@ -217,7 +216,10 @@ impl PersistentBuildCache {
         // Verify the cached data still exists
         let data_path = self.get_data_path(&key);
         if !data_path.exists() {
-            warn!("Cache entry {} exists in index but data file is missing", key);
+            warn!(
+                "Cache entry {} exists in index but data file is missing",
+                key
+            );
             return None;
         }
 
@@ -242,7 +244,7 @@ impl PersistentBuildCache {
             component_name: spec.component_name.clone(),
             image_name: image_name.clone(),
             context_hash: self.compute_context_hash(spec).await?,
-            spec_hash: format!("{:?}", spec),
+            spec_hash: format!("{spec:?}"),
             build_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -255,18 +257,15 @@ impl PersistentBuildCache {
         // Write metadata
         let metadata_path = self.get_metadata_path(&key);
         let metadata_json = serde_json::to_string(&metadata)
-            .map_err(|e| Error::Serialization(format!("Failed to serialize metadata: {}", e)))?;
+            .map_err(|e| Error::Serialization(format!("Failed to serialize metadata: {e}")))?;
 
-        fs::write(&metadata_path, metadata_json)
-            .map_err(|e| Error::FileSystem {
-                path: metadata_path.clone(),
-                message: format!("Failed to write metadata: {}", e),
-            })?;
+        fs::write(&metadata_path, metadata_json).map_err(|e| Error::FileSystem {
+            path: metadata_path.clone(),
+            message: format!("Failed to write metadata: {e}"),
+        })?;
 
         // Update metadata with actual size
-        let size = metadata_path.metadata()
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let size = metadata_path.metadata().map(|m| m.len()).unwrap_or(0);
 
         let mut final_metadata = metadata;
         final_metadata.size = size;
@@ -274,7 +273,8 @@ impl PersistentBuildCache {
         // Check if we need to evict old entries
         let mut current_size = self.current_size.write().await;
         if *current_size + size > self.config.max_size {
-            self.evict_lru(*current_size + size - self.config.max_size).await?;
+            self.evict_lru(*current_size + size - self.config.max_size)
+                .await?;
         }
 
         // Update index
@@ -297,7 +297,11 @@ impl PersistentBuildCache {
         drop(current_size);
         self.save_index().await?;
 
-        info!("Cached build for {} ({:.2} KB)", spec.component_name, size as f64 / 1024.0);
+        info!(
+            "Cached build for {} ({:.2} KB)",
+            spec.component_name,
+            size as f64 / 1024.0
+        );
         Ok(())
     }
 
@@ -309,21 +313,19 @@ impl PersistentBuildCache {
         if let Some(dockerfile) = spec.build_type.dockerfile_path() {
             let dockerfile_path = PathBuf::from(dockerfile);
             if dockerfile_path.exists() {
-                let content = fs::read(&dockerfile_path)
-                    .map_err(|e| Error::FileSystem {
-                        path: dockerfile_path.clone(),
-                        message: format!("Failed to read Dockerfile: {}", e),
-                    })?;
+                let content = fs::read(&dockerfile_path).map_err(|e| Error::FileSystem {
+                    path: dockerfile_path.clone(),
+                    message: format!("Failed to read Dockerfile: {e}"),
+                })?;
                 hasher.update(&content);
             }
         }
 
         // Hash artifact templates
         if let Some(artifacts) = &spec.artefacts {
-            for (source, _) in artifacts {
+            for source in artifacts.keys() {
                 if Path::new(source).exists() {
-                    let content = fs::read_to_string(source)
-                        .unwrap_or_default();
+                    let content = fs::read_to_string(source).unwrap_or_default();
                     hasher.update(content.as_bytes());
                 }
             }
@@ -333,7 +335,10 @@ impl PersistentBuildCache {
     }
 
     /// Collect source file hashes
-    async fn collect_source_files(&self, spec: &ComponentBuildSpec) -> Result<HashMap<String, String>> {
+    async fn collect_source_files(
+        &self,
+        spec: &ComponentBuildSpec,
+    ) -> Result<HashMap<String, String>> {
         let mut files = HashMap::new();
 
         // Collect hashes of relevant source files
@@ -350,10 +355,7 @@ impl PersistentBuildCache {
                         let content = fs::read(&file_path).unwrap_or_default();
                         let mut hasher = Sha256::new();
                         hasher.update(&content);
-                        files.insert(
-                            entry.to_string(),
-                            format!("{:x}", hasher.finalize())
-                        );
+                        files.insert(entry.to_string(), format!("{:x}", hasher.finalize()));
                     }
                 }
             }
@@ -383,13 +385,19 @@ impl PersistentBuildCache {
                     let _ = fs::remove_file(data_path);
                     let _ = fs::remove_file(metadata_path);
 
-                    debug!("Evicted cache entry {} to free {:.2} KB",
-                        entry.key, metadata.size as f64 / 1024.0);
+                    debug!(
+                        "Evicted cache entry {} to free {:.2} KB",
+                        entry.key,
+                        metadata.size as f64 / 1024.0
+                    );
                 }
             }
         }
 
-        info!("Evicted cache entries to free {:.2} MB", freed as f64 / (1024.0 * 1024.0));
+        info!(
+            "Evicted cache entries to free {:.2} MB",
+            freed as f64 / (1024.0 * 1024.0)
+        );
         Ok(())
     }
 
@@ -489,8 +497,9 @@ pub struct CacheStats {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_persistent_cache_creation() {

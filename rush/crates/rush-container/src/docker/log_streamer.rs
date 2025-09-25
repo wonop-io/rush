@@ -3,17 +3,17 @@
 //! This module provides improved log streaming capabilities with buffering,
 //! filtering, and real-time processing.
 
-use crate::{
-    docker::DockerClient,
-    events::{Event, EventBus},
-};
-use rush_core::error::Result;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use log::{debug, error, info};
+use rush_core::error::Result;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-use log::{debug, info, error};
+
+use crate::docker::DockerClient;
+use crate::events::{Event, EventBus};
 
 /// Configuration for log streaming
 #[derive(Debug, Clone)]
@@ -122,7 +122,7 @@ impl LogStream {
         docker_client: Arc<dyn DockerClient>,
     ) -> (Self, mpsc::UnboundedReceiver<LogEntry>) {
         let (sender, receiver) = mpsc::unbounded_channel();
-        
+
         let buffer_size = config.buffer_size;
         let stream = Self {
             container_id,
@@ -134,7 +134,7 @@ impl LogStream {
             sender,
             last_line_count: Arc::new(RwLock::new(0)),
         };
-        
+
         (stream, receiver)
     }
 
@@ -148,29 +148,31 @@ impl LogStream {
     pub async fn start_streaming(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut fetch_interval = interval(self.config.fetch_interval);
-            
+
             loop {
                 fetch_interval.tick().await;
-                
+
                 if let Err(e) = self.fetch_and_process_logs().await {
                     error!(
                         "Error fetching logs for {} ({}): {}",
                         self.component, self.container_id, e
                     );
-                    
+
                     // Publish error event if we have event bus
                     if let Some(event_bus) = &self.event_bus {
-                        let _ = event_bus.publish(Event::error(
-                            "log_streamer",
-                            format!("Log fetch error for {}: {}", self.component, e),
-                            false,
-                        )).await;
+                        let _ = event_bus
+                            .publish(Event::error(
+                                "log_streamer",
+                                format!("Log fetch error for {}: {}", self.component, e),
+                                false,
+                            ))
+                            .await;
                     }
-                    
+
                     // Back off on errors
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
-                
+
                 if !self.config.follow {
                     break;
                 }
@@ -181,72 +183,73 @@ impl LogStream {
     /// Fetch and process new log lines
     async fn fetch_and_process_logs(&self) -> Result<()> {
         // Fetch logs from Docker
-        let logs = self.docker_client
+        let logs = self
+            .docker_client
             .container_logs(&self.container_id, self.config.batch_size)
             .await?;
-        
+
         // Split into lines
         let lines: Vec<&str> = logs.lines().collect();
-        
+
         // Check if we have new lines
         let last_count = *self.last_line_count.read().await;
         if lines.len() <= last_count {
             return Ok(()); // No new logs
         }
-        
+
         // Process new lines
         let new_lines = &lines[last_count..];
         let mut buffer = self.buffer.write().await;
-        
+
         for line in new_lines {
             if line.is_empty() {
                 continue;
             }
-            
+
             // Parse the log entry
             let entry = self.parse_log_entry(line);
-            
+
             // Check log level filter
             if entry.level < self.config.min_level {
                 continue;
             }
-            
+
             // Add to buffer
             if buffer.len() >= self.config.buffer_size {
                 buffer.pop_front();
             }
             buffer.push_back(entry.clone());
-            
+
             // Send to channel
             if let Err(e) = self.sender.send(entry) {
                 debug!("Failed to send log entry: {}", e);
             }
         }
-        
+
         // Update last line count
         *self.last_line_count.write().await = lines.len();
-        
+
         Ok(())
     }
 
     /// Parse a log line into a LogEntry
     fn parse_log_entry(&self, line: &str) -> LogEntry {
         let level = LogLevel::from_line(line);
-        
+
         // Try to parse timestamp if enabled
         let timestamp = if self.config.parse_timestamps {
             self.parse_timestamp(line)
         } else {
             None
         };
-        
+
         // Extract message (remove timestamp if found)
         let message = if self.config.parse_timestamps {
             self.extract_message(line)
         } else {
             line.to_string()
         };
-        
+
         LogEntry {
             container_id: self.container_id.clone(),
             component: self.component.clone(),
@@ -262,16 +265,17 @@ impl LogStream {
         // Simple heuristic: look for common timestamp patterns
         // This is a simplified implementation
         // Real implementation would use regex or proper parsing
-        
+
         if line.len() > 20 {
             // Check if line starts with a timestamp-like pattern
             let potential_timestamp = &line[..20];
-            if potential_timestamp.contains(':') && 
-               (potential_timestamp.contains('-') || potential_timestamp.contains('/')) {
+            if potential_timestamp.contains(':')
+                && (potential_timestamp.contains('-') || potential_timestamp.contains('/'))
+            {
                 return Some(Instant::now()); // Placeholder
             }
         }
-        
+
         None
     }
 
@@ -283,7 +287,7 @@ impl LogStream {
                 return line[idx + 1..].trim().to_string();
             }
         }
-        
+
         line.to_string()
     }
 
@@ -295,7 +299,7 @@ impl LogStream {
         } else {
             0
         };
-        
+
         buffer.iter().skip(start).cloned().collect()
     }
 
@@ -341,10 +345,7 @@ pub struct LogStreamManager {
 
 impl LogStreamManager {
     /// Create a new log stream manager
-    pub fn new(
-        docker_client: Arc<dyn DockerClient>,
-        default_config: LogStreamConfig,
-    ) -> Self {
+    pub fn new(docker_client: Arc<dyn DockerClient>, default_config: LogStreamConfig) -> Self {
         Self {
             streams: Arc::new(RwLock::new(Vec::new())),
             docker_client,
@@ -371,21 +372,21 @@ impl LogStreamManager {
             self.default_config.clone(),
             self.docker_client.clone(),
         );
-        
+
         if let Some(event_bus) = &self.event_bus {
             stream = stream.with_event_bus(event_bus.clone());
         }
-        
+
         let stream = Arc::new(stream);
-        
+
         // Start streaming
         let stream_clone = stream.clone();
         stream_clone.start_streaming().await;
-        
+
         // Store the stream
         let mut streams = self.streams.write().await;
         streams.push(stream);
-        
+
         receiver
     }
 
@@ -393,7 +394,7 @@ impl LogStreamManager {
     pub async fn stop_streaming(&self, container_id: &str) {
         let mut streams = self.streams.write().await;
         streams.retain(|s| s.container_id != container_id);
-        
+
         info!("Stopped log streaming for container {}", container_id);
     }
 
@@ -407,12 +408,12 @@ impl LogStreamManager {
     pub async fn search_all_logs(&self, pattern: &str) -> Vec<LogEntry> {
         let streams = self.streams.read().await;
         let mut results = Vec::new();
-        
+
         for stream in streams.iter() {
             let logs = stream.search_logs(pattern).await;
             results.extend(logs);
         }
-        
+
         results
     }
 
@@ -420,23 +421,23 @@ impl LogStreamManager {
     pub async fn get_all_errors(&self) -> Vec<LogEntry> {
         let streams = self.streams.read().await;
         let mut errors = Vec::new();
-        
+
         for stream in streams.iter() {
             let logs = stream.get_logs_by_level(LogLevel::Error).await;
             errors.extend(logs);
         }
-        
+
         errors
     }
 
     /// Clear all log buffers
     pub async fn clear_all_buffers(&self) {
         let streams = self.streams.read().await;
-        
+
         for stream in streams.iter() {
             stream.clear_buffer().await;
         }
-        
+
         info!("Cleared all log buffers");
     }
 }
@@ -447,10 +448,22 @@ mod tests {
 
     #[test]
     fn test_log_level_parsing() {
-        assert_eq!(LogLevel::from_line("ERROR: Something went wrong"), LogLevel::Error);
-        assert_eq!(LogLevel::from_line("WARN: This is a warning"), LogLevel::Warn);
-        assert_eq!(LogLevel::from_line("INFO: Application started"), LogLevel::Info);
-        assert_eq!(LogLevel::from_line("DEBUG: Variable x = 5"), LogLevel::Debug);
+        assert_eq!(
+            LogLevel::from_line("ERROR: Something went wrong"),
+            LogLevel::Error
+        );
+        assert_eq!(
+            LogLevel::from_line("WARN: This is a warning"),
+            LogLevel::Warn
+        );
+        assert_eq!(
+            LogLevel::from_line("INFO: Application started"),
+            LogLevel::Info
+        );
+        assert_eq!(
+            LogLevel::from_line("DEBUG: Variable x = 5"),
+            LogLevel::Debug
+        );
         assert_eq!(LogLevel::from_line("Some random log line"), LogLevel::Trace);
     }
 

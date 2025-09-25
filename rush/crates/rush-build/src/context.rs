@@ -1,9 +1,10 @@
-use crate::{BuildType, ServiceSpec};
-use rush_toolchain::Platform;
-use rush_toolchain::ToolchainContext;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str;
+
+use rush_toolchain::{Platform, ToolchainContext};
+use serde::{Deserialize, Serialize};
+
+use crate::{BuildType, ServiceSpec};
 
 /// BuildContext contains all information needed to build a component
 #[derive(Serialize, Deserialize, Debug)]

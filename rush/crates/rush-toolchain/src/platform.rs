@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use std::env;
-use std::fmt;
 use std::str::FromStr;
+use std::{env, fmt};
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum OperatingSystem {

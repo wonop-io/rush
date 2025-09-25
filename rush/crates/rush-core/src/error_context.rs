@@ -3,8 +3,9 @@
 //! This module provides traits and utilities to add context to errors,
 //! replacing the repetitive map_err patterns throughout the codebase.
 
-use crate::error::{Error, Result};
 use std::fmt::Display;
+
+use crate::error::{Error, Result};
 
 /// Extension trait for adding context to Result types
 pub trait ErrorContext<T> {

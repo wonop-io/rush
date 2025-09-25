@@ -27,7 +27,7 @@ impl NamingConvention {
     /// assert_eq!(name, "myproduct-backend");
     /// ```
     pub fn container_name(product_name: &str, component_name: &str) -> String {
-        format!("{}-{}", product_name, component_name)
+        format!("{product_name}-{component_name}")
     }
 
     /// Generate an image name from product and component names
@@ -39,7 +39,7 @@ impl NamingConvention {
     /// # Returns
     /// A formatted image name using hyphen separation
     pub fn image_name(product_name: &str, component_name: &str) -> String {
-        format!("{}-{}", product_name, component_name)
+        format!("{product_name}-{component_name}")
     }
 
     /// Generate a fully qualified image name with registry
@@ -61,9 +61,9 @@ impl NamingConvention {
         let base_name = Self::image_name(product_name, component_name);
 
         match (registry, namespace) {
-            (Some(reg), Some(ns)) => format!("{}/{}/{}", reg, ns, base_name),
-            (Some(reg), None) => format!("{}/{}", reg, base_name),
-            (None, Some(ns)) => format!("{}/{}", ns, base_name),
+            (Some(reg), Some(ns)) => format!("{reg}/{ns}/{base_name}"),
+            (Some(reg), None) => format!("{reg}/{base_name}"),
+            (None, Some(ns)) => format!("{ns}/{base_name}"),
             (None, None) => base_name,
         }
     }
@@ -89,8 +89,7 @@ impl NamingConvention {
         let first_char = name.chars().next().unwrap();
         if !first_char.is_ascii_alphanumeric() {
             return Err(format!(
-                "Name must start with a letter or number, found '{}'",
-                first_char
+                "Name must start with a letter or number, found '{first_char}'"
             ));
         }
 
@@ -100,15 +99,16 @@ impl NamingConvention {
             if !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '-' && c != '_' && c != '.' {
                 // Allow uppercase for now, as some products use it
                 if !c.is_ascii_uppercase() {
-                    return Err(format!("Invalid character '{}' in name", c));
+                    return Err(format!("Invalid character '{c}' in name"));
                 }
             }
 
             // Check for consecutive special characters
-            if (c == '.' || c == '-' || c == '_') && (prev_char == '.' || prev_char == '-' || prev_char == '_') {
+            if (c == '.' || c == '-' || c == '_')
+                && (prev_char == '.' || prev_char == '-' || prev_char == '_')
+            {
                 return Err(format!(
-                    "Cannot have consecutive special characters '{}{}' in name",
-                    prev_char, c
+                    "Cannot have consecutive special characters '{prev_char}{c}' in name"
                 ));
             }
             prev_char = c;
@@ -189,7 +189,12 @@ mod tests {
             "registry.io/product-component"
         );
         assert_eq!(
-            NamingConvention::full_image_name(Some("registry.io"), Some("namespace"), "product", "component"),
+            NamingConvention::full_image_name(
+                Some("registry.io"),
+                Some("namespace"),
+                "product",
+                "component"
+            ),
             "registry.io/namespace/product-component"
         );
         assert_eq!(
@@ -214,7 +219,10 @@ mod tests {
     #[test]
     fn test_sanitize_name() {
         assert_eq!(NamingConvention::sanitize_name("Valid-Name"), "valid-name");
-        assert_eq!(NamingConvention::sanitize_name("invalid--name"), "invalid-name");
+        assert_eq!(
+            NamingConvention::sanitize_name("invalid--name"),
+            "invalid-name"
+        );
         assert_eq!(NamingConvention::sanitize_name("---invalid"), "invalid");
         assert_eq!(NamingConvention::sanitize_name("name!!!"), "name");
         assert_eq!(NamingConvention::sanitize_name("name..."), "name");

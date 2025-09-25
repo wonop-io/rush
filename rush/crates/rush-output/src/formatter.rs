@@ -1,8 +1,10 @@
-use crate::event::{ExecutionPhase, LogLevel, OutputEvent};
+use std::collections::HashMap;
+
 use chrono::Local;
 use colored::*;
 use serde_json;
-use std::collections::HashMap;
+
+use crate::event::{ExecutionPhase, LogLevel, OutputEvent};
 
 /// Trait for formatting output events
 pub trait OutputFormatter: Send + Sync {

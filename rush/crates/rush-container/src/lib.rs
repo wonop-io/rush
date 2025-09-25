@@ -1,5 +1,5 @@
 //! Rush Container - Docker and container orchestration
-//! 
+//!
 //! This crate provides container lifecycle management through the Reactor pattern.
 //! The primary implementation uses a modular architecture with separate components
 //! for build orchestration, lifecycle management, file watching, and Docker integration.
@@ -9,6 +9,7 @@ pub mod dependency_graph;
 pub mod dev_environment;
 pub mod docker;
 pub mod events;
+pub mod git_ops;
 pub mod health_check_manager;
 pub mod image_builder;
 pub mod kubernetes;
@@ -26,7 +27,6 @@ pub mod status;
 pub mod stripe_handler;
 pub mod tagging;
 pub mod watcher;
-pub mod git_ops;
 
 // Testing modules
 #[cfg(test)]
@@ -49,12 +49,14 @@ pub use image_builder::{BuildConfig, ImageBuilder};
 pub use reactor::modular_core::Reactor;
 pub use reactor::ContainerReactorConfig;
 // Simple Docker implementation
-pub use simple_docker::{SimpleDocker, RunOptions};
-pub use simple_lifecycle::{SimpleLifecycleManager, SimpleLifecycleConfig};
+pub use simple_docker::{RunOptions, SimpleDocker};
+pub use simple_lifecycle::{SimpleLifecycleConfig, SimpleLifecycleManager};
 
 // Type alias for backward compatibility
 pub type ContainerReactor = Reactor;
-pub use service::{ContainerService, ManagedContainerService, ServiceCollection, ServiceConfig, ServicesSpec};
+pub use service::{
+    ContainerService, ManagedContainerService, ServiceCollection, ServiceConfig, ServicesSpec,
+};
 pub use status::Status;
 
 // Type aliases

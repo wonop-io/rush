@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
 
 /// Health check configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

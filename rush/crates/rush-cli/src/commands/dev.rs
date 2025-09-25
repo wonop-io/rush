@@ -1,22 +1,20 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use log::{debug, error, info, trace};
-use rush_output::simple::Sink as OutputSink;
-use tokio::sync::Mutex as TokioMutex;
-
 use rush_config::Config;
-use rush_container::{Reactor, DevEnvironment, DockerCliClient};
+use rush_container::{DevEnvironment, DockerCliClient, Reactor};
 use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_core::error::{Error, Result};
 // Legacy imports removed - this module is deprecated
 // use rush_output::OutputDirectorFactory;
 // use rush_output::factory::OutputDirectorConfig;
 use rush_output::factory::OutputDirectorConfig;
+use rush_output::simple::Sink as OutputSink;
 use rush_security::{FileVault, NoopEncoder, SecretsProvider};
 use rush_toolchain::ToolchainContext;
+use tokio::sync::Mutex as TokioMutex;
 
 /// Command to run the development environment
 pub struct DevCommand {
@@ -90,11 +88,11 @@ impl DevCommand {
         // Create and setup network manager BEFORE creating reactor or local services
         let network_manager = Arc::new(
             rush_container::network::NetworkManager::new(
-                docker_client.clone(), 
-                self.config.product_name()
+                docker_client.clone(),
+                self.config.product_name(),
             )
             .await
-            .map_err(|e| Error::Setup(format!("Failed to setup network: {e}")))?
+            .map_err(|e| Error::Setup(format!("Failed to setup network: {e}")))?,
         );
 
         // Create the container reactor from product directory
@@ -108,20 +106,24 @@ impl DevCommand {
         )
         .await
         .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {e}")))?;
-        
+
         // Set force rebuild if requested
         if self.force_rebuild {
             reactor.set_force_rebuild(true);
         }
-        
+
         // Create development environment with both local services and reactor
-        let data_dir = self.config.product_path().join("target").join("local-services");
+        let data_dir = self
+            .config
+            .product_path()
+            .join("target")
+            .join("local-services");
         let mut dev_env = DevEnvironment::new(
             reactor,
             network_manager.network_name().to_string(),
             data_dir,
         );
-        
+
         // Get component specs from the product directory to register local services
         let stack_spec_path = self.config.product_path().join("stack.spec.yaml");
         if stack_spec_path.exists() {
@@ -130,15 +132,19 @@ impl DevCommand {
                 .map_err(|e| Error::Setup(format!("Failed to read stack spec: {e}")))?;
             let yaml: serde_yaml::Value = serde_yaml::from_str(&spec_content)
                 .map_err(|e| Error::Setup(format!("Failed to parse stack spec: {e}")))?;
-            
+
             // Parse component specs
             let mut component_specs = Vec::new();
             let variables = rush_build::Variables::empty();
             if let Some(components) = yaml.as_mapping() {
                 for (name, spec_yaml) in components {
-                    if let (Some(_name_str), Some(spec_obj)) = (name.as_str(), spec_yaml.as_mapping()) {
+                    if let (Some(_name_str), Some(spec_obj)) =
+                        (name.as_str(), spec_yaml.as_mapping())
+                    {
                         // Create a minimal ComponentBuildSpec for local services
-                        if let Some(build_type) = spec_obj.get(&serde_yaml::Value::String("build_type".to_string())) {
+                        if let Some(build_type) =
+                            spec_obj.get(&serde_yaml::Value::String("build_type".to_string()))
+                        {
                             if let Some(build_type_str) = build_type.as_str() {
                                 if build_type_str == "LocalService" {
                                     // Parse the component spec
@@ -154,9 +160,10 @@ impl DevCommand {
                     }
                 }
             }
-            
+
             // Register local services
-            dev_env.register_local_services(&component_specs)
+            dev_env
+                .register_local_services(&component_specs)
                 .map_err(|e| Error::Setup(format!("Failed to register local services: {e}")))?;
         }
 
@@ -180,14 +187,14 @@ impl DevCommand {
 
         // Launch the development environment
         let result = dev_env.start().await;
-        
+
         // Always try to stop the dev environment after it completes
         // This is crucial for cleanup
         info!("Stopping development environment and local services...");
         if let Err(e) = dev_env.stop().await {
             error!("Error during development environment stop: {}", e);
         }
-        
+
         // Return the original result
         match result {
             Ok(_) => {

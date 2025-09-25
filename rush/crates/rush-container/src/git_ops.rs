@@ -3,16 +3,17 @@
 //! This module provides fast Git operations using libgit2-rs
 //! for improved performance over command-line git.
 
-use git2::{Repository, Status, StatusOptions, Oid, DiffOptions};
-use rush_core::{Error, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+
+use git2::{DiffOptions, Oid, Repository, Status, StatusOptions};
 use log::debug;
 use rayon::prelude::*;
-use sha2::{Sha256, Digest};
+use rush_core::{Error, Result};
+use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
 
 /// Cache entry for git status
 #[derive(Debug, Clone)]
@@ -54,7 +55,7 @@ impl GitOperations {
     /// Open a repository at the given path
     pub fn open(path: &Path) -> Result<Self> {
         let repo = Repository::open(path)
-            .map_err(|e| Error::Internal(format!("Git: Failed to open repository: {}", e)))?;
+            .map_err(|e| Error::Internal(format!("Git: Failed to open repository: {e}")))?;
 
         Ok(Self {
             repo,
@@ -67,7 +68,7 @@ impl GitOperations {
     /// Discover and open a repository from a path
     pub fn discover(path: &Path) -> Result<Self> {
         let repo = Repository::discover(path)
-            .map_err(|e| Error::Internal(format!("Git: Failed to discover repository: {}", e)))?;
+            .map_err(|e| Error::Internal(format!("Git: Failed to discover repository: {e}")))?;
 
         Ok(Self {
             repo,
@@ -90,8 +91,7 @@ impl GitOperations {
 
         // Build pathspecs for libgit2
         let mut opts = StatusOptions::new();
-        opts.include_untracked(true)
-            .include_ignored(false);
+        opts.include_untracked(true).include_ignored(false);
 
         for path in paths {
             if let Some(path_str) = path.to_str() {
@@ -100,8 +100,10 @@ impl GitOperations {
         }
 
         // Get status
-        let statuses = self.repo.statuses(Some(&mut opts))
-            .map_err(|e| Error::Internal(format!("Git: Failed to get status: {}", e)))?;
+        let statuses = self
+            .repo
+            .statuses(Some(&mut opts))
+            .map_err(|e| Error::Internal(format!("Git: Failed to get status: {e}")))?;
 
         let mut modified_files = Vec::new();
         let mut untracked_files = Vec::new();
@@ -109,8 +111,7 @@ impl GitOperations {
         for entry in statuses.iter() {
             let status = entry.status();
             if let Some(path) = entry.path() {
-                if status.contains(Status::WT_MODIFIED) ||
-                   status.contains(Status::INDEX_MODIFIED) {
+                if status.contains(Status::WT_MODIFIED) || status.contains(Status::INDEX_MODIFIED) {
                     modified_files.push(PathBuf::from(path));
                 } else if status.contains(Status::WT_NEW) {
                     untracked_files.push(PathBuf::from(path));
@@ -131,8 +132,12 @@ impl GitOperations {
         // Update cache
         self.update_cache(cache_key, git_status.clone()).await;
 
-        debug!("Git status check for {} paths took {:?}: dirty={}",
-            paths.len(), start.elapsed(), is_dirty);
+        debug!(
+            "Git status check for {} paths took {:?}: dirty={}",
+            paths.len(),
+            start.elapsed(),
+            is_dirty
+        );
 
         Ok(is_dirty)
     }
@@ -146,11 +151,14 @@ impl GitOperations {
         }
 
         // Get HEAD commit
-        let head = self.repo.head()
-            .map_err(|e| Error::Internal(format!("Git: Failed to get HEAD: {}", e)))?;
+        let head = self
+            .repo
+            .head()
+            .map_err(|e| Error::Internal(format!("Git: Failed to get HEAD: {e}")))?;
 
-        let commit = head.peel_to_commit()
-            .map_err(|e| Error::Internal(format!("Git: Failed to get commit: {}", e)))?;
+        let commit = head
+            .peel_to_commit()
+            .map_err(|e| Error::Internal(format!("Git: Failed to get commit: {e}")))?;
 
         // If parallel is disabled, use sequential
         if !self.parallel_enabled || paths.len() < 10 {
@@ -183,8 +191,11 @@ impl GitOperations {
 
         let result = format!("{:x}", combined.finalize());
 
-        debug!("Parallel git hash for {} paths took {:?}",
-            paths.len(), start.elapsed());
+        debug!(
+            "Parallel git hash for {} paths took {:?}",
+            paths.len(),
+            start.elapsed()
+        );
 
         Ok(result)
     }
@@ -203,33 +214,46 @@ impl GitOperations {
     }
 
     /// Get the hash for a specific path
-    fn get_path_hash(&self, _repo: &Repository, commit: &git2::Commit, path: &Path) -> Result<String> {
-        let tree = commit.tree()
-            .map_err(|e| Error::Internal(format!("Git: Failed to get tree: {}", e)))?;
+    fn get_path_hash(
+        &self,
+        _repo: &Repository,
+        commit: &git2::Commit,
+        path: &Path,
+    ) -> Result<String> {
+        let tree = commit
+            .tree()
+            .map_err(|e| Error::Internal(format!("Git: Failed to get tree: {e}")))?;
 
-        let entry = tree.get_path(path)
-            .map_err(|e| Error::Internal(format!("Git: Path not found in tree: {}", e)))?;
+        let entry = tree
+            .get_path(path)
+            .map_err(|e| Error::Internal(format!("Git: Path not found in tree: {e}")))?;
 
         Ok(entry.id().to_string())
     }
 
     /// Get the last commit that modified paths
     pub fn get_last_commit_for_paths(&self, paths: &[PathBuf]) -> Result<Option<String>> {
-        let mut revwalk = self.repo.revwalk()
-            .map_err(|e| Error::Internal(format!("Git: Failed to create revwalk: {}", e)))?;
+        let mut revwalk = self
+            .repo
+            .revwalk()
+            .map_err(|e| Error::Internal(format!("Git: Failed to create revwalk: {e}")))?;
 
-        revwalk.push_head()
-            .map_err(|e| Error::Internal(format!("Git: Failed to push HEAD: {}", e)))?;
+        revwalk
+            .push_head()
+            .map_err(|e| Error::Internal(format!("Git: Failed to push HEAD: {e}")))?;
 
         // Set sorting to time order
-        revwalk.set_sorting(git2::Sort::TIME)
-            .map_err(|e| Error::Internal(format!("Git: Failed to set sorting: {}", e)))?;
+        revwalk
+            .set_sorting(git2::Sort::TIME)
+            .map_err(|e| Error::Internal(format!("Git: Failed to set sorting: {e}")))?;
 
         // Walk through commits
         for oid in revwalk {
-            let oid = oid.map_err(|e| Error::Internal(format!("Git: Failed to get OID: {}", e)))?;
-            let commit = self.repo.find_commit(oid)
-                .map_err(|e| Error::Internal(format!("Git: Failed to find commit: {}", e)))?;
+            let oid = oid.map_err(|e| Error::Internal(format!("Git: Failed to get OID: {e}")))?;
+            let commit = self
+                .repo
+                .find_commit(oid)
+                .map_err(|e| Error::Internal(format!("Git: Failed to find commit: {e}")))?;
 
             // Check if this commit touches any of our paths
             if self.commit_touches_paths(&commit, paths)? {
@@ -244,20 +268,23 @@ impl GitOperations {
     fn commit_touches_paths(&self, commit: &git2::Commit, paths: &[PathBuf]) -> Result<bool> {
         // Get parent tree (or empty tree for initial commit)
         let parent_tree = if commit.parent_count() > 0 {
-            commit.parent(0)
-                .map_err(|e| Error::Internal(format!("Git: Failed to get parent: {}", e)))?
+            commit
+                .parent(0)
+                .map_err(|e| Error::Internal(format!("Git: Failed to get parent: {e}")))?
                 .tree()
-                .map_err(|e| Error::Internal(format!("Git: Failed to get parent tree: {}", e)))?
+                .map_err(|e| Error::Internal(format!("Git: Failed to get parent tree: {e}")))?
         } else {
             // Create empty tree for initial commit comparison
             let empty_oid = Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")
-                .map_err(|e| Error::Internal(format!("Git: Failed to create empty OID: {}", e)))?;
-            self.repo.find_tree(empty_oid)
-                .map_err(|e| Error::Internal(format!("Git: Failed to find empty tree: {}", e)))?
+                .map_err(|e| Error::Internal(format!("Git: Failed to create empty OID: {e}")))?;
+            self.repo
+                .find_tree(empty_oid)
+                .map_err(|e| Error::Internal(format!("Git: Failed to find empty tree: {e}")))?
         };
 
-        let commit_tree = commit.tree()
-            .map_err(|e| Error::Internal(format!("Git: Failed to get commit tree: {}", e)))?;
+        let commit_tree = commit
+            .tree()
+            .map_err(|e| Error::Internal(format!("Git: Failed to get commit tree: {e}")))?;
 
         // Create diff
         let mut diff_opts = DiffOptions::new();
@@ -267,15 +294,16 @@ impl GitOperations {
             }
         }
 
-        let diff = self.repo.diff_tree_to_tree(
-            Some(&parent_tree),
-            Some(&commit_tree),
-            Some(&mut diff_opts)
-        ).map_err(|e| Error::Internal(format!("Git: Failed to create diff: {}", e)))?;
+        let diff = self
+            .repo
+            .diff_tree_to_tree(Some(&parent_tree), Some(&commit_tree), Some(&mut diff_opts))
+            .map_err(|e| Error::Internal(format!("Git: Failed to create diff: {e}")))?;
 
-        Ok(diff.stats()
-            .map_err(|e| Error::Internal(format!("Git: Failed to get diff stats: {}", e)))?
-            .files_changed() > 0)
+        Ok(diff
+            .stats()
+            .map_err(|e| Error::Internal(format!("Git: Failed to get diff stats: {e}")))?
+            .files_changed()
+            > 0)
     }
 
     /// Clear the status cache
@@ -297,7 +325,8 @@ impl GitOperations {
     /// Check cache for a key
     async fn check_cache(&self, key: &str) -> Option<GitStatus> {
         let cache = self.status_cache.read().await;
-        cache.get(key)
+        cache
+            .get(key)
             .filter(|entry| entry.cached_at.elapsed() < self.cache_ttl)
             .map(|entry| entry.status.clone())
     }
@@ -305,15 +334,19 @@ impl GitOperations {
     /// Update cache with a new entry
     async fn update_cache(&self, key: String, status: GitStatus) {
         let mut cache = self.status_cache.write().await;
-        cache.insert(key, StatusCacheEntry {
-            status,
-            cached_at: Instant::now(),
-        });
+        cache.insert(
+            key,
+            StatusCacheEntry {
+                status,
+                cached_at: Instant::now(),
+            },
+        );
 
         // Limit cache size
         if cache.len() > 1000 {
             // Remove oldest entries
-            let mut entries: Vec<_> = cache.iter()
+            let mut entries: Vec<_> = cache
+                .iter()
                 .map(|(k, v)| (k.clone(), v.cached_at))
                 .collect();
             entries.sort_by_key(|e| e.1);
@@ -326,14 +359,19 @@ impl GitOperations {
 
     /// Get repository statistics
     pub fn get_stats(&self) -> Result<RepoStats> {
-        let head = self.repo.head()
-            .map_err(|e| Error::Internal(format!("Git: Failed to get HEAD: {}", e)))?;
+        let head = self
+            .repo
+            .head()
+            .map_err(|e| Error::Internal(format!("Git: Failed to get HEAD: {e}")))?;
 
-        let commit = head.peel_to_commit()
-            .map_err(|e| Error::Internal(format!("Git: Failed to get commit: {}", e)))?;
+        let commit = head
+            .peel_to_commit()
+            .map_err(|e| Error::Internal(format!("Git: Failed to get commit: {e}")))?;
 
-        let statuses = self.repo.statuses(None)
-            .map_err(|e| Error::Internal(format!("Git: Failed to get statuses: {}", e)))?;
+        let statuses = self
+            .repo
+            .statuses(None)
+            .map_err(|e| Error::Internal(format!("Git: Failed to get statuses: {e}")))?;
 
         let mut modified = 0;
         let mut untracked = 0;
@@ -347,8 +385,7 @@ impl GitOperations {
             if status.contains(Status::WT_NEW) {
                 untracked += 1;
             }
-            if status.contains(Status::INDEX_NEW) ||
-               status.contains(Status::INDEX_MODIFIED) {
+            if status.contains(Status::INDEX_NEW) || status.contains(Status::INDEX_MODIFIED) {
                 staged += 1;
             }
         }
@@ -380,9 +417,11 @@ pub struct RepoStats {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tempfile::TempDir;
     use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::*;
 
     fn init_test_repo() -> (TempDir, Repository) {
         let dir = TempDir::new().unwrap();
@@ -396,14 +435,8 @@ mod tests {
         };
         {
             let tree = repo.find_tree(tree_id).unwrap();
-            repo.commit(
-                Some("HEAD"),
-                &sig,
-                &sig,
-                "Initial commit",
-                &tree,
-                &[],
-            ).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[])
+                .unwrap();
         }
 
         (dir, repo)
@@ -415,7 +448,10 @@ mod tests {
         let git_ops = GitOperations::open(dir.path()).unwrap();
 
         // Check clean status
-        let is_dirty = git_ops.is_dirty_batch(&[dir.path().to_path_buf()]).await.unwrap();
+        let is_dirty = git_ops
+            .is_dirty_batch(&[dir.path().to_path_buf()])
+            .await
+            .unwrap();
         assert!(!is_dirty);
 
         // Create a new file
@@ -424,7 +460,10 @@ mod tests {
 
         // Should be dirty now - check without pathspec to see all files
         let is_dirty = git_ops.is_dirty_batch(&[]).await.unwrap();
-        assert!(is_dirty, "Repository should be dirty after adding untracked file");
+        assert!(
+            is_dirty,
+            "Repository should be dirty after adding untracked file"
+        );
     }
 
     #[tokio::test]

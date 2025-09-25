@@ -6,10 +6,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
-use tracing::info;
+
 use log::debug;
+use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
+use tracing::info;
 
 /// A single timing entry in the performance tracker
 #[derive(Debug, Clone)]
@@ -162,7 +163,16 @@ impl PerformanceTracker {
         // Find slowest operations
         let mut slowest: Vec<(String, Duration)> = entries
             .iter()
-            .map(|e| (format!("{} ({})", e.operation, e.component.as_deref().unwrap_or("N/A")), e.duration))
+            .map(|e| {
+                (
+                    format!(
+                        "{} ({})",
+                        e.operation,
+                        e.component.as_deref().unwrap_or("N/A")
+                    ),
+                    e.duration,
+                )
+            })
             .collect();
         slowest.sort_by_key(|(_, d)| std::cmp::Reverse(*d));
         slowest.truncate(10);
@@ -223,7 +233,8 @@ impl TimingGuard {
 
     /// Add component metadata
     pub fn with_component(mut self, component: impl Into<String>) -> Self {
-        self.metadata.insert("component".to_string(), component.into());
+        self.metadata
+            .insert("component".to_string(), component.into());
         self
     }
 
@@ -231,7 +242,9 @@ impl TimingGuard {
     pub async fn complete(self) {
         if let Some(operation) = self.operation {
             let duration = self.start.elapsed();
-            self.tracker.record(&operation, duration, self.metadata).await;
+            self.tracker
+                .record(&operation, duration, self.metadata)
+                .await;
         }
     }
 }
@@ -310,7 +323,8 @@ pub fn init_tracing() {
         return;
     }
 
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
@@ -348,7 +362,9 @@ macro_rules! time_operation {
         let start = std::time::Instant::now();
         let result = $block;
         let duration = start.elapsed();
-        $tracker.record($op, duration, std::collections::HashMap::new()).await;
+        $tracker
+            .record($op, duration, std::collections::HashMap::new())
+            .await;
         result
     }};
 }

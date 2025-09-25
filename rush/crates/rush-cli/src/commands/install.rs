@@ -1,7 +1,9 @@
-use crate::context::CliContext;
+use std::process;
+
 use log::{error, trace};
 use rush_core::error::Result;
-use std::process;
+
+use crate::context::CliContext;
 
 pub async fn execute(ctx: &mut CliContext) -> Result<()> {
     ensure_kubectl(ctx).await?;

@@ -3,14 +3,16 @@
 //! This module provides parallel build execution while respecting
 //! component dependencies and managing resource constraints.
 
-use crate::build::orchestrator::BuildOrchestrator;
-use rush_build::ComponentBuildSpec;
-use rush_core::Result;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
+
 use futures::future::{join_all, BoxFuture};
 use log::{debug, info, warn};
+use rush_build::ComponentBuildSpec;
+use rush_core::Result;
 use tokio::sync::Semaphore;
+
+use crate::build::orchestrator::BuildOrchestrator;
 
 /// Dependency graph for build ordering
 #[derive(Debug, Clone)]
@@ -19,6 +21,12 @@ pub struct DependencyGraph {
     dependencies: HashMap<String, Vec<String>>,
     /// Map of component name to components that depend on it
     dependents: HashMap<String, Vec<String>>,
+}
+
+impl Default for DependencyGraph {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DependencyGraph {
@@ -41,7 +49,7 @@ impl DependencyGraph {
         for dep in deps {
             self.dependents
                 .entry(dep)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(component.clone());
         }
     }
@@ -54,7 +62,9 @@ impl DependencyGraph {
 
         // Initialize in-degree counts
         for component in self.dependencies.keys() {
-            let degree = self.dependencies.get(component)
+            let degree = self
+                .dependencies
+                .get(component)
                 .map(|deps| deps.len())
                 .unwrap_or(0);
             in_degree.insert(component.clone(), degree);
@@ -84,7 +94,7 @@ impl DependencyGraph {
         // Check for cycles
         if result.len() != self.dependencies.len() {
             return Err(rush_core::Error::Configuration(
-                "Circular dependency detected in component graph".to_string()
+                "Circular dependency detected in component graph".to_string(),
             ));
         }
 
@@ -97,16 +107,13 @@ impl DependencyGraph {
         let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
 
         for spec in specs {
-            dependencies.insert(
-                spec.component_name.clone(),
-                spec.depends_on.clone(),
-            );
+            dependencies.insert(spec.component_name.clone(), spec.depends_on.clone());
 
             // Build reverse dependency map
             for dep in &spec.depends_on {
                 dependents
                     .entry(dep.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(spec.component_name.clone());
             }
         }
@@ -155,7 +162,9 @@ impl DependencyGraph {
 
     /// Check if all components are complete
     pub fn is_complete(&self, completed: &HashSet<String>) -> bool {
-        self.dependencies.keys().all(|name| completed.contains(name))
+        self.dependencies
+            .keys()
+            .all(|name| completed.contains(name))
     }
 
     /// Perform topological sort to get build groups
@@ -207,8 +216,11 @@ impl ParallelBuildExecutor {
         specs: Vec<ComponentBuildSpec>,
         force_rebuild: bool,
     ) -> Result<HashMap<String, String>> {
-        info!("Starting parallel build of {} components (max parallel: {})",
-            specs.len(), self.max_parallel);
+        info!(
+            "Starting parallel build of {} components (max parallel: {})",
+            specs.len(),
+            self.max_parallel
+        );
 
         let start_time = std::time::Instant::now();
         let mut built_images = HashMap::new();
@@ -228,8 +240,12 @@ impl ParallelBuildExecutor {
 
         // Build each group in parallel
         for (group_idx, group) in build_groups.iter().enumerate() {
-            info!("Building group {} with {} components: {:?}",
-                group_idx + 1, group.len(), group);
+            info!(
+                "Building group {} with {} components: {:?}",
+                group_idx + 1,
+                group.len(),
+                group
+            );
 
             let group_start = std::time::Instant::now();
 
@@ -252,10 +268,9 @@ impl ParallelBuildExecutor {
                 // Create build future with semaphore control
                 let build_future: BoxFuture<'_, Result<(String, String)>> = Box::pin(async move {
                     // Acquire semaphore permit to limit parallelism
-                    let _permit = semaphore.acquire().await
-                        .map_err(|e| rush_core::Error::Internal(
-                            format!("Failed to acquire build permit: {}", e)
-                        ))?;
+                    let _permit = semaphore.acquire().await.map_err(|e| {
+                        rush_core::Error::Internal(format!("Failed to acquire build permit: {e}"))
+                    })?;
 
                     debug!("Building component: {}", spec.component_name);
                     let component_name = spec.component_name.clone();
@@ -263,23 +278,27 @@ impl ParallelBuildExecutor {
                     // Check if we should skip build (already exists and not force rebuild)
                     if !force_rebuild {
                         // Compute tag
-                        let tag = orchestrator.tag_generator.compute_tag(&spec)
+                        let tag = orchestrator
+                            .tag_generator
+                            .compute_tag(&spec)
                             .unwrap_or_else(|e| {
                                 warn!("Failed to compute tag for {}: {}", component_name, e);
-                                format!("latest")
+                                "latest".to_string()
                             });
 
-                        let image_name = format!("{}/{}",
-                            orchestrator.product_name(),
-                            component_name
-                        );
-                        let full_image = format!("{}:{}", image_name, tag);
+                        let image_name =
+                            format!("{}/{}", orchestrator.product_name(), component_name);
+                        let full_image = format!("{image_name}:{tag}");
 
                         // Check if image exists
-                        if let Ok(exists) = orchestrator.docker_client().image_exists(&full_image).await {
+                        if let Ok(exists) =
+                            orchestrator.docker_client().image_exists(&full_image).await
+                        {
                             if exists {
-                                info!("Component {} already built ({}), skipping",
-                                    component_name, full_image);
+                                info!(
+                                    "Component {} already built ({}), skipping",
+                                    component_name, full_image
+                                );
                                 return Ok((component_name, full_image));
                             }
                         }
@@ -320,8 +339,11 @@ impl ParallelBuildExecutor {
         }
 
         let total_duration = start_time.elapsed();
-        info!("Parallel build completed in {:?} ({} components built)",
-            total_duration, built_images.len());
+        info!(
+            "Parallel build completed in {:?} ({} components built)",
+            total_duration,
+            built_images.len()
+        );
 
         // Record performance metrics
         crate::profiling::global_tracker()
@@ -346,8 +368,11 @@ impl ParallelBuildExecutor {
         let graph = DependencyGraph::from_specs(&specs);
         let groups = graph.get_build_groups();
 
-        info!("Optimized build plan: {} groups from {} components",
-            groups.len(), specs.len());
+        info!(
+            "Optimized build plan: {} groups from {} components",
+            groups.len(),
+            specs.len()
+        );
 
         // Log the build plan
         for (idx, group) in groups.iter().enumerate() {
@@ -387,7 +412,10 @@ mod tests {
 
         let result = graph.get_build_order();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Circular dependency"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circular dependency"));
     }
 
     #[tokio::test]
@@ -411,7 +439,10 @@ mod tests {
 
         // Build the dependency graph directly
         graph.add_dependency("frontend".to_string(), vec!["api".to_string()]);
-        graph.add_dependency("api".to_string(), vec!["database".to_string(), "cache".to_string()]);
+        graph.add_dependency(
+            "api".to_string(),
+            vec!["database".to_string(), "cache".to_string()],
+        );
         graph.add_dependency("database".to_string(), vec![]);
         graph.add_dependency("cache".to_string(), vec![]);
         graph.add_dependency("worker".to_string(), vec!["api".to_string()]);

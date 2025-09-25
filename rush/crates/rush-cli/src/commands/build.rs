@@ -1,4 +1,8 @@
-use crate::context::CliContext;
+use std::collections::HashMap;
+use std::path::Path;
+use std::process;
+use std::sync::Arc;
+
 use colored::Colorize;
 use log::{debug, error, info, trace};
 use rush_build::{BuildContext, BuildType};
@@ -8,10 +12,8 @@ use rush_config::Config;
 use rush_core::error::{Error, Result};
 use rush_toolchain::{Platform, ToolchainContext};
 use rush_utils::{CommandConfig, CommandRunner};
-use std::collections::HashMap;
-use std::path::Path;
-use std::process;
-use std::sync::Arc;
+
+use crate::context::CliContext;
 
 /// Executes the build command
 pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<()> {
@@ -78,7 +80,10 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
             product_uri: product.uri().to_string(),
             component: component_name.clone(),
             docker_registry: config.docker_registry().to_string(),
-            image_name: rush_core::naming::NamingConvention::image_name(product_name, component_name),
+            image_name: rush_core::naming::NamingConvention::image_name(
+                product_name,
+                component_name,
+            ),
             secrets: HashMap::new(), // Would be populated from a vault in a full implementation
             domains: HashMap::new(), // Empty domains map, would be populated from product
             env: HashMap::new(),     // Default to empty environment variables
@@ -192,7 +197,10 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
                 .await
                 .map_err(|e| Error::Build(format!("Build script execution failed: {e}")))?;
             if !output.success() {
-                return Err(Error::Build(format!("Build script execution failed: {}", output.stderr)));
+                return Err(Error::Build(format!(
+                    "Build script execution failed: {}",
+                    output.stderr
+                )));
             }
 
             // Build Docker image if needed
@@ -211,7 +219,10 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
                 .await
                 .map_err(|e| Error::Build(format!("Failed to pull Docker image: {e}")))?;
             if !output.success() {
-                return Err(Error::Build(format!("Failed to pull Docker image: {}", output.stderr)));
+                return Err(Error::Build(format!(
+                    "Failed to pull Docker image: {}",
+                    output.stderr
+                )));
             }
         }
         BuildType::PureKubernetes => {
@@ -387,7 +398,8 @@ async fn build_docker_image(
         _ => ".".to_string(),
     };
 
-    let image_tag = rush_core::naming::NamingConvention::image_name(&context.product_name, &context.component);
+    let image_tag =
+        rush_core::naming::NamingConvention::image_name(&context.product_name, &context.component);
 
     debug!(
         "Building Docker image: {} from {}",
@@ -404,12 +416,16 @@ async fn build_docker_image(
             &context_dir,
         ])
         .capture(true);
-    
-    let output = CommandRunner::run(config).await
+
+    let output = CommandRunner::run(config)
+        .await
         .map_err(|e| Error::Build(format!("Docker build failed: {e}")))?;
-    
+
     if !output.success() {
-        return Err(Error::Build(format!("Docker build failed: {}", output.stderr)));
+        return Err(Error::Build(format!(
+            "Docker build failed: {}",
+            output.stderr
+        )));
     }
 
     Ok(())

@@ -3,13 +3,16 @@
 //! This module provides advanced dependency graph analysis and optimization
 //! to maximize parallel build throughput and minimize total build time.
 
-use crate::dependency_graph::DependencyGraph;
-use rush_core::Result;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
+
 use log::info;
+use rush_build::spec::ComponentBuildSpec;
+use rush_core::Result;
 use tokio::sync::RwLock;
+
+use crate::dependency_graph::DependencyGraph;
 
 /// Build statistics for performance tracking
 #[derive(Debug, Clone)]
@@ -24,6 +27,12 @@ pub struct BuildStatistics {
     pub dependency_depths: HashMap<String, usize>,
     /// Critical path components
     pub critical_path: Vec<String>,
+}
+
+impl Default for BuildStatistics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BuildStatistics {
@@ -41,7 +50,7 @@ impl BuildStatistics {
     pub fn record_build_time(&mut self, component: String, duration: Duration) {
         self.build_history
             .entry(component.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(duration);
 
         // Update average
@@ -168,7 +177,8 @@ impl DependencyOptimizer {
             current = path_prev.get(&node).and_then(|n| n.clone());
         }
 
-        info!("Critical path: {:?} (estimated time: {:?})",
+        info!(
+            "Critical path: {:?} (estimated time: {:?})",
             critical_path,
             path_costs.get(&critical_path[0]).unwrap_or(&Duration::ZERO)
         );
@@ -191,7 +201,8 @@ impl DependencyOptimizer {
 
         loop {
             // Get all components ready to build
-            let ready: Vec<String> = graph.nodes()
+            let ready: Vec<String> = graph
+                .nodes()
                 .iter()
                 .filter_map(|(name, _node)| {
                     if completed.contains(name) || in_progress.contains(name) {
@@ -231,7 +242,9 @@ impl DependencyOptimizer {
                 });
 
                 // Create build group respecting resource limits
-                let group = self.create_resource_aware_group(prioritized, &stats).await?;
+                let group = self
+                    .create_resource_aware_group(prioritized, &stats)
+                    .await?;
 
                 // Mark components as in progress
                 for component in &group.components {
@@ -252,7 +265,8 @@ impl DependencyOptimizer {
             }
         }
 
-        info!("Optimized build plan: {} groups for {} components",
+        info!(
+            "Optimized build plan: {} groups for {} components",
             groups.len(),
             graph.nodes().len()
         );
@@ -311,7 +325,8 @@ impl DependencyOptimizer {
         }
 
         // Calculate estimated duration (max of all components)
-        group.estimated_duration = group.components
+        group.estimated_duration = group
+            .components
             .iter()
             .map(|c| stats.estimate_build_time(c))
             .max()
@@ -330,11 +345,7 @@ impl DependencyOptimizer {
         let cache_hit_rate = stats.cache_hit_rates.get(component).copied().unwrap_or(0.0);
 
         // Cached builds use fewer resources
-        let cpu_cores = if cache_hit_rate > 0.8 {
-            1
-        } else {
-            base_cpu
-        };
+        let cpu_cores = if cache_hit_rate > 0.8 { 1 } else { base_cpu };
 
         let memory_mb = if cache_hit_rate > 0.8 {
             base_memory / 2
@@ -350,12 +361,7 @@ impl DependencyOptimizer {
     }
 
     /// Update statistics after a build
-    pub async fn update_build_stats(
-        &self,
-        component: String,
-        duration: Duration,
-        cache_hit: bool,
-    ) {
+    pub async fn update_build_stats(&self, component: String, duration: Duration, cache_hit: bool) {
         let mut stats = self.stats.write().await;
         stats.record_build_time(component.clone(), duration);
         stats.record_cache_access(component, cache_hit);
@@ -376,7 +382,8 @@ impl DependencyOptimizer {
         };
 
         // Find bottlenecks
-        let bottlenecks: Vec<String> = graph.nodes()
+        let bottlenecks: Vec<String> = graph
+            .nodes()
             .iter()
             .filter_map(|(name, _)| {
                 let dependents = graph.get_dependents(name);
@@ -389,9 +396,7 @@ impl DependencyOptimizer {
             .collect();
 
         // Calculate estimated vs actual times
-        let estimated_total: Duration = stats.avg_build_times
-            .values()
-            .sum();
+        let estimated_total: Duration = stats.avg_build_times.values().sum();
 
         let estimated_parallel = waves
             .iter()
@@ -428,12 +433,13 @@ impl DependencyOptimizer {
         let mut recommendations = Vec::new();
 
         // Check for unnecessary dependencies
-        for (name, _node) in graph.nodes() {
+        for name in graph.nodes().keys() {
             let deps = graph.get_dependencies(name);
             if deps.len() > 5 {
                 recommendations.push(format!(
                     "Component '{}' has {} dependencies. Consider refactoring to reduce coupling.",
-                    name, deps.len()
+                    name,
+                    deps.len()
                 ));
             }
         }
@@ -453,7 +459,8 @@ impl DependencyOptimizer {
             if *duration > Duration::from_secs(60) {
                 recommendations.push(format!(
                     "Component '{}' takes {:.1}s to build. Consider optimizing or splitting.",
-                    component, duration.as_secs_f64()
+                    component,
+                    duration.as_secs_f64()
                 ));
             }
         }
@@ -512,7 +519,10 @@ impl OptimizationReport {
     pub fn print(&self) {
         println!("\n=== Build Optimization Report ===");
         println!("Total Components: {}", self.total_components);
-        println!("Parallelization Factor: {:.2}%", self.parallelization_factor * 100.0);
+        println!(
+            "Parallelization Factor: {:.2}%",
+            self.parallelization_factor * 100.0
+        );
         println!("Potential Speedup: {:.2}x", self.potential_speedup);
         println!("\nTime Estimates:");
         println!("  Sequential: {:?}", self.estimated_sequential_time);
@@ -521,14 +531,14 @@ impl OptimizationReport {
         if !self.critical_path.is_empty() {
             println!("\nCritical Path:");
             for component in &self.critical_path {
-                println!("  - {}", component);
+                println!("  - {component}");
             }
         }
 
         if !self.bottleneck_components.is_empty() {
             println!("\nBottleneck Components:");
             for component in &self.bottleneck_components {
-                println!("  - {}", component);
+                println!("  - {component}");
             }
         }
 

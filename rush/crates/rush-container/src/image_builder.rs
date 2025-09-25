@@ -1,16 +1,17 @@
-use crate::docker::{DockerClient, DockerService, DockerServiceConfig};
-use crate::tagging::ImageTagGenerator;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
 use log::warn;
-use rush_build::ComponentBuildSpec;
-use rush_build::{BuildContext, BuildType};
+use rush_build::{BuildContext, BuildType, ComponentBuildSpec};
 use rush_core::constants::*;
 use rush_core::error::{Error, Result};
 use rush_security::Vault;
 use rush_toolchain::{Platform, ToolchainContext};
 use rush_utils::PathMatcher;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+
+use crate::docker::{DockerClient, DockerService, DockerServiceConfig};
+use crate::tagging::ImageTagGenerator;
 
 /// Configuration for the build process
 pub struct BuildConfig {
@@ -229,8 +230,9 @@ impl ImageBuilder {
             if let Ok(spec) = spec_arc.lock() {
                 // Create tag generator if not already created
                 if self.tag_generator.is_none() {
-                    let toolchain = self.toolchain.as_ref()
-                        .ok_or_else(|| Error::Setup("No toolchain available for computing git tag".into()))?;
+                    let toolchain = self.toolchain.as_ref().ok_or_else(|| {
+                        Error::Setup("No toolchain available for computing git tag".into())
+                    })?;
 
                     // Determine base directory from the spec's config if available
                     let base_dir = spec.config.product_path().to_path_buf();
@@ -504,7 +506,10 @@ impl ImageBuilder {
 
         let service_config = DockerServiceConfig {
             name: spec_guard.docker_local_name(),
-            image: rush_core::naming::NamingConvention::image_name(&spec_guard.product_name, &spec_guard.component_name),
+            image: rush_core::naming::NamingConvention::image_name(
+                &spec_guard.product_name,
+                &spec_guard.component_name,
+            ),
             network: spec_guard.config.network_name().to_string(),
             env_vars: {
                 // Merge dotenv and dotenv_secrets for image building
@@ -603,10 +608,11 @@ impl ImageBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
     use crate::docker::DockerService;
     use crate::image_builder::ImageBuilder;
-    use std::sync::Arc;
 
     #[test]
     fn test_image_builder_creation() {

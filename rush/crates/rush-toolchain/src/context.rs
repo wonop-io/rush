@@ -1,11 +1,13 @@
-use crate::platform::Platform;
+use std::path::Path;
+use std::process::Command;
+use std::str;
+
 use log::{debug, trace, warn};
 use rush_utils::{first_which, resolve_toolchain_path};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::path::Path;
-use std::process::Command;
-use std::str;
+
+use crate::platform::Platform;
 
 /// ToolchainContext provides access to the development toolchain
 /// and handles cross-compilation settings between different platforms.
@@ -185,7 +187,7 @@ impl ToolchainContext {
                     return Some(ToolchainContext {
                         host: host.clone(),
                         target: target.clone(),
-                        
+
                         git: first_which(vec!["git"]).expect("git not found."),
                         docker: first_which(vec!["docker"]).expect("docker not found."),
                         trunk: first_which(vec![
@@ -200,7 +202,7 @@ impl ToolchainContext {
                         minikube: first_which(vec!["minikube"]),
                         kubeconform: first_which(vec!["kubeconform"]),
                         kubeval: first_which(vec!["kubeval"]),
-                        
+
                         cc: gcc,
                         cxx: first_which(vec!["x86_64-unknown-linux-gnu-g++"])
                             .unwrap_or_else(|| "x86_64-unknown-linux-gnu-g++".to_string()),
@@ -220,7 +222,7 @@ impl ToolchainContext {
                             .unwrap_or_else(|| "x86_64-unknown-linux-gnu-ld".to_string()),
                     });
                 }
-                
+
                 // Fall back to looking in known directories
                 Self::from_first_path(vec![
                     "/opt/homebrew/Cellar/x86_64-unknown-linux-gnu/7.2.0/bin/",
@@ -447,11 +449,13 @@ impl ToolchainContext {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::env;
     use std::fs::{self, File};
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_default_toolchain() {

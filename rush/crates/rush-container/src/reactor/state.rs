@@ -6,8 +6,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::RwLock;
+
 use rush_build::ComponentBuildSpec;
+use tokio::sync::RwLock;
+
 use crate::docker::DockerService;
 
 /// The current state of the reactor
@@ -152,6 +154,12 @@ pub struct ReactorState {
     last_error: Option<String>,
 }
 
+impl Default for ReactorState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReactorState {
     /// Create a new reactor state
     pub fn new() -> Self {
@@ -172,7 +180,7 @@ impl ReactorState {
         for spec in specs {
             self.components.insert(
                 spec.component_name.clone(),
-                ComponentState::new(spec.component_name.clone())
+                ComponentState::new(spec.component_name.clone()),
             );
         }
     }
@@ -189,37 +197,37 @@ impl ReactorState {
             // Initial transitions
             (ReactorPhase::Idle, ReactorPhase::Building) => true,
             (ReactorPhase::Idle, ReactorPhase::Starting) => true,
-            
+
             // Building transitions
             (ReactorPhase::Building, ReactorPhase::Starting) => true,
             (ReactorPhase::Building, ReactorPhase::Error) => true,
             (ReactorPhase::Building, ReactorPhase::ShuttingDown) => true,
-            
+
             // Starting transitions
             (ReactorPhase::Starting, ReactorPhase::Running) => true,
             (ReactorPhase::Starting, ReactorPhase::Error) => true,
             (ReactorPhase::Starting, ReactorPhase::ShuttingDown) => true,
-            
+
             // Running transitions
             (ReactorPhase::Running, ReactorPhase::Rebuilding) => true,
             (ReactorPhase::Running, ReactorPhase::Error) => true,
             (ReactorPhase::Running, ReactorPhase::ShuttingDown) => true,
-            
+
             // Rebuilding transitions
             (ReactorPhase::Rebuilding, ReactorPhase::Running) => true,
             (ReactorPhase::Rebuilding, ReactorPhase::Error) => true,
             (ReactorPhase::Rebuilding, ReactorPhase::ShuttingDown) => true,
-            
+
             // Error transitions
             (ReactorPhase::Error, ReactorPhase::Building) => true,
             (ReactorPhase::Error, ReactorPhase::Starting) => true,
             (ReactorPhase::Error, ReactorPhase::ShuttingDown) => true,
-            
+
             // Shutdown transitions
             (ReactorPhase::ShuttingDown, ReactorPhase::Terminated) => true,
             (ReactorPhase::ShuttingDown, ReactorPhase::Shutdown) => true, // Alias
-            (ReactorPhase::Shutdown, ReactorPhase::Terminated) => true, // Alias
-            
+            (ReactorPhase::Shutdown, ReactorPhase::Terminated) => true,   // Alias
+
             _ => false,
         };
 
@@ -230,7 +238,11 @@ impl ReactorState {
             });
         }
 
-        log::debug!("Reactor phase transition: {:?} -> {:?}", self.phase, new_phase);
+        log::debug!(
+            "Reactor phase transition: {:?} -> {:?}",
+            self.phase,
+            new_phase
+        );
         self.phase = new_phase;
         Ok(())
     }
@@ -262,25 +274,28 @@ impl ReactorState {
             component.record_error(error);
         }
     }
-    
+
     /// Add a new component to the state
     pub fn add_component(&mut self, component: ComponentState) {
         self.components.insert(component.name.clone(), component);
     }
-    
+
     /// Record a general error
     pub fn record_error(&mut self, error: String) {
         self.last_error = Some(error);
     }
-    
+
     /// Get last error
     pub fn last_error(&self) -> Option<&String> {
         self.last_error.as_ref()
     }
-    
+
     /// Get running components
     pub fn running_components(&self) -> Vec<&ComponentState> {
-        self.components.values().filter(|c| c.status == ComponentStatus::Running).collect()
+        self.components
+            .values()
+            .filter(|c| c.status == ComponentStatus::Running)
+            .collect()
     }
 
     /// Get component state
@@ -338,7 +353,9 @@ impl ReactorState {
 
     /// Check if all components are healthy
     pub fn all_healthy(&self) -> bool {
-        self.components.values().all(|c| c.status == ComponentStatus::Running && c.error.is_none())
+        self.components
+            .values()
+            .all(|c| c.status == ComponentStatus::Running && c.error.is_none())
     }
 
     /// Get unhealthy components
@@ -355,6 +372,12 @@ pub struct SharedReactorState {
     inner: Arc<RwLock<ReactorState>>,
 }
 
+impl Default for SharedReactorState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SharedReactorState {
     /// Create a new shared reactor state
     pub fn new() -> Self {
@@ -367,9 +390,11 @@ impl SharedReactorState {
     pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, ReactorState> {
         self.inner.read().await
     }
-    
+
     /// Try to get a read lock on the state (non-blocking)
-    pub fn try_read(&self) -> Result<tokio::sync::RwLockReadGuard<'_, ReactorState>, tokio::sync::TryLockError> {
+    pub fn try_read(
+        &self,
+    ) -> Result<tokio::sync::RwLockReadGuard<'_, ReactorState>, tokio::sync::TryLockError> {
         self.inner.try_read()
     }
 
@@ -400,10 +425,10 @@ pub enum StateError {
         from: ReactorPhase,
         to: ReactorPhase,
     },
-    
+
     #[error("Component {0} not found")]
     ComponentNotFound(String),
-    
+
     #[error("Invalid operation in phase {0:?}")]
     InvalidOperation(ReactorPhase),
 }
@@ -421,26 +446,26 @@ mod tests {
     #[test]
     fn test_phase_transitions() {
         let mut state = ReactorState::new();
-        
+
         // Valid transitions
         assert!(state.transition_to(ReactorPhase::Building).is_ok());
         assert_eq!(state.phase(), &ReactorPhase::Building);
-        
+
         assert!(state.transition_to(ReactorPhase::Starting).is_ok());
         assert_eq!(state.phase(), &ReactorPhase::Starting);
-        
+
         assert!(state.transition_to(ReactorPhase::Running).is_ok());
         assert_eq!(state.phase(), &ReactorPhase::Running);
-        
+
         assert!(state.transition_to(ReactorPhase::Rebuilding).is_ok());
         assert_eq!(state.phase(), &ReactorPhase::Rebuilding);
-        
+
         assert!(state.transition_to(ReactorPhase::Running).is_ok());
         assert_eq!(state.phase(), &ReactorPhase::Running);
-        
+
         assert!(state.transition_to(ReactorPhase::ShuttingDown).is_ok());
         assert_eq!(state.phase(), &ReactorPhase::ShuttingDown);
-        
+
         assert!(state.transition_to(ReactorPhase::Terminated).is_ok());
         assert_eq!(state.phase(), &ReactorPhase::Terminated);
     }
@@ -448,10 +473,10 @@ mod tests {
     #[test]
     fn test_invalid_transitions() {
         let mut state = ReactorState::new();
-        
+
         // Can't go directly from Idle to Running
         assert!(state.transition_to(ReactorPhase::Running).is_err());
-        
+
         // Can't go backwards from Terminated
         state.phase = ReactorPhase::Terminated;
         assert!(state.transition_to(ReactorPhase::Idle).is_err());
@@ -460,22 +485,22 @@ mod tests {
     #[test]
     fn test_component_state_management() {
         let mut component = ComponentState::new("test");
-        
+
         assert_eq!(component.status, ComponentStatus::Idle);
         assert!(component.image_name.is_none());
-        
+
         component.mark_built("test:latest".to_string());
         assert_eq!(component.status, ComponentStatus::Idle); // Built but not running
         assert_eq!(component.image_name, Some("test:latest".to_string()));
         assert!(component.last_build.is_some());
-        
+
         component.mark_running("container123".to_string());
         assert_eq!(component.status, ComponentStatus::Running);
         assert_eq!(component.container_id, Some("container123".to_string()));
-        
+
         component.record_error("Failed to start".to_string());
         assert_eq!(component.error, Some("Failed to start".to_string()));
-        
+
         component.mark_stopped();
         assert_eq!(component.status, ComponentStatus::Stopped);
         assert!(component.container_id.is_none());
@@ -484,22 +509,20 @@ mod tests {
     #[test]
     fn test_reactor_state_components() {
         let mut state = ReactorState::new();
-        
+
         // Test component state management without specs
         // We can test the component tracking directly
-        state.components.insert(
-            "frontend".to_string(),
-            ComponentState::new("frontend")
-        );
-        state.components.insert(
-            "backend".to_string(),
-            ComponentState::new("backend")
-        );
-        
+        state
+            .components
+            .insert("frontend".to_string(), ComponentState::new("frontend"));
+        state
+            .components
+            .insert("backend".to_string(), ComponentState::new("backend"));
+
         assert_eq!(state.components.len(), 2);
         assert!(state.get_component("frontend").is_some());
         assert!(state.get_component("backend").is_some());
-        
+
         state.mark_component_built("frontend", "frontend:abc123".to_string());
         let frontend = state.get_component("frontend").unwrap();
         assert_eq!(frontend.status, ComponentStatus::Idle); // Built but not running
@@ -509,15 +532,15 @@ mod tests {
     #[test]
     fn test_rebuild_tracking() {
         let mut state = ReactorState::new();
-        
+
         assert!(!state.is_rebuilding());
         assert_eq!(state.rebuild_count(), 0);
-        
+
         state.start_rebuild(vec!["frontend".to_string(), "backend".to_string()]);
         assert!(state.is_rebuilding());
         assert_eq!(state.rebuilding_components().len(), 2);
         assert_eq!(state.rebuild_count(), 1);
-        
+
         state.complete_rebuild();
         assert!(!state.is_rebuilding());
         assert_eq!(state.rebuilding_components().len(), 0);
@@ -527,17 +550,17 @@ mod tests {
     #[tokio::test]
     async fn test_shared_state() {
         let shared = SharedReactorState::new();
-        
+
         {
             let mut state = shared.write().await;
             state.transition_to(ReactorPhase::Building).unwrap();
         }
-        
+
         {
             let state = shared.read().await;
             assert_eq!(state.phase(), &ReactorPhase::Building);
         }
-        
+
         // Test cloning
         let shared2 = shared.clone();
         {

@@ -6,11 +6,5 @@
 pub mod chaos;
 
 pub use chaos::{
-    ChaosMonkey,
-    ChaosPolicy,
-    ChaosType,
-    ResourceType,
-    ChaosStats,
-    ChaosAware,
-    ChaosTestSystem,
+    ChaosAware, ChaosMonkey, ChaosPolicy, ChaosStats, ChaosTestSystem, ChaosType, ResourceType,
 };

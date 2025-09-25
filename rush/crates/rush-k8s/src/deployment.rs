@@ -3,16 +3,18 @@
 //! This module provides functionality for generating, processing, and managing
 //! Kubernetes manifests, including templating, validation, and transformation.
 
-use crate::context::KubernetesContext;
-use log::{debug, info, warn};
-use rush_build::BuildContext;
-use rush_core::error::{Error, Result};
-use serde_yaml::{self, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use log::{debug, info, warn};
+use rush_build::BuildContext;
+use rush_core::error::{Error, Result};
+use serde_yaml::{self, Value};
 use tera::{Context, Tera};
+
+use crate::context::KubernetesContext;
 
 /// Represents a Kubernetes manifest file
 #[derive(Debug, Clone)]
@@ -288,10 +290,12 @@ impl ManifestCollection {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs::File;
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn create_test_manifest(dir: &TempDir, filename: &str, content: &str) -> PathBuf {
         let path = dir.path().join(filename);

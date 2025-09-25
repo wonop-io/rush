@@ -3,19 +3,21 @@
 //! This module provides incremental build capabilities by tracking
 //! content changes and only rebuilding what's necessary.
 
-use crate::build::cache::BuildCache;
-use rush_build::ComponentBuildSpec;
-use rush_core::{Error, Result};
-use sha2::{Sha256, Digest};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
-use tokio::sync::RwLock;
+
 use log::{debug, info};
-use serde::{Serialize, Deserialize};
+use rush_build::ComponentBuildSpec;
+use rush_core::{Error, Result};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tokio::sync::RwLock;
 use walkdir::WalkDir;
+
+use crate::build::cache::BuildCache;
 
 /// Build state for a component
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,22 +70,25 @@ impl ContentHasher {
         // Hash dockerfile if it exists
         if let Some(dockerfile) = spec.build_type.dockerfile_path() {
             if Path::new(&dockerfile).exists() {
-                let content = fs::read_to_string(&dockerfile)
-                    .map_err(|e| Error::FileSystem {
-                        path: PathBuf::from(&dockerfile),
-                        message: format!("Failed to read dockerfile: {}", e),
-                    })?;
+                let content = fs::read_to_string(dockerfile).map_err(|e| Error::FileSystem {
+                    path: PathBuf::from(&dockerfile),
+                    message: format!("Failed to read dockerfile: {e}"),
+                })?;
                 hasher.update(content.as_bytes());
                 tracked_files.push(PathBuf::from(dockerfile));
             }
         }
 
         // Hash source files
-        let source_path = spec.build_type.location()
+        let source_path = spec
+            .build_type
+            .location()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("."));
 
-        let source_hash = self.hash_directory(&source_path, &mut tracked_files).await?;
+        let source_hash = self
+            .hash_directory(&source_path, &mut tracked_files)
+            .await?;
         hasher.update(source_hash.as_bytes());
 
         // Hash environment variables
@@ -108,7 +113,11 @@ impl ContentHasher {
     }
 
     /// Hash a directory recursively
-    async fn hash_directory(&self, path: &Path, tracked_files: &mut Vec<PathBuf>) -> Result<String> {
+    async fn hash_directory(
+        &self,
+        path: &Path,
+        tracked_files: &mut Vec<PathBuf>,
+    ) -> Result<String> {
         let mut dir_hasher = Sha256::new();
         let mut file_hashes = Vec::new();
 
@@ -145,14 +154,12 @@ impl ContentHasher {
 
     /// Hash a single file
     async fn hash_file(&self, path: &Path) -> Result<String> {
-        let metadata = fs::metadata(path)
-            .map_err(|e| Error::FileSystem {
-                path: path.to_path_buf(),
-                message: format!("Failed to get metadata: {}", e),
-            })?;
+        let metadata = fs::metadata(path).map_err(|e| Error::FileSystem {
+            path: path.to_path_buf(),
+            message: format!("Failed to get metadata: {e}"),
+        })?;
 
-        let modified = metadata.modified()
-            .unwrap_or(SystemTime::now());
+        let modified = metadata.modified().unwrap_or(SystemTime::now());
 
         // Check cache
         {
@@ -165,11 +172,10 @@ impl ContentHasher {
         }
 
         // Compute hash
-        let content = fs::read(path)
-            .map_err(|e| Error::FileSystem {
-                path: path.to_path_buf(),
-                message: format!("Failed to read file: {}", e),
-            })?;
+        let content = fs::read(path).map_err(|e| Error::FileSystem {
+            path: path.to_path_buf(),
+            message: format!("Failed to read file: {e}"),
+        })?;
 
         let mut hasher = Sha256::new();
         hasher.update(&content);
@@ -195,10 +201,11 @@ impl ContentHasher {
         }
 
         // Common ignore patterns
-        if path_str.contains("/.git/") ||
-           path_str.contains("/target/") ||
-           path_str.contains("/node_modules/") ||
-           path_str.contains("/.rush/") {
+        if path_str.contains("/.git/")
+            || path_str.contains("/target/")
+            || path_str.contains("/node_modules/")
+            || path_str.contains("/.rush/")
+        {
             return true;
         }
 
@@ -222,8 +229,7 @@ impl IncrementalBuilder {
     /// Create a new incremental builder
     pub fn new(cache_dir: &Path) -> Self {
         let state_file = cache_dir.join("incremental_state.json");
-        let previous_states = Self::load_states(&state_file)
-            .unwrap_or_default();
+        let previous_states = Self::load_states(&state_file).unwrap_or_default();
 
         Self {
             previous_states: Arc::new(RwLock::new(previous_states)),
@@ -244,27 +250,25 @@ impl IncrementalBuilder {
             return Ok(HashMap::new());
         }
 
-        let content = fs::read_to_string(path)
-            .map_err(|e| Error::FileSystem {
-                path: path.to_path_buf(),
-                message: format!("Failed to read state file: {}", e),
-            })?;
+        let content = fs::read_to_string(path).map_err(|e| Error::FileSystem {
+            path: path.to_path_buf(),
+            message: format!("Failed to read state file: {e}"),
+        })?;
 
         serde_json::from_str(&content)
-            .map_err(|e| Error::Serialization(format!("Failed to parse state file: {}", e)))
+            .map_err(|e| Error::Serialization(format!("Failed to parse state file: {e}")))
     }
 
     /// Save build states
     async fn save_states(&self) -> Result<()> {
         let states = self.previous_states.read().await;
         let content = serde_json::to_string_pretty(&*states)
-            .map_err(|e| Error::Serialization(format!("Failed to serialize states: {}", e)))?;
+            .map_err(|e| Error::Serialization(format!("Failed to serialize states: {e}")))?;
 
-        fs::write(&self.state_file, content)
-            .map_err(|e| Error::FileSystem {
-                path: self.state_file.clone(),
-                message: format!("Failed to write state file: {}", e),
-            })?;
+        fs::write(&self.state_file, content).map_err(|e| Error::FileSystem {
+            path: self.state_file.clone(),
+            message: format!("Failed to write state file: {e}"),
+        })?;
 
         Ok(())
     }
@@ -282,7 +286,10 @@ impl IncrementalBuilder {
             Some(state) => {
                 // Check if content changed
                 if state.content_hash != current_hash {
-                    info!("Component {} needs rebuild: content changed", spec.component_name);
+                    info!(
+                        "Component {} needs rebuild: content changed",
+                        spec.component_name
+                    );
                     true
                 } else {
                     // Check if dependencies changed
@@ -290,15 +297,19 @@ impl IncrementalBuilder {
                         if let Some(dep_state) = states.get(dep) {
                             if let Some(cached_hash) = state.dependency_hashes.get(dep) {
                                 if cached_hash != &dep_state.content_hash {
-                                    info!("Component {} needs rebuild: dependency {} changed",
-                                        spec.component_name, dep);
+                                    info!(
+                                        "Component {} needs rebuild: dependency {} changed",
+                                        spec.component_name, dep
+                                    );
                                     return Ok(true);
                                 }
                             }
                         } else {
                             // Dependency not built yet
-                            info!("Component {} needs rebuild: dependency {} not built",
-                                spec.component_name, dep);
+                            info!(
+                                "Component {} needs rebuild: dependency {} not built",
+                                spec.component_name, dep
+                            );
                             return Ok(true);
                         }
                     }
@@ -306,13 +317,20 @@ impl IncrementalBuilder {
                 }
             }
             None => {
-                info!("Component {} needs rebuild: no previous build", spec.component_name);
+                info!(
+                    "Component {} needs rebuild: no previous build",
+                    spec.component_name
+                );
                 true
             }
         };
 
-        debug!("Incremental build check for {} took {:?}: rebuild={}",
-            spec.component_name, start.elapsed(), needs_rebuild);
+        debug!(
+            "Incremental build check for {} took {:?}: rebuild={}",
+            spec.component_name,
+            start.elapsed(),
+            needs_rebuild
+        );
 
         Ok(needs_rebuild)
     }
@@ -363,10 +381,7 @@ impl IncrementalBuilder {
         let states = self.previous_states.read().await;
 
         let total_components = states.len();
-        let total_build_time: Duration = states
-            .values()
-            .map(|s| s.build_duration)
-            .sum();
+        let total_build_time: Duration = states.values().map(|s| s.build_duration).sum();
 
         let average_build_time = if total_components > 0 {
             total_build_time / total_components as u32
@@ -381,8 +396,8 @@ impl IncrementalBuilder {
             total_components,
             total_build_time,
             average_build_time,
-            cache_hits: 0,  // TODO: integrate with actual cache stats
-            cache_misses: 0,  // TODO: integrate with actual cache stats
+            cache_hits: 0,   // TODO: integrate with actual cache stats
+            cache_misses: 0, // TODO: integrate with actual cache stats
             incremental_builds: states
                 .values()
                 .filter(|s| s.built_at > SystemTime::now() - Duration::from_secs(3600))
@@ -429,8 +444,9 @@ pub struct BuildStatistics {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_content_hasher() {

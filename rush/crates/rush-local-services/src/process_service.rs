@@ -2,13 +2,14 @@
 //!
 //! This module provides a LocalService implementation for local processes like Stripe CLI.
 
+use std::collections::HashMap;
+use std::process::Stdio;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use log::warn;
 use rush_core::error::{Error, Result};
 use rush_output::simple::Sink;
-use std::collections::HashMap;
-use std::process::Stdio;
-use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
@@ -232,8 +233,8 @@ impl ProcessLocalService {
             tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
                     // Clean up the line (remove carriage returns and ANSI escape codes)
-                    let clean_line = strip_ansi_escapes::strip_str(&line.replace("\r", ""));
-                    
+                    let clean_line = strip_ansi_escapes::strip_str(line.replace("\r", ""));
+
                     // Forward to output sink
                     output.info(clean_line.clone()).await;
 
@@ -346,7 +347,7 @@ impl LocalService for ProcessLocalService {
         // This is mainly for container-based services
         Ok(())
     }
-    
+
     async fn generated_env_vars(&self) -> Result<HashMap<String, String>> {
         // Most process services don't generate regular env vars
         Ok(HashMap::new())

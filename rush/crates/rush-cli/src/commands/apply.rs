@@ -1,9 +1,9 @@
+use std::sync::{Arc, Mutex};
+
 use rush_config::Config;
 use rush_container::ContainerService;
 use rush_core::error::Result;
 use rush_k8s::ContextManager;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 /// Applies Kubernetes manifests to the cluster
 pub async fn execute(
@@ -46,7 +46,8 @@ pub async fn execute(
             Ok(())
         }
         Ok(output) => Err(rush_core::error::Error::Kubernetes(format!(
-            "Failed to apply manifests: {}", output.stderr
+            "Failed to apply manifests: {}",
+            output.stderr
         ))),
         Err(e) => Err(rush_core::error::Error::Kubernetes(format!(
             "Failed to apply manifests: {e}"

@@ -5,17 +5,19 @@
 //!
 //! Now also supports interactive container execution with direct subprocess streaming.
 
-use crate::DockerClient;
+use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::Arc;
+
 use log::{debug, error};
 use rush_core::error::{Error, Result};
 use rush_core::shutdown;
 use rush_output::simple::{LogEntry, Sink};
-use std::path::PathBuf;
-use std::process::Stdio;
-use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Mutex;
+
+use crate::DockerClient;
 
 /// Simple output line structure for compatibility with simple_docker
 #[derive(Debug, Clone)]
@@ -115,7 +117,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
     cmd.args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    
+
     // Force color output for common tools
     // Most tools check these environment variables when output is not a TTY
     cmd.env("FORCE_COLOR", "1")
@@ -123,17 +125,23 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
         .env("RUST_LOG_STYLE", "always")
         .env("CLICOLOR_FORCE", "1")
         .env("COLORTERM", "truecolor")
-        .env("TERM", std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()))
-        .env_remove("NO_COLOR");  // Make sure NO_COLOR is not set
-    
+        .env(
+            "TERM",
+            std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string()),
+        )
+        .env_remove("NO_COLOR"); // Make sure NO_COLOR is not set
+
     // Set working directory if provided
     if let Some(dir) = working_dir {
         debug!("Setting working directory to: {:?}", dir);
         cmd.current_dir(dir);
     }
-    
-    let mut child = cmd.spawn()
-        .map_err(|e| Error::Docker(format!("Failed to spawn process {command} with args {:?}: {e}", args)))?;
+
+    let mut child = cmd.spawn().map_err(|e| {
+        Error::Docker(format!(
+            "Failed to spawn process {command} with args {args:?}: {e}"
+        ))
+    })?;
 
     let stdout = child
         .stdout
@@ -175,7 +183,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
             // Strip trailing newlines but preserve the content otherwise
             // Don't strip \r as it might be used for progress indicators
             let content = line.trim_end_matches('\n');
-            
+
             let entry = if is_build {
                 LogEntry::script(&component_clone, content)
             } else {
@@ -224,7 +232,7 @@ pub async fn capture_output(options: CaptureOptions) -> Result<()> {
             // Strip trailing newlines but preserve the content otherwise
             // Don't strip \r as it might be used for progress indicators
             let content = line.trim_end_matches('\n');
-            
+
             let entry = if is_build {
                 // For build scripts, stderr is often used for normal output (progress, warnings, etc.)
                 // Don't automatically mark it as error - preserve the original formatting

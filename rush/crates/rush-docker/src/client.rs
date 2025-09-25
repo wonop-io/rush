@@ -1,12 +1,14 @@
 //! Docker client implementations
 
-use crate::{ContainerStatus, DockerClient};
-use async_trait::async_trait;
-use rush_core::{Error, Result};
 use std::process::Stdio;
-use tokio::process::Command;
+
+use async_trait::async_trait;
 use log::{debug, error, info, warn};
+use rush_core::{Error, Result};
+use tokio::process::Command;
 use tracing::instrument;
+
+use crate::{ContainerStatus, DockerClient};
 
 /// Docker executor that implements DockerClient using command-line interface
 #[derive(Debug, Clone)]
@@ -61,10 +63,10 @@ impl DockerExecutor {
     }
 
     /// Execute a docker command with arguments
-    #[instrument(level = "debug", skip(self), fields(command = args.get(0).map(|s| s.as_str()).unwrap_or("unknown"), args_count = args.len()))]
+    #[instrument(level = "debug", skip(self), fields(command = args.first().map(|s| s.as_str()).unwrap_or("unknown"), args_count = args.len()))]
     async fn execute(&self, args: Vec<String>) -> Result<String> {
         let _total_start = std::time::Instant::now();
-        let docker_cmd = args.get(0).map(|s| s.as_str()).unwrap_or("unknown");
+        let docker_cmd = args.first().map(|s| s.as_str()).unwrap_or("unknown");
 
         let program = if self.use_sudo { "sudo" } else { "docker" };
         let mut cmd = Command::new(program);
@@ -143,8 +145,14 @@ impl DockerClient for DockerExecutor {
         ];
         let output = self.execute(args).await?;
         let exists = output.lines().any(|line| line.trim() == name);
-        warn!("network_exists check: searching for '{}', found: {}", name, exists);
-        warn!("Available networks: {}", output.lines().collect::<Vec<_>>().join(", "));
+        warn!(
+            "network_exists check: searching for '{}', found: {}",
+            name, exists
+        );
+        warn!(
+            "Available networks: {}",
+            output.lines().collect::<Vec<_>>().join(", ")
+        );
         Ok(exists)
     }
 
@@ -171,14 +179,14 @@ impl DockerClient for DockerExecutor {
 
         info!("Docker build command: docker {}", args.join(" "));
         debug!("Building from context: {}", context);
-        
+
         let output = self.execute(args).await?;
-        
+
         // Log the build output for debugging
         if !output.trim().is_empty() {
             debug!("Docker build output:\n{}", output);
         }
-        
+
         info!("Built Docker image: {}", tag);
         Ok(())
     }
@@ -221,10 +229,7 @@ impl DockerClient for DockerExecutor {
 
         let output = self.execute(args).await?;
         let container_id = output.trim().to_string();
-        info!(
-            "Started container {} with ID: {}",
-            name, container_id
-        );
+        info!("Started container {} with ID: {}", name, container_id);
         Ok(container_id)
     }
 
@@ -270,10 +275,7 @@ impl DockerClient for DockerExecutor {
 
         let output = self.execute(args).await?;
         let container_id = output.trim().to_string();
-        info!(
-            "Started container {} with ID: {}",
-            name, container_id
-        );
+        info!("Started container {} with ID: {}", name, container_id);
         Ok(container_id)
     }
 
@@ -295,8 +297,13 @@ impl DockerClient for DockerExecutor {
             }
             Err(e) => {
                 // Don't fail if container doesn't exist or is already stopped
-                if e.to_string().contains("No such container") || e.to_string().contains("is not running") {
-                    info!("Container {} already stopped or doesn't exist", container_id);
+                if e.to_string().contains("No such container")
+                    || e.to_string().contains("is not running")
+                {
+                    info!(
+                        "Container {} already stopped or doesn't exist",
+                        container_id
+                    );
                     Ok(())
                 } else {
                     Err(e)
@@ -358,7 +365,7 @@ impl DockerClient for DockerExecutor {
 
     async fn container_logs(&self, container_id: &str, lines: usize) -> Result<String> {
         let mut args = vec!["logs".to_string()];
-        
+
         if lines > 0 {
             args.push("--tail".to_string());
             args.push(lines.to_string());
@@ -419,7 +426,7 @@ impl DockerClient for DockerExecutor {
             Ok(id.to_string())
         }
     }
-    
+
     async fn push_image(&self, image: &str) -> Result<()> {
         info!("Pushing Docker image: {}", image);
         let args = vec!["push".to_string(), image.to_string()];

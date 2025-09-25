@@ -18,7 +18,10 @@ mod tests {
         assert_eq!(name1, "compoundcoders.com-frontend");
 
         // Ensure no underscores are used
-        assert!(!name1.contains('_'), "Container name should not contain underscores");
+        assert!(
+            !name1.contains('_'),
+            "Container name should not contain underscores"
+        );
     }
 
     #[test]

@@ -3,11 +3,13 @@
 //! This module provides a proxy that allows using an Arc<Mutex<Box<dyn Sink>>>
 //! where a Box<dyn Sink> is expected.
 
-use crate::simple::{LogEntry, Sink};
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use rush_core::error::Result;
-use std::sync::Arc;
 use tokio::sync::Mutex;
+
+use crate::simple::{LogEntry, Sink};
 
 /// A proxy sink that forwards to an Arc<Mutex<Box<dyn Sink>>>
 pub struct SinkProxy {

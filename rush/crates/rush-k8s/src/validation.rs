@@ -3,9 +3,10 @@
 //! This module provides functionality for validating Kubernetes manifests
 //! against schemas and checking for deprecated APIs.
 
+use std::process::Command;
+
 use log::{debug, info, trace, warn};
 use rush_core::error::{Error, Result};
-use std::process::Command;
 
 /// Trait defining operations for validating Kubernetes resources
 pub trait K8sValidator: Send + Sync {
@@ -156,10 +157,12 @@ pub fn create_validator(validator_type: &str) -> Box<dyn K8sValidator> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs::File;
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn create_test_manifest(dir: &TempDir, filename: &str, content: &str) -> String {
         let file_path = dir.path().join(filename);

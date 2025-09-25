@@ -9,10 +9,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use log::{debug, info};
-use tokio::time;
-
 use rush_core::error::Result;
 use rush_utils::PathMatcher;
+use tokio::time;
 
 /// Processes file changes and determines rebuild needs
 #[derive(Debug, Clone)]
@@ -140,10 +139,12 @@ impl ChangeProcessor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs::{self, File};
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn create_test_directory() -> TempDir {
         let temp_dir = TempDir::new().unwrap();

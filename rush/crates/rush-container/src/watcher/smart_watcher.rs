@@ -3,16 +3,17 @@
 //! This module provides an optimized file watcher that reduces
 //! unnecessary rebuilds through debouncing and pattern matching.
 
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, FileIdMap};
-use rush_core::{Error, Result};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{mpsc, RwLock};
-use log::{debug, info, error};
+
+use log::{debug, error, info};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, FileIdMap};
 use regex::Regex;
+use rush_core::{Error, Result};
+use tokio::sync::{mpsc, RwLock};
 
 /// Configuration for smart file watching
 #[derive(Debug, Clone)]
@@ -63,7 +64,10 @@ pub enum FileChangeEvent {
     /// Files were removed
     Removed(Vec<PathBuf>),
     /// Files were renamed
-    Renamed { from: Vec<PathBuf>, to: Vec<PathBuf> },
+    Renamed {
+        from: Vec<PathBuf>,
+        to: Vec<PathBuf>,
+    },
 }
 
 /// Smart file watcher with debouncing
@@ -132,7 +136,7 @@ impl SmartWatcher {
             debouncer
                 .watcher()
                 .watch(path, mode)
-                .map_err(|e| Error::External(format!("Failed to watch path: {}", e)))?;
+                .map_err(|e| Error::External(format!("Failed to watch path: {e}")))?;
 
             info!("Added watch path: {:?}", path);
         }
@@ -155,11 +159,8 @@ impl SmartWatcher {
             move |result: DebounceEventResult| {
                 match result {
                     Ok(events) => {
-                        let filtered_events = Self::filter_events(
-                            events,
-                            &ignore_regex,
-                            &include_regex,
-                        );
+                        let filtered_events =
+                            Self::filter_events(events, &ignore_regex, &include_regex);
 
                         if !filtered_events.is_empty() {
                             // Add to pending events
@@ -186,7 +187,8 @@ impl SmartWatcher {
                     }
                 }
             },
-        ).map_err(|e| Error::External(format!("Failed to create debouncer: {}", e)))?;
+        )
+        .map_err(|e| Error::External(format!("Failed to create debouncer: {e}")))?;
 
         // Add all watch paths
         for path in &self.watch_paths {
@@ -199,7 +201,7 @@ impl SmartWatcher {
             debouncer
                 .watcher()
                 .watch(path, mode)
-                .map_err(|e| Error::External(format!("Failed to watch path: {}", e)))?;
+                .map_err(|e| Error::External(format!("Failed to watch path: {e}")))?;
         }
 
         self.debouncer = Some(debouncer);
@@ -207,7 +209,10 @@ impl SmartWatcher {
         // Start batch timeout processor
         self.start_batch_processor().await;
 
-        info!("Smart watcher started with {} paths", self.watch_paths.len());
+        info!(
+            "Smart watcher started with {} paths",
+            self.watch_paths.len()
+        );
         Ok(())
     }
 
@@ -355,10 +360,11 @@ impl SmartWatcher {
         let path_str = path.to_string_lossy();
 
         // Common gitignore patterns
-        if path_str.contains("/.git/") ||
-           path_str.contains("/target/") ||
-           path_str.contains("/node_modules/") ||
-           path_str.contains("/.rush/") {
+        if path_str.contains("/.git/")
+            || path_str.contains("/target/")
+            || path_str.contains("/node_modules/")
+            || path_str.contains("/.rush/")
+        {
             return true;
         }
 
@@ -417,15 +423,18 @@ impl ComponentWatcher {
             tokio::spawn(async move {
                 while let Some(event) = rx.recv().await {
                     let paths = match event {
-                        FileChangeEvent::Created(paths) |
-                        FileChangeEvent::Modified(paths) |
-                        FileChangeEvent::Removed(paths) => paths,
+                        FileChangeEvent::Created(paths)
+                        | FileChangeEvent::Modified(paths)
+                        | FileChangeEvent::Removed(paths) => paths,
                         FileChangeEvent::Renamed { to, .. } => to,
                     };
 
                     if !paths.is_empty() {
-                        info!("Component {} detected changes in {} files",
-                            component_name, paths.len());
+                        info!(
+                            "Component {} detected changes in {} files",
+                            component_name,
+                            paths.len()
+                        );
                         callback(paths);
                     }
                 }
@@ -438,9 +447,10 @@ impl ComponentWatcher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
     use tokio::time::sleep;
+
+    use super::*;
 
     #[tokio::test]
     #[ignore = "File watcher events not being received in test environment"]

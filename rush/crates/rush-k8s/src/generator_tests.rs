@@ -11,7 +11,7 @@ mod tests {
     fn create_test_component(name: &str, port: Option<u16>) -> ComponentBuildSpec {
         let config = Arc::new(Config::default());
         let variables = Arc::new(Variables::new());
-        
+
         ComponentBuildSpec {
             build_type: BuildType::RustBinary {
                 location: "src".to_string(),
@@ -57,7 +57,7 @@ mod tests {
 
         // Should generate deployment and service
         assert_eq!(manifests.len(), 2);
-        
+
         // Check deployment
         let deployment = manifests.iter()
             .find(|m| matches!(m.kind, ManifestKind::Deployment))
@@ -66,7 +66,7 @@ mod tests {
         assert_eq!(deployment.namespace, "test-namespace");
         assert!(deployment.content.contains("kind: Deployment"));
         assert!(deployment.content.contains("replicas: 1"));
-        
+
         // Check service
         let service = manifests.iter()
             .find(|m| matches!(m.kind, ManifestKind::Service))
@@ -94,7 +94,7 @@ mod tests {
         let deployment = manifests.iter()
             .find(|m| matches!(m.kind, ManifestKind::Deployment))
             .unwrap();
-        
+
         // Check that image has registry prefix
         assert!(deployment.content.contains("image: gcr.io/my-project/test-app:latest"));
     }
@@ -110,15 +110,15 @@ mod tests {
 
         let mut component1 = create_test_component("frontend", Some(3000));
         component1.mount_point = Some("/".to_string());
-        
+
         let mut component2 = create_test_component("backend", Some(8080));
         component2.mount_point = Some("/api".to_string());
-        
+
         let manifests = generator.generate_manifests(&[component1, component2], None).await.unwrap();
 
         // Should have 2 deployments, 2 services, and 1 ingress
         assert_eq!(manifests.len(), 5);
-        
+
         let ingress = manifests.iter()
             .find(|m| matches!(m.kind, ManifestKind::Ingress))
             .expect("Should have an ingress");
@@ -137,16 +137,16 @@ mod tests {
         );
 
         let component = create_test_component("test-app", None);
-        
+
         let mut secrets = BTreeMap::new();
         secrets.insert("API_KEY".to_string(), "secret123".to_string());
         secrets.insert("DB_PASSWORD".to_string(), "pass456".to_string());
-        
+
         let manifests = generator.generate_manifests(&[component], Some(secrets)).await.unwrap();
 
         // Should have deployment and secret (no service since no port)
         assert_eq!(manifests.len(), 2);
-        
+
         let secret = manifests.iter()
             .find(|m| matches!(m.kind, ManifestKind::Secret))
             .expect("Should have a secret");
@@ -168,7 +168,7 @@ mod tests {
 
         let config = Arc::new(Config::default());
         let variables = Arc::new(Variables::new());
-        
+
         let local_service = ComponentBuildSpec {
             build_type: BuildType::LocalService {
                 service_type: "postgres".to_string(),
@@ -197,7 +197,7 @@ mod tests {
         };
 
         let manifests = generator.generate_manifests(&[local_service], None).await.unwrap();
-        
+
         // LocalService should be skipped
         assert_eq!(manifests.len(), 0);
     }
@@ -216,13 +216,13 @@ mod tests {
         env.insert("LOG_LEVEL".to_string(), "info".to_string());
         env.insert("FEATURE_FLAG".to_string(), "enabled".to_string());
         component.env = Some(env);
-        
+
         let manifests = generator.generate_manifests(&[component], None).await.unwrap();
 
         let deployment = manifests.iter()
             .find(|m| matches!(m.kind, ManifestKind::Deployment))
             .unwrap();
-        
+
         // Check environment variables are included
         assert!(deployment.content.contains("name: ENVIRONMENT"));
         assert!(deployment.content.contains("value: production"));

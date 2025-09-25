@@ -1,13 +1,15 @@
+use std::path::PathBuf;
+
+use chrono::{DateTime, Utc};
+use rush_core::error::{Error, Result};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
 use crate::event::OutputEvent;
 use crate::filter::{CompositeFilter, OutputFilter};
 use crate::formatter::ColoredFormatter;
 use crate::router::{BroadcastRouter, OutputRouter};
 use crate::sink::{OutputSink, TerminalLayout, TerminalSink};
-use chrono::{DateTime, Utc};
-use rush_core::error::{Error, Result};
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use uuid::Uuid;
 
 /// Session statistics
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

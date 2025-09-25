@@ -3,10 +3,11 @@
 //! This module provides functionality for encoding Kubernetes secrets to the
 //! appropriate format for deployment in Kubernetes manifests.
 
-use log::{info, trace, warn};
-use rush_core::error::{Error, Result};
 use std::fs;
 use std::process::Command;
+
+use log::{info, trace, warn};
+use rush_core::error::{Error, Result};
 
 /// Trait defining operations for encoding Kubernetes secrets
 pub trait K8sEncoder: Send + Sync {
@@ -107,9 +108,11 @@ pub fn create_encoder(encoder_type: &str) -> Box<dyn K8sEncoder> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     #[test]
     fn test_noop_encoder() {

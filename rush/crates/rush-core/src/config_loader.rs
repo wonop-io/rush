@@ -1,7 +1,9 @@
-use crate::error::{Error, Result};
-use serde::de::DeserializeOwned;
 use std::fs;
 use std::path::Path;
+
+use serde::de::DeserializeOwned;
+
+use crate::error::{Error, Result};
 
 /// Unified configuration loader for various file formats
 pub struct ConfigLoader;
@@ -132,10 +134,12 @@ impl ConfigLoader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use serde::{Deserialize, Serialize};
     use std::io::Write;
+
+    use serde::{Deserialize, Serialize};
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     #[derive(Debug, Serialize, Deserialize, PartialEq)]
     struct TestConfig {

@@ -1,9 +1,8 @@
-use lazy_static::lazy_static;
 use std::collections::HashMap;
-use tera::Tera;
 
+use lazy_static::lazy_static;
 use serde_json::value::{to_value, Value};
-use tera::{try_get_value, Context, Result};
+use tera::{try_get_value, Context, Result, Tera};
 
 lazy_static! {
     pub static ref TEMPLATES: Tera = {

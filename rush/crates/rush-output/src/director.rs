@@ -1,6 +1,7 @@
-use super::{OutputSource, OutputStream};
 use async_trait::async_trait;
 use rush_core::error::Result;
+
+use super::{OutputSource, OutputStream};
 
 /// Trait for directing output streams to different destinations
 #[async_trait]
