@@ -97,7 +97,9 @@
       "Bash(RUST_LOG=info ./target/release/rush io.wonop.helloworld profile build --force-rebuild --format chrome-trace --output rush-profile-optimized.trace.json)",
       "Bash(RUST_LOG=info ./target/release/rush --force-rebuild io.wonop.helloworld profile --format chrome-trace --output rush-profile-optimized.trace.json build)",
       "Bash(RUST_LOG=info ./target/release/rush io.wonop.helloworld profile --format chrome-trace --output rush-profile-optimized.trace.json build --force-rebuild)",
-      "Bash(RUST_LOG=info ./target/release/rush io.wonop.helloworld profile --format chrome-trace --output rush-profile-optimized.trace.json build)"
+      "Bash(RUST_LOG=info ./target/release/rush io.wonop.helloworld profile --format chrome-trace --output rush-profile-optimized.trace.json build)",
+      "Bash(./ci-check.sh:*)",
+      "Bash(./ci-fix.sh)"
     ],
     "deny": [],
     "additionalDirectories": [
