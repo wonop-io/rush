@@ -30,26 +30,39 @@ impl K8sEncoder for SealedSecretsEncoder {
 
         // Check if this is a Secret resource that needs encoding
         let contains_kind_secret = content.lines().any(|line| line.trim() == "kind: Secret");
-        let contains_data = content.lines().any(|line| line.trim() == "data:");
+        let contains_data = content.lines().any(|line| line.trim().starts_with("data:"));
 
         if !contains_kind_secret || !contains_data {
             trace!("File does not contain 'kind: Secret' or has no data, skipping encoding");
             return Ok(());
         }
 
-        let temp_file = format!("{path}.tmp.yaml");
-        trace!("Encoding file {path}");
+        // Convert 'data:' to 'stringData:' so kubeseal can handle plain text values
+        // Kubernetes Secret 'data' requires base64-encoded values, but 'stringData' accepts plain text
+        let preprocessed_content = content.replace("\ndata:", "\nstringData:");
+        
+        // Write preprocessed content to a temporary file
+        let prep_file = format!("{path}.prep.yaml");
+        fs::write(&prep_file, preprocessed_content)
+            .map_err(|e| Error::Filesystem(format!("Failed to write preprocessed file: {e}")))?;
+        
+        trace!("Encoding file {path} (converted data -> stringData)");
 
-        // Run kubeseal command
+        let temp_file = format!("{path}.tmp.yaml");
+
+        // Run kubeseal command on the preprocessed file
         let output = Command::new("kubeseal")
             .arg("--format")
             .arg("yaml")
             .arg("-w")
             .arg(&temp_file)
             .arg("-f")
-            .arg(path)
+            .arg(&prep_file)
             .output()
             .map_err(|e| Error::External(format!("Failed to execute kubeseal: {e}")))?;
+
+        // Clean up preprocessed file
+        let _ = fs::remove_file(&prep_file);
 
         if !output.status.success() {
             info!("File attempted to be encoded: {path}");

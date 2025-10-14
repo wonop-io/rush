@@ -225,6 +225,9 @@ async fn create_minimal_reactor(
     // Create a minimal reactor for non-container commands
     // This reactor won't be used for container operations
     let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
+    // Use noop encoder for minimal reactor (no K8s operations expected)
+    let k8s_encoder: Arc<dyn K8sEncoder> = Arc::new(NoopEncoder);
+
 
     // Create a dummy network manager that won't be used
     // We need this because Reactor::new expects one, but we could refactor
@@ -258,6 +261,7 @@ async fn create_minimal_reactor(
         HashMap::new(), // No redirected components for minimal reactor
         Vec::new(),     // No silence components for minimal reactor
         network_manager,
+        k8s_encoder,
     )
     .await
     {
@@ -475,16 +479,16 @@ async fn create_reactor(
     force_rebuild: bool,
     network_manager: Arc<rush_container::network::NetworkManager>,
 ) -> Result<Reactor> {
-    // TODO: Resolve conflicting name for NoopEncoder
+    // Note: NoopEncoder refers to rush_k8s::encoder::NoopEncoder (imported above)
+    // rush_security::NoopEncoder is used here (fully qualified to avoid confusion)
     let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
-    // TODO: Fix k8s encoding - also this seems redudant or at least very similar to dev
-    let _k8s_encoder = match config.k8s_encoder() {
+    let k8s_encoder = match config.k8s_encoder() {
         "kubeseal" => {
             info!("Encrypting K8s secrets with kubeseal");
             Arc::new(SealedSecretsEncoder) as Arc<dyn K8sEncoder>
         }
         "noop" => {
-            warn!("No secret encryption of secrets for K8s");
+            warn!("K8s secrets will not be encrypted (using NoopEncoder)");
             Arc::new(NoopEncoder) as Arc<dyn K8sEncoder>
         }
         _ => panic!("Invalid k8s encoder"),
@@ -500,6 +504,7 @@ async fn create_reactor(
         redirected_components,
         silence_components,
         network_manager,
+        k8s_encoder,
     )
     .await
     {

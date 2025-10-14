@@ -6,6 +6,7 @@ use colored::*;
 use log::{debug, info, warn};
 use rush_config::Config;
 use rush_core::error::{Error, Result};
+use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
 use tokio::time::sleep;
 
 /// Deployment strategy options
@@ -329,6 +330,13 @@ async fn create_reactor(
     let secrets_encoder: Arc<dyn rush_security::SecretsEncoder> =
         Arc::new(rush_security::NoopEncoder);
 
+    // Create K8s encoder based on configuration
+    let k8s_encoder: Arc<dyn K8sEncoder> = match config.k8s_encoder() {
+        "kubeseal" => Arc::new(SealedSecretsEncoder),
+        "noop" => Arc::new(NoopEncoder),
+        _ => Arc::new(NoopEncoder), // Default to noop
+    };
+
     // Create network manager
     let network_manager = Arc::new(
         rush_container::network::NetworkManager::new(docker_client.clone(), config.product_name())
@@ -343,6 +351,7 @@ async fn create_reactor(
         HashMap::new(),
         Vec::new(),
         network_manager,
+        k8s_encoder,
     )
     .await?;
 

@@ -99,6 +99,8 @@ pub struct Reactor {
     vault: Option<Arc<std::sync::Mutex<dyn rush_security::Vault + Send>>>,
     /// Secrets encoder for K8s
     secrets_encoder: Option<Arc<dyn rush_security::SecretsEncoder>>,
+    /// K8s manifest encoder (kubeseal or noop)
+    k8s_encoder: Arc<dyn rush_k8s::encoder::K8sEncoder>,
     /// Track deployment versions for rollback
     deployment_versions: Vec<rush_k8s::kubectl::DeploymentVersion>,
 }
@@ -191,6 +193,7 @@ impl Reactor {
             k8s_manifest_dir: None,
             vault: None,
             secrets_encoder: None,
+            k8s_encoder: Arc::new(rush_k8s::encoder::NoopEncoder),
             deployment_versions: Vec::new(),
         };
 
@@ -2161,7 +2164,7 @@ impl Reactor {
         });
 
         let environment = self.config.base.environment.clone();
-        let docker_registry = self.config.base.docker_registry.clone();
+        let _docker_registry = self.config.base.docker_registry.clone();
 
         // Process each component that has k8s manifests
         for spec in &self.component_specs {
@@ -2230,11 +2233,13 @@ impl Reactor {
                 .map_err(|e| Error::Template(format!("Failed to create context: {e}")))?;
             tera_context.insert("namespace", &namespace);
             tera_context.insert("environment", &environment);
-            tera_context.insert("docker_registry", &docker_registry);
+            tera_context.insert("docker_registry", spec.config.docker_registry());
             tera_context.insert("component", &spec.component_name);
             tera_context.insert("product_uri", &spec.product_name.replace('.', "-"));
 
             // Find the built image name for this component
+            // tagged_image_name is in format: product-component:tag (without registry)
+            // Template expects: {{ docker_registry }}/{{ image_name }}
             if let Some(image_tag) = self.built_images.get(&spec.component_name) {
                 tera_context.insert("image_name", image_tag);
             }
@@ -2280,18 +2285,11 @@ impl Reactor {
                 std::fs::write(&output_path, rendered)
                     .map_err(|e| Error::Filesystem(format!("Failed to write manifest: {e}")))?;
 
-                // Apply SealedSecrets encoder if this is a secrets file
+                // Apply K8s encoder if this is a secrets file
+                // The encoder will be NoopEncoder (does nothing) or SealedSecretsEncoder (encrypts)
                 if file_name.contains("secret") {
-                    let use_sealed_secrets = std::env::var("K8S_USE_SEALED_SECRETS")
-                        .unwrap_or_else(|_| "false".to_string())
-                        == "true";
-
-                    if use_sealed_secrets {
-                        debug!("Applying SealedSecrets encoder to {file_name}");
-                        let encoder = rush_k8s::encoder::create_encoder("kubeseal");
-                        if let Err(e) = encoder.encode_file(output_path.to_str().unwrap()) {
-                            warn!("Failed to encode secrets with kubeseal: {e}. Secrets will remain unencrypted.");
-                        }
+                    if let Err(e) = self.k8s_encoder.encode_file(output_path.to_str().unwrap()) {
+                        warn!("Failed to encode secrets: {e}. Secrets may remain unencrypted.");
                     }
                 }
             }
@@ -2444,6 +2442,7 @@ impl Reactor {
         redirected_components: HashMap<String, (String, u16)>,
         silence_components: Vec<String>,
         network_manager: Arc<crate::network::NetworkManager>,
+        k8s_encoder: Arc<dyn rush_k8s::encoder::K8sEncoder>,
     ) -> Result<Self> {
         use std::collections::HashSet;
         use std::fs;
@@ -2509,7 +2508,10 @@ impl Reactor {
                         warn!("Failed to compute tag for {name_str}: {e}, using 'latest'");
                         "latest".to_string()
                     });
-                    spec.tagged_image_name = Some(format!("{name_str}:{tag}"));
+                    // Set tagged_image_name to product-component:tag (WITHOUT registry)
+                    // The template will add the registry: {{ docker_registry }}/{{ image_name }}
+                    let product_name = config.product_name();
+                    spec.tagged_image_name = Some(format!("{product_name}-{name_str}:{tag}"));
 
                     // Add the spec to our list
                     component_specs.push(spec);
@@ -2563,6 +2565,7 @@ impl Reactor {
         // Set the vault and secrets encoder
         reactor.vault = Some(vault);
         reactor.secrets_encoder = Some(secrets_encoder);
+        reactor.k8s_encoder = k8s_encoder;
 
         Ok(reactor)
     }

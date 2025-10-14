@@ -7,6 +7,7 @@ use rush_config::Config;
 use rush_container::{DevEnvironment, DockerCliClient, Reactor};
 use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_core::error::{Error, Result};
+use rush_k8s::encoder::{K8sEncoder, NoopEncoder as K8sNoopEncoder, SealedSecretsEncoder};
 // Legacy imports removed - this module is deprecated
 // use rush_output::OutputDirectorFactory;
 // use rush_output::factory::OutputDirectorConfig;
@@ -83,6 +84,13 @@ impl DevCommand {
         )));
         let secrets_encoder = Arc::new(NoopEncoder);
 
+        // Create K8s encoder based on configuration
+        let k8s_encoder: Arc<dyn K8sEncoder> = match self.config.k8s_encoder() {
+            "kubeseal" => Arc::new(SealedSecretsEncoder),
+            "noop" => Arc::new(K8sNoopEncoder),
+            _ => Arc::new(K8sNoopEncoder), // Default to noop
+        };
+
         // Create docker client
         let docker_client = Arc::new(DockerCliClient::new(self.toolchain.docker().to_string()));
 
@@ -104,6 +112,7 @@ impl DevCommand {
             self.redirect_components.clone(),
             self.silence_components.clone(),
             network_manager.clone(),
+            k8s_encoder,
         )
         .await
         .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {e}")))?;
