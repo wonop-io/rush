@@ -66,7 +66,9 @@ pub async fn create_context(
         || matches.subcommand_matches("build").is_some()
         || matches.subcommand_matches("push").is_some()
         || matches.subcommand_matches("rollout").is_some()
-        || matches.subcommand_matches("deploy").is_some();
+        || matches.subcommand_matches("deploy").is_some()
+        || matches.subcommand_matches("apply").is_some()
+        || matches.subcommand_matches("unapply").is_some();
 
     // Create network manager only for commands that need it
     let network_manager = if needs_container_support {

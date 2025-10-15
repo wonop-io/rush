@@ -32,10 +32,39 @@ pub struct PersistentCacheConfig {
 impl Default for PersistentCacheConfig {
     fn default() -> Self {
         Self {
-            cache_dir: PathBuf::from(".rush/build-cache"),
+            cache_dir: PathBuf::new(),  // Will be resolved from product_dir
             max_size: 10 * 1024 * 1024 * 1024,              // 10GB
             max_age: Duration::from_secs(7 * 24 * 60 * 60), // 7 days
             compress: true,
+        }
+    }
+}
+
+impl PersistentCacheConfig {
+    /// Resolve paths based on product_dir
+    /// This should be called after the config is created
+    pub fn resolve_paths(&mut self, product_dir: &Path) {
+        use log::{debug, warn};
+
+        // Phase 4 validation: Check that product_dir is set
+        if product_dir.as_os_str().is_empty() {
+            warn!("Cannot resolve cache_dir: product_dir is empty");
+            return;
+        }
+
+        // If cache_dir is not set (empty), derive it from product_dir
+        if self.cache_dir.as_os_str().is_empty() {
+            self.cache_dir = product_dir.join(".rush/build-cache");
+            debug!("Resolved build cache_dir to: {}", self.cache_dir.display());
+        }
+
+        // Phase 4 validation: Warn if cache_dir is outside product_dir
+        if !self.cache_dir.starts_with(product_dir) {
+            warn!(
+                "Build cache directory '{}' is outside product directory '{}'.                 This may cause inconsistent behavior when running from different directories.",
+                self.cache_dir.display(),
+                product_dir.display()
+            );
         }
     }
 }

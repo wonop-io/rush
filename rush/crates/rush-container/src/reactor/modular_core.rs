@@ -134,9 +134,19 @@ impl Reactor {
         let (shutdown_sender, shutdown_receiver) = broadcast::channel(1);
 
         // Create lifecycle manager with a mock vault for now
+        // Phase 4 validation: Ensure product_dir is set before creating vault path
+        if config.base.product_dir.as_os_str().is_empty() {
+            return Err(Error::Config(
+                "Cannot initialize reactor: product_dir is not set".to_string()
+            ));
+        }
+
+        let vault_path = config.base.product_dir.join(".rush/vault");
+        debug!("Vault path resolved to: {}", vault_path.display());
+
         let vault: Arc<std::sync::Mutex<dyn rush_security::Vault + Send>> =
             Arc::new(std::sync::Mutex::new(rush_security::FileVault::new(
-                std::path::PathBuf::from(".rush/vault"),
+                vault_path,
                 None,
             )));
 
@@ -1911,68 +1921,6 @@ impl Reactor {
             results.len()
         );
 
-        // Track deployment versions for rollback support
-        if !kubectl.config.dry_run {
-            let timestamp = chrono::Utc::now();
-            let version = std::env::var("GIT_COMMIT")
-                .or_else(|_| std::env::var("DEPLOYMENT_VERSION"))
-                .unwrap_or_else(|_| timestamp.timestamp().to_string());
-
-            // Track each deployed component
-            for spec in &self.component_specs {
-                // Skip components that don't create deployments
-                if let BuildType::LocalService { .. } = &spec.build_type {
-                    continue;
-                }
-
-                // Calculate manifest hash for change detection
-                let manifest_path =
-                    manifest_dir.join(format!("{}-deployment.yaml", spec.component_name));
-                let manifest_hash = if manifest_path.exists() {
-                    let content = std::fs::read_to_string(&manifest_path)?;
-                    format!("{:x}", md5::compute(content.as_bytes()))
-                } else {
-                    String::new()
-                };
-
-                let deployment_version = rush_k8s::kubectl::DeploymentVersion {
-                    deployment_name: spec.component_name.clone(),
-                    namespace: kubectl
-                        .config
-                        .namespace
-                        .clone()
-                        .unwrap_or_else(|| "default".to_string()),
-                    version: version.clone(),
-                    timestamp,
-                    manifest_hash,
-                };
-
-                self.deployment_versions.push(deployment_version);
-            }
-
-            // Keep only last 10 versions per deployment
-            self.deployment_versions
-                .sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-            self.deployment_versions
-                .truncate(10 * self.component_specs.len());
-        }
-
-        // Wait for deployments to be ready if not in dry-run mode
-        if !kubectl.config.dry_run {
-            info!("Waiting for deployments to be ready...");
-            for spec in &self.component_specs {
-                // Skip components that don't create deployments
-                if let BuildType::LocalService { .. } = &spec.build_type {
-                    continue;
-                }
-
-                match kubectl.wait_for_deployment(&spec.component_name, 300).await {
-                    Ok(_) => info!("Deployment {} is ready", spec.component_name),
-                    Err(e) => warn!("Deployment {} may not be ready: {}", spec.component_name, e),
-                }
-            }
-        }
-
         Ok(())
     }
 
@@ -1980,62 +1928,51 @@ impl Reactor {
     pub async fn unapply(&mut self) -> Result<()> {
         info!("Removing Kubernetes resources...");
 
-        // Use manifest directory if available
-        if let Some(manifest_dir) = &self.k8s_manifest_dir {
-            if manifest_dir.exists() {
-                // Create kubectl wrapper with same configuration as apply
-                let mut kubectl_config = rush_k8s::KubectlConfig::default();
+        // Ensure manifests exist
+        let manifest_dir = self.k8s_manifest_dir.as_ref().ok_or_else(|| {
+            Error::Internal("No manifests have been generated".to_string())
+        })?;
 
-                // Set namespace from environment or use default
-                let namespace = std::env::var("K8S_NAMESPACE").unwrap_or_else(|_| {
-                    format!(
-                        "{}-{}",
-                        self.config.build.product_name,
-                        std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string())
-                    )
-                });
-                kubectl_config.namespace = Some(namespace);
-
-                // Set context if provided
-                if let Ok(context) = std::env::var("K8S_CONTEXT") {
-                    kubectl_config.context = Some(context);
-                }
-
-                // Enable dry-run if requested
-                kubectl_config.dry_run =
-                    std::env::var("K8S_DRY_RUN").unwrap_or_else(|_| "false".to_string()) == "true";
-
-                kubectl_config.verbose = true;
-
-                let kubectl = rush_k8s::Kubectl::new(kubectl_config);
-
-                // Delete all resources from manifests
-                let results = kubectl.delete_dir(manifest_dir).await?;
-
-                // Check results
-                let failed_count = results
-                    .iter()
-                    .filter(|r| !r.success && !r.stderr.contains("NotFound"))
-                    .count();
-
-                if failed_count > 0 {
-                    warn!(
-                        "Failed to delete {} out of {} manifests",
-                        failed_count,
-                        results.len()
-                    );
-                } else {
-                    info!(
-                        "Successfully removed {} Kubernetes resources",
-                        results.len()
-                    );
-                }
-            } else {
-                warn!("Manifest directory does not exist, nothing to remove");
-            }
-        } else {
-            warn!("No manifests have been generated, nothing to remove");
+        if !manifest_dir.exists() {
+            return Err(Error::Filesystem(format!(
+                "Manifest directory does not exist: {}",
+                manifest_dir.display()
+            )));
         }
+
+        // Create kubectl wrapper with configuration
+        let mut kubectl_config = rush_k8s::KubectlConfig::default();
+
+        // Set namespace from environment or use default
+        let namespace = std::env::var("K8S_NAMESPACE").unwrap_or_else(|_| {
+            format!(
+                "{}-{}",
+                self.config.build.product_name,
+                std::env::var("RUSH_ENV").unwrap_or_else(|_| "default".to_string())
+            )
+        });
+        kubectl_config.namespace = Some(namespace);
+
+        // Set context if provided
+        if let Ok(context) = std::env::var("K8S_CONTEXT") {
+            kubectl_config.context = Some(context);
+        }
+
+        // Enable dry-run if requested
+        kubectl_config.dry_run =
+            std::env::var("K8S_DRY_RUN").unwrap_or_else(|_| "false".to_string()) == "true";
+
+        kubectl_config.verbose = true;
+
+        let kubectl = rush_k8s::Kubectl::new(kubectl_config);
+
+        // Delete all manifests in reverse order
+        let results = kubectl.delete_dir(manifest_dir).await?;
+
+        info!(
+            "Successfully removed {} Kubernetes resources",
+            results.len()
+        );
 
         Ok(())
     }
@@ -2144,8 +2081,16 @@ impl Reactor {
     pub async fn build_manifests(&mut self) -> Result<()> {
         info!("Building Kubernetes manifests...");
 
+        // Phase 4 validation: Ensure product_dir is set
+        if self.config.base.product_dir.as_os_str().is_empty() {
+            return Err(Error::Config(
+                "Cannot build manifests: product_dir is not set".to_string()
+            ));
+        }
+
         // Create output directory for manifests
-        let output_dir = std::path::PathBuf::from(".rush/k8s");
+        let output_dir = self.config.base.product_dir.join(".rush/k8s");
+        debug!("K8s manifest directory resolved to: {}", output_dir.display());
 
         // Clear existing manifests
         if output_dir.exists() {
@@ -2551,6 +2496,9 @@ impl Reactor {
         // Configure build orchestrator with the product directory
         modular_config.build.product_dir = config.product_path().to_path_buf();
         modular_config.build.product_name = config.product_name().to_string();
+        
+        // Resolve paths now that product_dir is set (Phase 2 of BUG.md fix)
+        modular_config.build.resolve_paths();
 
         // Configure lifecycle manager with the product name and network name
         modular_config.lifecycle.product_name = config.product_name().to_string();

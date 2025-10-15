@@ -70,6 +70,39 @@ impl Kubectl {
         Self { config }
     }
 
+    /// Recursively collect all YAML files from a directory and its subdirectories
+    fn collect_yaml_files_recursive(dir_path: &Path) -> Result<Vec<PathBuf>> {
+        let mut yaml_files = Vec::new();
+
+        fn visit_dir(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+            for entry in std::fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+
+                if path.is_dir() {
+                    // Recursively visit subdirectories
+                    visit_dir(&path, files)?;
+                } else if path.is_file() {
+                    // Check if it's a YAML file
+                    if let Some(ext) = path.extension() {
+                        if ext == "yaml" || ext == "yml" {
+                            files.push(path);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        visit_dir(dir_path, &mut yaml_files)?;
+
+        // Sort by full path to maintain priority-based ordering
+        // This ensures 10_backend/01_namespace.yaml comes before 50_frontend/01_namespace.yaml
+        yaml_files.sort();
+
+        Ok(yaml_files)
+    }
+
     /// Set the namespace for operations
     pub fn with_namespace(mut self, namespace: String) -> Self {
         self.config.namespace = Some(namespace);
@@ -102,7 +135,8 @@ impl Kubectl {
             args.push("yaml".to_string());
         }
 
-        self.execute(args).await
+        // Don't add namespace flag - manifests specify their own namespace
+        self.execute_without_namespace(args).await
     }
 
     /// Apply all manifests in a directory
@@ -114,46 +148,40 @@ impl Kubectl {
             )));
         }
 
+        info!("Applying manifests from directory: {}", dir_path.display());
+
+        // Collect all .yaml files recursively
+        let yaml_files = Self::collect_yaml_files_recursive(dir_path)?;
+
+        if yaml_files.is_empty() {
+            warn!("No YAML files found in directory: {}", dir_path.display());
+            return Ok(Vec::new());
+        }
+
+        info!("Found {} YAML files to apply", yaml_files.len());
+
         let mut results = Vec::new();
 
-        // Apply manifests in order: ConfigMaps, Secrets, Services, Deployments, Ingresses
-        let order = ["configmap", "secret", "service", "deployment", "ingress"];
+        // Apply each file in order
+        for file in yaml_files {
+            info!("Applying manifest: {}", file.display());
 
-        for kind in &order {
-            let _pattern = format!("*-{kind}.yaml");
-            let entries = std::fs::read_dir(dir_path)?;
-
-            for entry in entries {
-                let entry = entry?;
-                let path = entry.path();
-
-                if path.is_file() {
-                    if let Some(name) = path.file_name() {
-                        if name.to_string_lossy().ends_with(&format!("-{kind}.yaml"))
-                            || (kind == &"secret" && name.to_string_lossy() == "secrets.yaml")
-                            || (kind == &"ingress" && name.to_string_lossy() == "ingress.yaml")
-                        {
-                            info!("Applying manifest: {}", path.display());
-                            match self.apply(&path).await {
-                                Ok(result) => {
-                                    if result.success {
-                                        info!("Successfully applied: {}", path.display());
-                                    } else {
-                                        warn!(
-                                            "Failed to apply {}: {}",
-                                            path.display(),
-                                            result.stderr
-                                        );
-                                    }
-                                    results.push(result);
-                                }
-                                Err(e) => {
-                                    error!("Error applying {}: {}", path.display(), e);
-                                    return Err(e);
-                                }
-                            }
-                        }
+            match self.apply(&file).await {
+                Ok(result) => {
+                    if result.success {
+                        info!("Successfully applied: {}", file.display());
+                    } else {
+                        warn!(
+                            "Failed to apply {}: {}",
+                            file.display(),
+                            result.stderr
+                        );
                     }
+                    results.push(result);
+                }
+                Err(e) => {
+                    error!("Error applying {}: {}", file.display(), e);
+                    return Err(e);
                 }
             }
         }
@@ -174,7 +202,8 @@ impl Kubectl {
             args.push("--dry-run=client".to_string());
         }
 
-        self.execute(args).await
+        // Don't add namespace flag - manifests specify their own namespace
+        self.execute_without_namespace(args).await
     }
 
     /// Delete all resources from a directory of manifests
@@ -186,45 +215,43 @@ impl Kubectl {
             )));
         }
 
+        info!("Deleting manifests from directory: {}", dir_path.display());
+
+        // Collect all .yaml files recursively
+        let mut yaml_files = Self::collect_yaml_files_recursive(dir_path)?;
+
+        if yaml_files.is_empty() {
+            warn!("No YAML files found in directory: {}", dir_path.display());
+            return Ok(Vec::new());
+        }
+
+        info!("Found {} YAML files to delete", yaml_files.len());
+
+        // Reverse for deletion (delete in reverse order)
+        yaml_files.reverse();
+
         let mut results = Vec::new();
 
-        // Delete in reverse order: Ingresses, Deployments, Services, Secrets, ConfigMaps
-        let order = ["ingress", "deployment", "service", "secret", "configmap"];
+        // Delete each file in reverse order
+        for file in yaml_files {
+            info!("Deleting manifest: {}", file.display());
 
-        for kind in &order {
-            let entries = std::fs::read_dir(dir_path)?;
-
-            for entry in entries {
-                let entry = entry?;
-                let path = entry.path();
-
-                if path.is_file() {
-                    if let Some(name) = path.file_name() {
-                        if name.to_string_lossy().ends_with(&format!("-{kind}.yaml"))
-                            || (kind == &"secret" && name.to_string_lossy() == "secrets.yaml")
-                            || (kind == &"ingress" && name.to_string_lossy() == "ingress.yaml")
-                        {
-                            info!("Deleting resources from: {}", path.display());
-                            match self.delete(&path).await {
-                                Ok(result) => {
-                                    if result.success {
-                                        info!("Successfully deleted: {}", path.display());
-                                    } else if !result.stderr.contains("NotFound") {
-                                        warn!(
-                                            "Issue deleting {}: {}",
-                                            path.display(),
-                                            result.stderr
-                                        );
-                                    }
-                                    results.push(result);
-                                }
-                                Err(e) => {
-                                    error!("Error deleting {}: {}", path.display(), e);
-                                    // Continue with other deletions even if one fails
-                                }
-                            }
-                        }
+            match self.delete(&file).await {
+                Ok(result) => {
+                    if result.success {
+                        info!("Successfully deleted: {}", file.display());
+                    } else if !result.stderr.contains("NotFound") {
+                        warn!(
+                            "Issue deleting {}: {}",
+                            file.display(),
+                            result.stderr
+                        );
                     }
+                    results.push(result);
+                }
+                Err(e) => {
+                    error!("Error deleting {}: {}", file.display(), e);
+                    // Continue with other deletions even if one fails
                 }
             }
         }
@@ -275,6 +302,57 @@ impl Kubectl {
         ];
 
         self.execute(args).await
+    }
+
+    /// Execute a kubectl command without adding namespace
+    /// Used for apply/delete operations where manifests specify their own namespace
+    async fn execute_without_namespace(&self, mut args: Vec<String>) -> Result<KubectlResult> {
+        // Add context if configured
+        if let Some(context) = &self.config.context {
+            args.push("--context".to_string());
+            args.push(context.clone());
+        }
+
+        // Add kubeconfig if configured
+        if let Some(kubeconfig) = &self.config.kubeconfig {
+            args.push("--kubeconfig".to_string());
+            args.push(kubeconfig.display().to_string());
+        }
+
+        if self.config.verbose {
+            debug!(
+                "Executing kubectl command: {} {}",
+                self.config.kubectl_path,
+                args.join(" ")
+            );
+        }
+
+        // Execute the command
+        let output = Command::new(&self.config.kubectl_path)
+            .args(&args)
+            .output()
+            .map_err(|e| Error::External(format!("Failed to execute kubectl: {e}")))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let exit_code = output.status.code().unwrap_or(-1);
+        let success = output.status.success();
+
+        if self.config.verbose {
+            if !stdout.is_empty() {
+                debug!("kubectl stdout: {stdout}");
+            }
+            if !stderr.is_empty() && !success {
+                debug!("kubectl stderr: {stderr}");
+            }
+        }
+
+        Ok(KubectlResult {
+            exit_code,
+            stdout,
+            stderr,
+            success,
+        })
     }
 
     /// Execute a kubectl command with the given arguments

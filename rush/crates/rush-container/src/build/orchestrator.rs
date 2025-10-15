@@ -54,6 +54,31 @@ impl BuildOrchestratorConfig {
     pub fn enable_caching(&self) -> bool {
         self.enable_cache
     }
+
+    /// Resolve paths based on product_dir
+    /// This should be called after product_dir is set
+    pub fn resolve_paths(&mut self) {
+        // Phase 4 validation: Check that product_dir is set
+        if self.product_dir.as_os_str().is_empty() {
+            warn!("Cannot resolve cache_dir: product_dir is not set");
+            return;
+        }
+
+        // If cache_dir is not set (empty), derive it from product_dir
+        if self.cache_dir.as_os_str().is_empty() {
+            self.cache_dir = self.product_dir.join(".rush/cache");
+            debug!("Resolved cache_dir to: {}", self.cache_dir.display());
+        }
+
+        // Phase 4 validation: Warn if cache_dir is outside product_dir
+        if !self.cache_dir.starts_with(&self.product_dir) {
+            warn!(
+                "Cache directory '{}' is outside product directory '{}'.                 This may cause inconsistent behavior when running from different directories.",
+                self.cache_dir.display(),
+                self.product_dir.display()
+            );
+        }
+    }
 }
 
 impl Default for BuildOrchestratorConfig {
@@ -65,7 +90,7 @@ impl Default for BuildOrchestratorConfig {
             parallel_builds: true,
             max_parallel: 4,
             enable_cache: true,
-            cache_dir: PathBuf::from(".rush/cache"),
+            cache_dir: PathBuf::new(),  // Will be resolved from product_dir
         }
     }
 }

@@ -120,7 +120,16 @@ impl ProgressReporter {
 /// Execute the full deployment pipeline with production features
 pub async fn execute(config: Arc<Config>, deployment_config: DeploymentConfig) -> Result<()> {
     // Initialize audit logging
-    let audit_log_dir = std::path::PathBuf::from(".rush/audit");
+    // Phase 4 validation: Ensure product_path is accessible
+    let product_path = config.product_path();
+    if product_path.as_os_str().is_empty() {
+        return Err(Error::Config(
+            "Cannot initialize audit logging: product_path is not set".to_string()
+        ));
+    }
+
+    let audit_log_dir = product_path.join(".rush/audit");
+    debug!("Audit log directory resolved to: {}", audit_log_dir.display());
     let audit_manager = rush_k8s::AuditManager::with_file_logger(audit_log_dir)?;
 
     let environment = config.environment().to_string();
