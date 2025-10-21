@@ -1,5 +1,5 @@
 env:
-  DOCKER_REGISTRY: not_set
+  DOCKER_REGISTRY: registry.wonop.dev/wonop
   LOCAL_CTX: not_set
   DEV_CTX: not_set
   STAGING_CTX: not_set
