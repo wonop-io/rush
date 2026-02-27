@@ -1,0 +1,11 @@
+{
+  "id": "8ea6245d-c4fa-480b-af44-f13c710f0447",
+  "session_id": "cli-default",
+  "message_id": "mcp",
+  "timestamp": "2026-01-08T21:21:26.838954Z",
+  "description": "Before edit: /Users/tfr/Documents/Projects/rush/rush/crates/rush-security/src/env_defs.rs",
+  "files": [
+    "rush/crates/rush-security/src/env_defs.rs"
+  ],
+  "trigger": null
+}

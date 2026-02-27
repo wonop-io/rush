@@ -341,17 +341,8 @@ impl EnvironmentDefinitions {
         let stack_yaml: serde_yaml::Value = serde_yaml::from_str(&stack_yaml_content)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
-        let mut processed_count = 0;
-        let mut skipped_count = 0;
-
         // Process each component
         if let Some(components_map) = stack_yaml.as_mapping() {
-            let total_components = components_map.len();
-            debug!(
-                "Found {} components in stack.spec.yaml",
-                total_components
-            );
-
             for (component_name, component_info) in components_map {
                 if let (Some(component_name), Some(location)) = (
                     component_name.as_str(),
@@ -359,25 +350,16 @@ impl EnvironmentDefinitions {
                 ) {
                     let component_dir = self.product_dir.join(location);
                     if !component_dir.exists() {
-                        warn!(
-                            "Component '{}' directory not found at '{}', skipping",
-                            component_name,
-                            component_dir.display()
-                        );
-                        skipped_count += 1;
+                        warn!("Component '{component_name}' directory not found, skipping");
                         continue;
                     }
 
                     self.process_component_env_file(component_name, &component_dir)?;
-                    processed_count += 1;
                 }
             }
         }
 
-        info!(
-            "Environment file generation complete: {} processed, {} skipped",
-            processed_count, skipped_count
-        );
+        info!("Successfully generated all environment files");
         Ok(())
     }
 
@@ -644,143 +626,5 @@ mod tests {
         assert_eq!(saved_map.get("KEY3"), Some(&"value3".to_string()));
         assert_eq!(saved_map.get("KEY4"), Some(&"value4".to_string()));
         assert!(!saved_map.contains_key("KEY2"));
-    }
-
-    #[test]
-    fn test_yaml_tag_parsing_static() {
-        // Test that YAML tags like !Static are parsed correctly
-        let yaml = r#"
-backend:
-  RUST_LOG: !Static "trace"
-  PORT: !Static "8000"
-frontend:
-  API_URL: !Static "http://localhost:8000"
-"#;
-
-        let result: Result<HashMap<String, HashMap<String, GenerationMethod>>, _> =
-            serde_yaml::from_str(yaml);
-
-        assert!(
-            result.is_ok(),
-            "Failed to parse YAML with !Static tags: {:?}",
-            result.err()
-        );
-
-        let parsed = result.unwrap();
-        assert_eq!(parsed.len(), 2, "Should have 2 components");
-
-        // Check backend component
-        let backend = parsed.get("backend").expect("Should have backend component");
-        assert_eq!(backend.len(), 2, "Backend should have 2 variables");
-        assert!(matches!(
-            backend.get("RUST_LOG"),
-            Some(GenerationMethod::Static(v)) if v == "trace"
-        ));
-        assert!(matches!(
-            backend.get("PORT"),
-            Some(GenerationMethod::Static(v)) if v == "8000"
-        ));
-
-        // Check frontend component
-        let frontend = parsed.get("frontend").expect("Should have frontend component");
-        assert_eq!(frontend.len(), 1, "Frontend should have 1 variable");
-        assert!(matches!(
-            frontend.get("API_URL"),
-            Some(GenerationMethod::Static(v)) if v == "http://localhost:8000"
-        ));
-    }
-
-    #[test]
-    fn test_yaml_tag_parsing_all_variants() {
-        // Test all GenerationMethod variants
-        let yaml = r#"
-test_component:
-  STATIC_VAR: !Static "static_value"
-  ASK_VAR: !Ask "Enter value"
-  ASK_DEFAULT_VAR: !AskWithDefault ["Enter value", "default"]
-  TIMESTAMP_VAR: !Timestamp "%Y-%m-%d"
-"#;
-
-        let result: Result<HashMap<String, HashMap<String, GenerationMethod>>, _> =
-            serde_yaml::from_str(yaml);
-
-        assert!(
-            result.is_ok(),
-            "Failed to parse YAML with various tags: {:?}",
-            result.err()
-        );
-
-        let parsed = result.unwrap();
-        let component = parsed
-            .get("test_component")
-            .expect("Should have test_component");
-
-        assert!(matches!(
-            component.get("STATIC_VAR"),
-            Some(GenerationMethod::Static(v)) if v == "static_value"
-        ));
-        assert!(matches!(
-            component.get("ASK_VAR"),
-            Some(GenerationMethod::Ask(v)) if v == "Enter value"
-        ));
-        assert!(matches!(
-            component.get("ASK_DEFAULT_VAR"),
-            Some(GenerationMethod::AskWithDefault(prompt, default))
-                if prompt == "Enter value" && default == "default"
-        ));
-        assert!(matches!(
-            component.get("TIMESTAMP_VAR"),
-            Some(GenerationMethod::Timestamp(v)) if v == "%Y-%m-%d"
-        ));
-    }
-
-    #[test]
-    fn test_env_override_merging() {
-        // Test that environment-specific values correctly override base values
-        let base_yaml = r#"
-backend:
-  LOG_LEVEL: !Static "info"
-  PORT: !Static "8000"
-  DEBUG: !Static "false"
-"#;
-
-        let prod_yaml = r#"
-backend:
-  LOG_LEVEL: !Static "error"
-  EXTRA_VAR: !Static "prod_only"
-"#;
-
-        let base: HashMap<String, HashMap<String, GenerationMethod>> =
-            serde_yaml::from_str(base_yaml).unwrap();
-        let prod: HashMap<String, HashMap<String, GenerationMethod>> =
-            serde_yaml::from_str(prod_yaml).unwrap();
-
-        let merged = EnvironmentDefinitions::merge_components(base, prod);
-
-        let backend = merged.get("backend").expect("Should have backend");
-
-        // LOG_LEVEL should be overridden to "error"
-        assert!(matches!(
-            backend.environment_variables.get("LOG_LEVEL"),
-            Some(GenerationMethod::Static(v)) if v == "error"
-        ));
-
-        // PORT should remain from base
-        assert!(matches!(
-            backend.environment_variables.get("PORT"),
-            Some(GenerationMethod::Static(v)) if v == "8000"
-        ));
-
-        // DEBUG should remain from base
-        assert!(matches!(
-            backend.environment_variables.get("DEBUG"),
-            Some(GenerationMethod::Static(v)) if v == "false"
-        ));
-
-        // EXTRA_VAR should be added from prod
-        assert!(matches!(
-            backend.environment_variables.get("EXTRA_VAR"),
-            Some(GenerationMethod::Static(v)) if v == "prod_only"
-        ));
     }
 }

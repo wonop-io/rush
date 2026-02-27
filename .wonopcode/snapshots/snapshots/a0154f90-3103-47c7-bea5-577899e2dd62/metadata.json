@@ -1,0 +1,11 @@
+{
+  "id": "a0154f90-3103-47c7-bea5-577899e2dd62",
+  "session_id": "cli-default",
+  "message_id": "mcp",
+  "timestamp": "2026-01-08T21:26:24.323366Z",
+  "description": "Before edit: /Users/tfr/Documents/Projects/rush/rush/crates/rush-config/src/environment/generator.rs",
+  "files": [
+    "rush/crates/rush-config/src/environment/generator.rs"
+  ],
+  "trigger": null
+}
