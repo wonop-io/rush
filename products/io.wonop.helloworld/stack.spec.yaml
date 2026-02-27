@@ -56,6 +56,7 @@ ingress:
   components:
     - "backend"
     - "frontend"
+    - "demo-bazel"
   artefacts:
     "./ingress/nginx.conf": nginx.conf
   watch:
@@ -64,3 +65,16 @@ ingress:
   depends_on:
     - frontend
     - backend
+
+demo-bazel:
+  build_type: "Bazel"
+  location: "demo-bazel"
+  output_dir: "target/bazel-out"
+  color: "cyan"
+  port: 8080
+  target_port: 8080
+  mount_point: "/bazel"
+  targets:
+    - "//src:app"
+  base_image: "python:3.11-slim"
+  k8s: demo-bazel/infrastructure

@@ -113,6 +113,9 @@ pub struct BuildOrchestrator {
     active_builds: Arc<Mutex<HashSet<String>>>,
     /// Flag to indicate builds are being cancelled
     cancelling: Arc<AtomicBool>,
+    /// Flag to track if this is the first build (initial startup)
+    /// Ingress always rebuilds on initial startup
+    is_initial_build: Arc<AtomicBool>,
 }
 
 impl BuildOrchestrator {
@@ -147,6 +150,7 @@ impl BuildOrchestrator {
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
             active_builds: Arc::new(Mutex::new(HashSet::new())),
             cancelling: Arc::new(AtomicBool::new(false)),
+            is_initial_build: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -181,6 +185,7 @@ impl BuildOrchestrator {
             output_sink: Arc::new(tokio::sync::RwLock::new(None)),
             active_builds: Arc::new(Mutex::new(HashSet::new())),
             cancelling: Arc::new(AtomicBool::new(false)),
+            is_initial_build: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -285,9 +290,19 @@ impl BuildOrchestrator {
 
         let mut built_images = HashMap::new();
         let mut build_errors = Vec::new();
+        let mut components_actually_rebuilt = Vec::new();
 
-        // Build each component
-        for spec in &component_specs {
+        // Separate ingress components from non-ingress components
+        // Ingress needs to be built last and should always rebuild if any other component rebuilds
+        let (ingress_specs, non_ingress_specs): (Vec<ComponentBuildSpec>, Vec<ComponentBuildSpec>) = component_specs
+            .into_iter()
+            .partition(|spec| matches!(spec.build_type, BuildType::Ingress { .. }));
+        
+        // Collect all specs for context (needed for artifact rendering)
+        let all_specs: Vec<ComponentBuildSpec> = ingress_specs.iter().chain(non_ingress_specs.iter()).cloned().collect();
+
+        // Build non-ingress components first
+        for spec in &non_ingress_specs {
             // Check for cancellation
             if self.is_cancelling() || global_shutdown().is_shutting_down() {
                 info!("Build cancelled by shutdown signal");
@@ -388,7 +403,7 @@ impl BuildOrchestrator {
                 "[BUILD DECISION] Component '{}': ⚙️  Starting build",
                 spec.component_name
             );
-            match self.build_single(spec.clone(), &component_specs).await {
+            match self.build_single(spec.clone(), &all_specs).await {
                 Ok(image_name) => {
                     let component_duration = component_start.elapsed();
                     info!(
@@ -406,6 +421,9 @@ impl BuildOrchestrator {
                         .await;
 
                     built_images.insert(spec.component_name.clone(), image_name.clone());
+                    
+                    // Track that this component was actually rebuilt (not skipped)
+                    components_actually_rebuilt.push(spec.component_name.clone());
 
                     // Update cache
                     if self.config.enable_cache {
@@ -471,6 +489,216 @@ impl BuildOrchestrator {
             }
         }
 
+        // Now build ingress components
+        // Ingress always rebuilds on initial startup OR if any other component was rebuilt
+        // This ensures the nginx configuration always reflects the current state of all components
+        let is_initial = self.is_initial_build.swap(false, Ordering::SeqCst);
+        
+        for spec in &ingress_specs {
+            // Check for cancellation
+            if self.is_cancelling() || global_shutdown().is_shutting_down() {
+                info!("Build cancelled by shutdown signal");
+                return Err(rush_core::error::Error::Cancelled(
+                    "Build cancelled by user".to_string(),
+                ));
+            }
+
+            let component_span = info_span!(
+                "build_component",
+                component = %spec.component_name,
+                build_type = ?spec.build_type
+            );
+            let _enter = component_span.enter();
+
+            // Determine if we should force rebuild the ingress
+            // Always rebuild if: force_rebuild is set, OR this is initial startup, OR any other component was rebuilt
+            let force_ingress_rebuild = force_rebuild || is_initial || !components_actually_rebuilt.is_empty();
+            
+            if !components_actually_rebuilt.is_empty() {
+                info!(
+                    "[BUILD DECISION] Component '{}': Force rebuilding because {} component(s) were rebuilt: {:?}",
+                    spec.component_name,
+                    components_actually_rebuilt.len(),
+                    components_actually_rebuilt
+                );
+            } else if is_initial {
+                info!(
+                    "[BUILD DECISION] Component '{}': Force rebuilding on initial startup",
+                    spec.component_name
+                );
+            } else if force_rebuild {
+                info!(
+                    "[BUILD DECISION] Component '{}': Force rebuilding on startup",
+                    spec.component_name
+                );
+            }
+
+            info!(
+                "[BUILD DECISION] Component '{}': Evaluating build requirement",
+                spec.component_name
+            );
+            let component_start = Instant::now();
+
+            // Compute current tag
+            let current_tag = self.tag_generator.compute_tag(spec).unwrap_or_else(|e| {
+                warn!(
+                    "Failed to compute tag for {}: {}, using timestamp",
+                    spec.component_name, e
+                );
+                let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+                format!("{timestamp}")
+            });
+
+            let image_name = format!("{}/{}", self.config.product_name, spec.component_name);
+            let full_image_name = format!("{image_name}:{current_tag}");
+
+            // For ingress, we always rebuild if force_ingress_rebuild is true
+            // Otherwise, check if image exists
+            let should_build = if force_ingress_rebuild {
+                info!("[BUILD DECISION] Component '{}': Force rebuild - will rebuild regardless of existing image",
+                    spec.component_name);
+                true
+            } else {
+                // Check if image already exists with this tag
+                info!(
+                    "[BUILD DECISION] Component '{}': Checking if image '{}' exists",
+                    spec.component_name, full_image_name
+                );
+
+                match self.docker_client.image_exists(&full_image_name).await {
+                    Ok(exists) => {
+                        if exists {
+                            info!("[BUILD DECISION] Component '{}': ✓ Image '{}' already exists, skipping build",
+                                spec.component_name, full_image_name);
+                            
+                            // Record skip in performance tracker
+                            let skip_duration = component_start.elapsed();
+                            perf_tracker
+                                .record_with_component(
+                                    "component_skip",
+                                    &spec.component_name,
+                                    skip_duration,
+                                )
+                                .await;
+
+                            built_images.insert(spec.component_name.clone(), full_image_name.clone());
+
+                            if self.config.enable_cache {
+                                debug!("[BUILD DECISION] Component '{}': Adding to cache with spec for future invalidation",
+                                    spec.component_name);
+                                let mut cache_guard = self.cache.lock().await;
+                                cache_guard
+                                    .put_with_spec(
+                                        spec.component_name.clone(),
+                                        full_image_name.clone(),
+                                        spec.clone(),
+                                    )
+                                    .await;
+                            }
+
+                            {
+                                let mut state = self.state.write().await;
+                                state.mark_component_built(&spec.component_name, full_image_name);
+                            }
+
+                            false // Don't build
+                        } else {
+                            info!("[BUILD DECISION] Component '{}': Image '{}' not found locally, will build",
+                                spec.component_name, full_image_name);
+                            true
+                        }
+                    }
+                    Err(_) => {
+                        info!("[BUILD DECISION] Component '{}': Unable to check image existence, will build",
+                            spec.component_name);
+                        true
+                    }
+                }
+            };
+
+            if should_build {
+                info!(
+                    "[BUILD DECISION] Component '{}': ⚙️  Starting build",
+                    spec.component_name
+                );
+                match self.build_single(spec.clone(), &all_specs).await {
+                    Ok(image_name) => {
+                        let component_duration = component_start.elapsed();
+                        info!(
+                            "[BUILD DECISION] Component '{}': ✓ Successfully built new image '{}'",
+                            spec.component_name, image_name
+                        );
+
+                        perf_tracker
+                            .record_with_component(
+                                "component_build",
+                                &spec.component_name,
+                                component_duration,
+                            )
+                            .await;
+
+                        built_images.insert(spec.component_name.clone(), image_name.clone());
+
+                        if self.config.enable_cache {
+                            let mut cache_guard = self.cache.lock().await;
+                            cache_guard
+                                .put_with_spec(
+                                    spec.component_name.clone(),
+                                    image_name.clone(),
+                                    spec.clone(),
+                                )
+                                .await;
+                        }
+
+                        {
+                            let mut state = self.state.write().await;
+                            state.mark_component_built(&spec.component_name, image_name.clone());
+                        }
+
+                        if let Err(e) = self
+                            .event_bus
+                            .publish(Event::new(
+                                "build",
+                                ContainerEvent::BuildCompleted {
+                                    component: spec.component_name.clone(),
+                                    success: true,
+                                    duration: start_time.elapsed(),
+                                    error: None,
+                                },
+                            ))
+                            .await
+                        {
+                            debug!("Failed to publish build completed event: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        error!(
+                            "[BUILD DECISION] Component '{}': ✗ Build failed: {}",
+                            spec.component_name, e
+                        );
+                        build_errors.push((spec.component_name.clone(), e.to_string()));
+
+                        {
+                            let mut state = self.state.write().await;
+                            state.record_component_error(&spec.component_name, e.to_string());
+                        }
+
+                        if let Err(pub_err) = self
+                            .event_bus
+                            .publish(Event::error(
+                                "build",
+                                format!("Failed to build {}: {}", spec.component_name, e),
+                                false,
+                            ))
+                            .await
+                        {
+                            debug!("Failed to publish error event: {pub_err}");
+                        }
+                    }
+                }
+            }
+        }
+
         // Check if any builds failed
         if !build_errors.is_empty() {
             error!("Build failed for {} components", build_errors.len());
@@ -492,7 +720,7 @@ impl BuildOrchestrator {
                 let mut metadata = HashMap::new();
                 metadata.insert(
                     "component_count".to_string(),
-                    component_specs.len().to_string(),
+                    all_specs.len().to_string(),
                 );
                 metadata.insert("force_rebuild".to_string(), force_rebuild.to_string());
                 metadata
@@ -723,6 +951,67 @@ impl BuildOrchestrator {
                 );
                 Ok(String::new())
             }
+            BuildType::Bazel {
+                location,
+                output_dir,
+                targets,
+                additional_args,
+                base_image,
+                ..
+            } => {
+                info!("Building Bazel component: {}", spec.component_name);
+
+                // Resolve workspace path
+                let workspace_path = self.config.product_dir.join(location);
+
+                // Validate workspace exists
+                if !workspace_path.join("WORKSPACE").exists()
+                    && !workspace_path.join("WORKSPACE.bazel").exists()
+                {
+                    return Err(rush_core::error::Error::Build(format!(
+                        "No WORKSPACE file found in {}",
+                        workspace_path.display()
+                    )));
+                }
+
+                // Execute Bazel build
+                self.run_bazel_build(&workspace_path, targets.as_ref(), additional_args.as_ref())
+                    .await?;
+
+                // Resolve output directory
+                let output_path = if std::path::Path::new(output_dir).is_absolute() {
+                    std::path::PathBuf::from(output_dir)
+                } else {
+                    workspace_path.join(output_dir)
+                };
+
+                // Create output directory if needed
+                tokio::fs::create_dir_all(&output_path)
+                    .await
+                    .map_err(rush_core::error::Error::Io)?;
+
+                // Generate Dockerfile for OCI image
+                let dockerfile_path = self
+                    .generate_bazel_dockerfile(&output_path, &workspace_path, base_image.as_deref())
+                    .await?;
+
+                // Build Docker image
+                self.docker_client
+                    .build_image(
+                        &full_image_name,
+                        &dockerfile_path.to_string_lossy(),
+                        &output_path.to_string_lossy(),
+                    )
+                    .await?;
+
+                info!(
+                    "Built Bazel component {} in {:?}",
+                    spec.component_name,
+                    start_time.elapsed()
+                );
+
+                Ok(full_image_name)
+            }
         }
     }
 
@@ -918,6 +1207,136 @@ impl BuildOrchestrator {
 
             Ok(())
         })
+    }
+
+    /// Execute Bazel build command in the workspace
+    async fn run_bazel_build(
+        &self,
+        workspace_path: &Path,
+        targets: Option<&Vec<String>>,
+        additional_args: Option<&Vec<String>>,
+    ) -> Result<()> {
+        use rush_utils::{CommandConfig, CommandRunner};
+
+        let mut args = vec!["build".to_string()];
+
+        // Add targets or default to all
+        if let Some(t) = targets {
+            args.extend(t.clone());
+        } else {
+            args.push("//...".to_string());
+        }
+
+        // Add compilation mode
+        args.push("--compilation_mode=opt".to_string());
+
+        // Add additional arguments
+        if let Some(extra) = additional_args {
+            args.extend(extra.clone());
+        }
+
+        info!(
+            "Running Bazel build in {} with args: {:?}",
+            workspace_path.display(),
+            args
+        );
+
+        let config = CommandConfig::new("bazel")
+            .args(args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+            .working_dir(workspace_path.to_str().unwrap())
+            .capture(true);
+
+        let output = CommandRunner::run(config)
+            .await
+            .map_err(|e| rush_core::error::Error::Build(format!("Bazel execution failed: {}", e)))?;
+
+        if !output.success() {
+            return Err(rush_core::error::Error::Build(format!(
+                "Bazel build failed:\n{}",
+                output.stderr
+            )));
+        }
+
+        info!("Bazel build completed successfully");
+        Ok(())
+    }
+
+    /// Generate a Dockerfile for Bazel build outputs
+    async fn generate_bazel_dockerfile(
+        &self,
+        output_path: &Path,
+        workspace_path: &Path,
+        base_image: Option<&str>,
+    ) -> Result<PathBuf> {
+        let base = base_image.unwrap_or("python:3.11-slim");
+
+        // For Python projects, we copy the source files directly rather than bazel-bin
+        // because bazel-bin contains symlinks and read-only files that are problematic
+        let src_dir = workspace_path.join("src");
+        if src_dir.exists() {
+            let target_src = output_path.join("src");
+            tokio::fs::create_dir_all(&target_src)
+                .await
+                .map_err(rush_core::error::Error::Io)?;
+
+            // Copy source files (not symlinks, just actual files)
+            let mut entries = tokio::fs::read_dir(&src_dir)
+                .await
+                .map_err(rush_core::error::Error::Io)?;
+
+            while let Some(entry) = entries
+                .next_entry()
+                .await
+                .map_err(rush_core::error::Error::Io)?
+            {
+                let path = entry.path();
+                let file_name = entry.file_name();
+                
+                // Skip BUILD files and non-Python files for the Docker image
+                let name_str = file_name.to_string_lossy();
+                if name_str == "BUILD" || name_str == "BUILD.bazel" {
+                    continue;
+                }
+                
+                // Only copy regular files (not symlinks or directories for now)
+                let metadata = tokio::fs::metadata(&path)
+                    .await
+                    .map_err(rush_core::error::Error::Io)?;
+                    
+                if metadata.is_file() {
+                    let dst_path = target_src.join(&file_name);
+                    tokio::fs::copy(&path, &dst_path)
+                        .await
+                        .map_err(rush_core::error::Error::Io)?;
+                }
+            }
+        }
+
+        let dockerfile_content = format!(
+            r#"FROM {base}
+
+WORKDIR /app
+COPY src/ /app/
+
+# Run the Python application
+CMD ["python", "hello.py"]
+"#
+        );
+
+        let dockerfile_path = output_path.join("Dockerfile.generated");
+        tokio::fs::write(&dockerfile_path, dockerfile_content)
+            .await
+            .map_err(|e| {
+                rush_core::error::Error::Build(format!("Failed to write Dockerfile: {}", e))
+            })?;
+
+        info!(
+            "Generated Dockerfile at {} with base image {}",
+            dockerfile_path.display(),
+            base
+        );
+
+        Ok(dockerfile_path)
     }
 
     /// Get build statistics

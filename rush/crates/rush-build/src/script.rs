@@ -61,7 +61,9 @@ impl BuildScript {
             | BuildType::KubernetesInstallation { .. }
             | BuildType::Ingress { .. }
             | BuildType::PureDockerImage { .. }
-            | BuildType::LocalService { .. } => {
+            | BuildType::LocalService { .. }
+            | BuildType::Bazel { .. } => {
+                // Bazel builds are handled directly in BuildOrchestrator, not via shell scripts
                 trace!("No build script needed for {:?}", self.build_type);
                 "".to_string()
             }

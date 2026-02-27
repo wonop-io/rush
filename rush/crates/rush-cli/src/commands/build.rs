@@ -155,6 +155,14 @@ fn parse_build_type(build_type_str: &str) -> Result<BuildType> {
             command: None,
             entrypoint: None,
         }),
+        "Bazel" => Ok(BuildType::Bazel {
+            location: String::new(),
+            output_dir: "target/bazel-out".to_string(),
+            context_dir: None,
+            targets: None,
+            additional_args: None,
+            base_image: None,
+        }),
         _ => Err(Error::InvalidInput(format!(
             "Unknown build type: {build_type_str}"
         ))),
@@ -235,6 +243,11 @@ async fn build_component(context: &BuildContext, toolchain: &Arc<ToolchainContex
             // Build Docker image for ingress
             debug!("Building Ingress component that depends on: {components:?}");
             build_docker_image(context, toolchain).await?;
+        }
+        BuildType::Bazel { location, .. } => {
+            // Bazel builds are handled by the BuildOrchestrator
+            // This CLI build command is for standalone component builds
+            debug!("Bazel component {} at {} - use 'rush start' for full Bazel builds", context.component, location);
         }
     }
 

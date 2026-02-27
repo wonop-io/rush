@@ -318,6 +318,22 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
         BuildType::Ingress { components, .. } => {
             println!("  Routed Components: {}", components.join(", "));
         }
+        BuildType::Bazel {
+            targets,
+            output_dir,
+            base_image,
+            ..
+        } => {
+            if let Some(targets) = targets {
+                println!("  Bazel Targets: {}", targets.join(", "));
+            } else {
+                println!("  Bazel Targets: //... (all)");
+            }
+            println!("  Output Directory: {output_dir}");
+            if let Some(base) = base_image {
+                println!("  Base Image: {base}");
+            }
+        }
         _ => {}
     }
 
@@ -351,6 +367,7 @@ fn format_build_type(build_type: &BuildType) -> &str {
         BuildType::LocalService { .. } => "Local Service",
         BuildType::PureKubernetes => "Kubernetes Only",
         BuildType::KubernetesInstallation { .. } => "Kubernetes Installation",
+        BuildType::Bazel { .. } => "Bazel Build",
     }
 }
 
@@ -399,6 +416,18 @@ fn determine_context_dir(build_type: &BuildType, product_path: &std::path::Path)
                 product_path.join(ctx)
             } else {
                 product_path.to_path_buf()
+            }
+        }
+        BuildType::Bazel {
+            location,
+            context_dir,
+            ..
+        } => {
+            let component_base = product_path.join(location);
+            if let Some(ctx) = context_dir {
+                component_base.join(ctx)
+            } else {
+                component_base
             }
         }
         _ => product_path.to_path_buf(),

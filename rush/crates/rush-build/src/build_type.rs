@@ -131,6 +131,22 @@ pub enum BuildType {
         /// Command override
         command: Option<String>,
     },
+
+    /// A Bazel-based build that produces an OCI image
+    Bazel {
+        /// Path to the Bazel workspace directory
+        location: String,
+        /// Output directory for build artifacts (relative or absolute)
+        output_dir: String,
+        /// Optional context directory for Docker build
+        context_dir: Option<String>,
+        /// Optional list of Bazel targets to build (defaults to "//...")
+        targets: Option<Vec<String>>,
+        /// Optional additional Bazel arguments
+        additional_args: Option<Vec<String>>,
+        /// Optional base image for OCI generation (defaults to "scratch")
+        base_image: Option<String>,
+    },
 }
 
 impl BuildType {
@@ -143,6 +159,7 @@ impl BuildType {
             BuildType::Script { location, .. } => Some(location),
             BuildType::Zola { location, .. } => Some(location),
             BuildType::Book { location, .. } => Some(location),
+            BuildType::Bazel { location, .. } => Some(location),
             _ => None,
         }
     }
