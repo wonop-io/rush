@@ -352,6 +352,38 @@ impl ComponentBuildSpec {
                     .to_string(),
             },
             "LocalService" => Self::parse_local_service(yaml_section, &variables),
+            "Bazel" => BuildType::Bazel {
+                location: yaml_section
+                    .get("location")
+                    .expect("location is required for Bazel")
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
+                output_dir: yaml_section
+                    .get("output_dir")
+                    .map(|v| v.as_str().unwrap().to_string())
+                    .unwrap_or_else(|| "target/bazel-out".to_string()),
+                context_dir: yaml_section
+                    .get("context_dir")
+                    .map(|v| v.as_str().unwrap().to_string()),
+                targets: yaml_section.get("targets").map(|v| {
+                    v.as_sequence()
+                        .unwrap()
+                        .iter()
+                        .map(|item| item.as_str().unwrap().to_string())
+                        .collect()
+                }),
+                additional_args: yaml_section.get("additional_args").map(|v| {
+                    v.as_sequence()
+                        .unwrap()
+                        .iter()
+                        .map(|item| item.as_str().unwrap().to_string())
+                        .collect()
+                }),
+                base_image: yaml_section
+                    .get("base_image")
+                    .map(|v| v.as_str().unwrap().to_string()),
+            },
             _ => panic!("Invalid build_type"),
         };
 
@@ -366,6 +398,7 @@ impl ComponentBuildSpec {
             BuildType::Zola { location, .. } => Some(location.clone()),
             BuildType::Book { location, .. } => Some(location.clone()),
             BuildType::Script { location, .. } => Some(location.clone()),
+            BuildType::Bazel { location, .. } => Some(location.clone()),
             _ => None,
         };
 
@@ -733,6 +766,7 @@ impl ComponentBuildSpec {
             BuildType::Zola { location, .. } => (Some(location.clone()), None),
             BuildType::Book { location, .. } => (Some(location.clone()), None),
             BuildType::Script { location, .. } => (Some(location.clone()), None),
+            BuildType::Bazel { location, .. } => (Some(location.clone()), None),
             BuildType::Ingress { components, .. } => {
                 let filtered = services
                     .iter()

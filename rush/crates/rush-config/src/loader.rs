@@ -79,6 +79,72 @@ pub struct RushdConfig {
     /// Development output configuration
     #[serde(default)]
     pub dev_output: DevOutputConfig,
+    /// Bazel build configuration
+    #[serde(default)]
+    pub bazel: BazelConfig,
+}
+
+/// Bazel build configuration
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BazelConfig {
+    /// Default output directory for Bazel build artifacts
+    /// Supports both relative paths (resolved from product directory) and absolute paths
+    #[serde(default = "default_bazel_output_dir")]
+    pub output_dir: String,
+    /// Path to Bazel binary (defaults to "bazel" in PATH)
+    #[serde(default = "default_bazel_binary")]
+    pub binary: String,
+    /// Additional default arguments to pass to Bazel builds
+    #[serde(default)]
+    pub additional_args: Vec<String>,
+}
+
+impl Default for BazelConfig {
+    fn default() -> Self {
+        Self {
+            output_dir: default_bazel_output_dir(),
+            binary: default_bazel_binary(),
+            additional_args: Vec::new(),
+        }
+    }
+}
+
+fn default_bazel_output_dir() -> String {
+    "target/bazel-out".to_string()
+}
+
+fn default_bazel_binary() -> String {
+    "bazel".to_string()
+}
+
+impl BazelConfig {
+    /// Resolve the output directory path.
+    /// If the path is relative, it's resolved relative to the given base directory.
+    /// If the path is absolute, it's returned as-is.
+    pub fn resolve_output_dir(&self, base_dir: &std::path::Path) -> std::path::PathBuf {
+        let path = std::path::Path::new(&self.output_dir);
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            base_dir.join(path)
+        }
+    }
+
+    /// Resolve output directory for a specific component.
+    /// This allows per-component output directories while respecting the configured default.
+    pub fn resolve_component_output_dir(
+        &self,
+        base_dir: &std::path::Path,
+        component_output_dir: Option<&str>,
+    ) -> std::path::PathBuf {
+        let output_dir = component_output_dir.unwrap_or(&self.output_dir);
+        let path = std::path::Path::new(output_dir);
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            base_dir.join(path)
+        }
+    }
 }
 
 /// Development output configuration

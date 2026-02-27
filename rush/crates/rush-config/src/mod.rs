@@ -8,7 +8,7 @@ mod types;
 mod validator;
 
 // Re-export types and functions needed by other modules
-pub use self::loader::{apply_rushd_config, ConfigLoader, RushdConfig};
+pub use self::loader::{apply_rushd_config, BazelConfig, ConfigLoader, RushdConfig};
 pub use self::types::{Config, DomainContext};
 pub use self::validator::{validate_config, ConfigValidationError};
 
