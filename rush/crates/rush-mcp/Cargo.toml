@@ -1,0 +1,30 @@
+[package]
+name = "rush-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["stdio"]
+stdio = []
+network = []
+
+[dependencies]
+async-trait = { workspace = true }
+
+# Logging
+log = { workspace = true }
+rush-core = { workspace = true }
+rush-output = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# MCP and async
+tokio = { workspace = true, features = ["full"] }
+
+# UUID for session management
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+[dev-dependencies]

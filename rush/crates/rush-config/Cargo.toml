@@ -1,0 +1,18 @@
+[package]
+name = "rush-config"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+log = { workspace = true }
+rush-core = { workspace = true }
+rush-utils = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+slug = { workspace = true }
+tera = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

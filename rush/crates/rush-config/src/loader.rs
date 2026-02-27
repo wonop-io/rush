@@ -1,0 +1,342 @@
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use log::{debug, error, trace};
+use rush_core::constants::*;
+use rush_utils::find_project_root;
+use serde::{Deserialize, Serialize};
+
+use crate::types::Config;
+
+/// Loads configuration files for Rush CLI
+pub struct ConfigLoader {
+    root_path: PathBuf,
+}
+
+impl ConfigLoader {
+    /// Creates a new ConfigLoader with the given root path
+    pub fn new<P: AsRef<Path>>(root_path: P) -> Self {
+        Self {
+            root_path: root_path.as_ref().to_path_buf(),
+        }
+    }
+
+    /// Creates a new ConfigLoader using the project root as the root path
+    pub fn from_project_root() -> Result<Self, String> {
+        let project_root =
+            find_project_root().ok_or_else(|| "Failed to find project root".to_string())?;
+
+        Ok(Self::new(project_root))
+    }
+
+    /// Loads the configuration for a specific product and environment
+    pub fn load_config(
+        &self,
+        product_name: &str,
+        environment: &str,
+        docker_registry: &str,
+        start_port: u16,
+    ) -> Result<Arc<Config>, String> {
+        debug!("Loading configuration for product '{product_name}' in environment '{environment}'");
+
+        // Validate environment
+        if !VALID_ENVIRONMENTS.contains(&environment) {
+            let err_msg = format!("Invalid environment: {environment}");
+            error!("{err_msg}");
+            error!("Valid environments: {VALID_ENVIRONMENTS:?}");
+            return Err(err_msg);
+        }
+
+        trace!("Environment '{environment}' is valid");
+
+        // Create config
+        Config::new(
+            self.root_path.to_str().unwrap(),
+            product_name,
+            environment,
+            docker_registry,
+            start_port,
+        )
+    }
+
+    /// Loads the rushd.yaml configuration file
+    pub fn load_rushd_config(&self) -> Result<RushdConfig, String> {
+        let config_path = self.root_path.join(RUSHD_CONFIG_FILE);
+        trace!("Loading rushd config from: {}", config_path.display());
+
+        rush_core::config_loader::ConfigLoader::load_yaml(&config_path)
+            .map_err(|e| format!("Failed to load rushd.yaml: {e}"))
+    }
+}
+
+/// Configuration loaded from rushd.yaml
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RushdConfig {
+    pub env: std::collections::HashMap<String, String>,
+    /// Cross-compilation method: "native" (default) or "cross-rs"
+    #[serde(default = "default_cross_compile")]
+    pub cross_compile: String,
+    /// Development output configuration
+    #[serde(default)]
+    pub dev_output: DevOutputConfig,
+    /// Bazel build configuration
+    #[serde(default)]
+    pub bazel: BazelConfig,
+}
+
+/// Bazel build configuration
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BazelConfig {
+    /// Default output directory for Bazel build artifacts
+    /// Supports both relative paths (resolved from product directory) and absolute paths
+    #[serde(default = "default_bazel_output_dir")]
+    pub output_dir: String,
+    /// Path to Bazel binary (defaults to "bazel" in PATH)
+    #[serde(default = "default_bazel_binary")]
+    pub binary: String,
+    /// Additional default arguments to pass to Bazel builds
+    #[serde(default)]
+    pub additional_args: Vec<String>,
+}
+
+impl Default for BazelConfig {
+    fn default() -> Self {
+        Self {
+            output_dir: default_bazel_output_dir(),
+            binary: default_bazel_binary(),
+            additional_args: Vec::new(),
+        }
+    }
+}
+
+fn default_bazel_output_dir() -> String {
+    "target/bazel-out".to_string()
+}
+
+fn default_bazel_binary() -> String {
+    "bazel".to_string()
+}
+
+impl BazelConfig {
+    /// Resolve the output directory path.
+    /// If the path is relative, it's resolved relative to the given base directory.
+    /// If the path is absolute, it's returned as-is.
+    pub fn resolve_output_dir(&self, base_dir: &std::path::Path) -> std::path::PathBuf {
+        let path = std::path::Path::new(&self.output_dir);
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            base_dir.join(path)
+        }
+    }
+
+    /// Resolve output directory for a specific component.
+    /// This allows per-component output directories while respecting the configured default.
+    pub fn resolve_component_output_dir(
+        &self,
+        base_dir: &std::path::Path,
+        component_output_dir: Option<&str>,
+    ) -> std::path::PathBuf {
+        let output_dir = component_output_dir.unwrap_or(&self.output_dir);
+        let path = std::path::Path::new(output_dir);
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            base_dir.join(path)
+        }
+    }
+}
+
+/// Development output configuration
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DevOutputConfig {
+    /// Output mode
+    #[serde(default = "default_output_mode")]
+    pub mode: String,
+
+    /// Component filtering
+    #[serde(default)]
+    pub components: ComponentFilterConfig,
+
+    /// Phase filtering
+    #[serde(default)]
+    pub phases: PhaseFilterConfig,
+
+    /// Log level filtering
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
+
+    /// Color configuration
+    #[serde(default)]
+    pub colors: ColorConfig,
+
+    /// File logging configuration
+    #[serde(default)]
+    pub file_log: Option<FileLogConfig>,
+
+    /// Web view configuration
+    #[serde(default)]
+    pub web: WebConfig,
+}
+
+impl Default for DevOutputConfig {
+    fn default() -> Self {
+        Self {
+            mode: default_output_mode(),
+            components: ComponentFilterConfig::default(),
+            phases: PhaseFilterConfig::default(),
+            log_level: default_log_level(),
+            colors: ColorConfig::default(),
+            file_log: None,
+            web: WebConfig::default(),
+        }
+    }
+}
+
+/// Component filter configuration
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct ComponentFilterConfig {
+    pub include: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
+}
+
+/// Phase filter configuration
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct PhaseFilterConfig {
+    #[serde(default = "default_true")]
+    pub show_build: bool,
+    #[serde(default = "default_true")]
+    pub show_runtime: bool,
+    #[serde(default = "default_true")]
+    pub show_system: bool,
+}
+
+impl Default for PhaseFilterConfig {
+    fn default() -> Self {
+        Self {
+            show_build: true,
+            show_runtime: true,
+            show_system: true,
+        }
+    }
+}
+
+/// Color configuration
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ColorConfig {
+    #[serde(default = "default_color_enabled")]
+    pub enabled: String,
+    #[serde(default = "default_color_theme")]
+    pub theme: String,
+}
+
+impl Default for ColorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_color_enabled(),
+            theme: default_color_theme(),
+        }
+    }
+}
+
+/// File logging configuration
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct FileLogConfig {
+    pub enabled: bool,
+    pub path: String,
+}
+
+/// Web view configuration
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct WebConfig {
+    #[serde(default = "default_web_port")]
+    pub port: u16,
+    #[serde(default = "default_true")]
+    pub open_browser: bool,
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            port: default_web_port(),
+            open_browser: true,
+        }
+    }
+}
+
+fn default_output_mode() -> String {
+    "auto".to_string()
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+fn default_color_enabled() -> String {
+    "auto".to_string()
+}
+
+fn default_color_theme() -> String {
+    "default".to_string()
+}
+
+fn default_web_port() -> u16 {
+    8080
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_cross_compile() -> String {
+    "native".to_string()
+}
+
+/// Applies environment variables from rushd.yaml
+pub fn apply_rushd_config(config: &RushdConfig) {
+    trace!("Applying rushd configuration");
+
+    for (key, value) in &config.env {
+        debug!("Setting environment variable: {key}={value}");
+        std::env::set_var(key, value);
+    }
+
+    trace!("Rushd configuration applied");
+}
+
+#[cfg(test)]
+mod rushd_config_tests {
+    use super::*;
+
+    #[test]
+    fn test_rushd_config_default_cross_compile() {
+        let yaml_str = r#"
+env:
+  TEST_VAR: test_value
+"#;
+        let config: RushdConfig = serde_yaml::from_str(yaml_str).unwrap();
+        assert_eq!(config.cross_compile, "native");
+    }
+
+    #[test]
+    fn test_rushd_config_cross_rs() {
+        let yaml_str = r#"
+env:
+  TEST_VAR: test_value
+cross_compile: cross-rs
+"#;
+        let config: RushdConfig = serde_yaml::from_str(yaml_str).unwrap();
+        assert_eq!(config.cross_compile, "cross-rs");
+    }
+
+    #[test]
+    fn test_rushd_config_native_explicit() {
+        let yaml_str = r#"
+env:
+  TEST_VAR: test_value
+cross_compile: native
+"#;
+        let config: RushdConfig = serde_yaml::from_str(yaml_str).unwrap();
+        assert_eq!(config.cross_compile, "native");
+    }
+}

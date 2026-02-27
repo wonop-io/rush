@@ -1,14 +1,19 @@
 frontend:
+  ssr: false
   build_type: "TrunkWasm"
   location: "frontend/webui"
+  context_dir: ".."
   dockerfile: "frontend/Dockerfile"
   color: "purple"
   mount_point: "/"
   k8s: frontend/infrastructure
+  depends_on:
+    - backend
 
 backend:
   build_type: "RustBinary"
   location: "backend/server"
+  context_dir: "."
   dockerfile: "backend/Dockerfile"
   color: "blue"
   mount_point: "/api"
@@ -16,27 +21,60 @@ backend:
   priority: 50
 
 database:
-  build_type: "Image"
-  image: "postgres:latest"
+  build_type: "LocalService"
+  service_type: "postgresql"
+  version: "16"
   color: "yellow"
-  port: 5432
-  target_port: 5432
-  volumes:
-    "./postgres.db": "/var/lib/postgresql/data"
+  persist_data: true
   env:
     POSTGRES_DB: backend
     POSTGRES_PASSWORD: admin
     POSTGRES_USER: admin
+    POSTGRES_PORT: "5432"
+  health_check: "pg_isready -U admin -p 5432"
+  init_scripts:
+    - "echo 'Database initialized for backend service'"
+
+stripe:
+  build_type: "LocalService"
+  service_type: "stripe-cli"
+  color: "orange"
+  persist_data: false
+  env:
+    STRIPE_WEBHOOK_URL: "http://localhost:9000/api/stripe/webhook"
+    # Set STRIPE_API_KEY in your .env file or secrets to avoid interactive auth
+    # STRIPE_API_KEY: "sk_test_..."
+  command: "listen --forward-to http://localhost:9000/api/stripe/webhook --skip-verify"
 
 ingress:
   build_type: "Ingress"
   port: 9000
+  target_port: 80
   location: "./ingress"
-  context_dir: ../target
   dockerfile: "./ingress/Dockerfile"
   color: "green"
   components:
     - "backend"
     - "frontend"
+    - "demo-bazel"
   artefacts:
     "./ingress/nginx.conf": nginx.conf
+  watch:
+    - "**/*_app"
+    - "**/*_api"
+  depends_on:
+    - frontend
+    - backend
+
+demo-bazel:
+  build_type: "Bazel"
+  location: "demo-bazel"
+  output_dir: "target/bazel-out"
+  color: "cyan"
+  port: 8080
+  target_port: 8080
+  mount_point: "/bazel"
+  targets:
+    - "//src:app"
+  base_image: "python:3.11-slim"
+  k8s: demo-bazel/infrastructure

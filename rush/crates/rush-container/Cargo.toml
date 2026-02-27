@@ -1,0 +1,49 @@
+[package]
+name = "rush-container"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+colored = { workspace = true }
+futures = { workspace = true }
+git2 = { workspace = true }
+hex.workspace = true
+ignore = { workspace = true }
+log = { workspace = true }
+md5 = { workspace = true }
+notify = { workspace = true }
+notify-debouncer-full = { workspace = true }
+once_cell = { workspace = true }
+petgraph = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+regex = { workspace = true }
+rush-build = { workspace = true }
+rush-config = { workspace = true }
+rush-core = { workspace = true }
+rush-docker = { workspace = true }
+rush-k8s = { workspace = true }
+rush-local-services = { workspace = true }
+rush-output = { workspace = true }
+rush-security = { workspace = true }
+rush-toolchain = { workspace = true }
+rush-utils = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sha2.workspace = true
+tempfile = { workspace = true }
+tera = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json", "fmt", "chrono"] }
+uuid = { workspace = true }
+walkdir.workspace = true
+
+[dev-dependencies]
+serial_test = { workspace = true }

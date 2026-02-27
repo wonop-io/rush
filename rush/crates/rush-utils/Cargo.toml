@@ -1,0 +1,24 @@
+[package]
+name = "rush-utils"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dirs = { workspace = true }
+glob = { workspace = true }
+lazy_static = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true }
+rush-core = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tera = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+tempfile = { workspace = true }

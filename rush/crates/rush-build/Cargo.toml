@@ -1,0 +1,22 @@
+[package]
+name = "rush-build"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+log = { workspace = true }
+rush-config = { workspace = true }
+rush-core = { workspace = true }
+rush-toolchain = { workspace = true }
+rush-utils = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+slug = { workspace = true }
+tera = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

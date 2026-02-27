@@ -1,0 +1,51 @@
+# Example stack configuration with local services
+
+# PostgreSQL database service (persistent)
+postgres:
+  build_type: "LocalService"
+  service_type: "postgresql"
+  version: "15"
+  persist_data: true
+  env:
+    POSTGRES_USER: "testuser"
+    POSTGRES_PASSWORD: "testpass"
+    POSTGRES_DB: "testdb"
+    POSTGRES_PORT: "5432"
+  health_check: "pg_isready -U testuser -p 5432"
+  init_scripts:
+    - "echo 'Database initialized'"
+
+# Redis cache service (persistent)  
+redis:
+  build_type: "LocalService"
+  service_type: "redis"
+  version: "7.2"
+  persist_data: true
+  env:
+    REDIS_PORT: "6379"
+  health_check: "redis-cli -p 6379 ping"
+
+# MinIO S3-compatible storage (persistent)
+minio:
+  build_type: "LocalService"
+  service_type: "minio"
+  persist_data: true
+  env:
+    MINIO_ROOT_USER: "minioadmin"
+    MINIO_ROOT_PASSWORD: "minioadmin"
+    MINIO_PORT: "9000"
+    MINIO_CONSOLE_PORT: "9001"
+  health_check: "curl -f http://localhost:9000/minio/health/live"
+
+# Example application that uses the local services
+app:
+  build_type: "RustBinary"
+  location: "./app"
+  dockerfile: "./app/Dockerfile"
+  port: 8080
+  target_port: 8080
+  env:
+    # These will be overridden by connection strings from LocalServiceManager
+    DATABASE_URL: "will be set automatically"
+    REDIS_URL: "will be set automatically"
+    S3_ENDPOINT: "will be set automatically"

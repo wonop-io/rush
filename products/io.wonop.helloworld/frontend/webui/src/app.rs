@@ -1,12 +1,10 @@
+use crate::routes::Route;
+use api_types::{ApiResponse, ExampleApiType};
+use gloo::net::http::Request;
+use serde_json::from_str;
 use yew::prelude::*;
 use yew_router::prelude::*;
-use gloo::net::http::Request;
-use crate::routes::Route;
-use api_types::{
-  ExampleApiType, ApiResponse
-};
-use serde_json::from_str;
-
+// // //
 #[function_component(HomePage)]
 pub fn home_page() -> Html {
     let state = use_state(|| ExampleApiType::default());
@@ -42,17 +40,14 @@ pub fn home_page() -> Html {
     }
 }
 
-
 #[function_component(App)]
 pub fn app() -> Html {
+    let render = move |routes| match routes {
+        Route::HomePage => {
+            html! {<HomePage />}
+        }
+    };
 
-  let render = move |routes| match routes {
-    Route::HomePage => {
-        html! {<HomePage />}
-    }
-};
-
-  
     html! {
         <BrowserRouter>
             <div class="bg-gray-900 min-h-screen">

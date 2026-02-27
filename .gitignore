@@ -47,6 +47,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.env.secrets
 
 target/
 target/**
@@ -65,3 +66,4 @@ temp_manifests/
 postgres.db/
 **/postgres.db
 postgres.db/**
+.rush

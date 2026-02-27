@@ -1,0 +1,29 @@
+[package]
+name = "rush-k8s"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+log = { workspace = true }
+reqwest = { workspace = true }
+rush-build = { workspace = true }
+rush-config = { workspace = true }
+rush-core = { workspace = true }
+rush-toolchain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tera = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+rush-build = { workspace = true }
+rush-config = { workspace = true }
+tempfile = { workspace = true }

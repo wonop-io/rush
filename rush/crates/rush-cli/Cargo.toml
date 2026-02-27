@@ -1,0 +1,54 @@
+[package]
+name = "rush-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Rush Deployment: A tool to bring the development experience as close to the production experience as possible."
+readme = "../../README.md"
+keywords = ["yew", "axum", "docker", "kubernetes", "cross-compilation"]
+categories = ["command-line-utilities", "development-tools", "web-programming"]
+
+[lib]
+name = "rush_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rush"
+path = "src/main.rs"
+
+[features]
+default = []
+profiling = []
+
+[dependencies]
+async-trait = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
+ctrlc = { workspace = true }
+dotenv = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+rush-build = { workspace = true }
+rush-config = { workspace = true }
+rush-container = { workspace = true }
+rush-core = { workspace = true }
+rush-docker = { workspace = true }
+rush-helper = { workspace = true }
+rush-k8s = { workspace = true }
+rush-local-services = { workspace = true }
+rush-mcp = { workspace = true }
+rush-output = { workspace = true }
+rush-security = { workspace = true }
+rush-toolchain = { workspace = true }
+rush-utils = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tera = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

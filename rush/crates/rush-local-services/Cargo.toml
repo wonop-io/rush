@@ -1,0 +1,21 @@
+[package]
+name = "rush-local-services"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Local service management for Rush development environments"
+
+[dependencies]
+async-trait = { workspace = true }
+log = { workspace = true }
+rush-core = { workspace = true }
+rush-docker = { workspace = true }
+rush-output = { workspace = true }
+serde = { workspace = true }
+strip-ansi-escapes = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]

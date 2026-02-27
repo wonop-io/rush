@@ -1,0 +1,61 @@
+# Complete observability stack example
+# Includes metrics collection, visualization, and distributed tracing
+
+# Metrics collection and monitoring
+prometheus:
+  build_type: "LocalService"
+  service_type: "prometheus"
+  persist_data: true
+  env:
+    PROMETHEUS_RETENTION_TIME: "30d"
+  health_check: "curl -f http://localhost:9090/-/healthy"
+  post_startup_tasks:
+    - "echo 'Prometheus started and ready for metrics collection'"
+
+# Distributed tracing storage
+tempo:
+  build_type: "LocalService"
+  service_type: "tempo"
+  persist_data: true
+  health_check: "curl -f http://localhost:3200/ready"
+  post_startup_tasks:
+    - "echo 'Tempo ready for trace ingestion on ports 4317 (OTLP gRPC), 4318 (OTLP HTTP), 9411 (Zipkin), 14268 (Jaeger)'"
+
+# Metrics and traces visualization
+grafana:
+  build_type: "LocalService"
+  service_type: "grafana"
+  persist_data: true
+  env:
+    GF_SECURITY_ADMIN_PASSWORD: "observability123"
+    GF_USERS_ALLOW_SIGN_UP: "false"
+    GF_INSTALL_PLUGINS: "grafana-piechart-panel,grafana-worldmap-panel"
+    GF_LOG_LEVEL: "info"
+  depends_on:
+    - prometheus
+    - tempo
+  health_check: "curl -f http://localhost:3000/api/health"
+  post_startup_tasks:
+    - "echo 'Grafana ready at http://localhost:3000 (admin/observability123)'"
+
+# Example microservice with observability
+# Uncomment when you have actual services to monitor
+# service-a:
+#   build_type: "RustBinary"
+#   location: "./services/service-a"
+#   dockerfile: "./services/service-a/Dockerfile"
+#   port: 8081
+#   env:
+#     OTEL_SERVICE_NAME: "service-a"
+#     METRICS_PORT: "8081"
+#     METRICS_PATH: "/metrics"
+#     LOG_LEVEL: "info"
+#     # These will be automatically injected by Rush:
+#     # PROMETHEUS_PROMETHEUS_URL
+#     # TEMPO_TEMPO_URL
+#     # OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+#     # OTEL_EXPORTER_OTLP_ENDPOINT
+#   depends_on:
+#     - prometheus
+#     - tempo
+#     - grafana
