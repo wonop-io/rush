@@ -1,0 +1,132 @@
+###############################################################################
+# Bazel module configuration for backend server (Rust/Axum)
+# Builds OCI images using rules_oci
+###############################################################################
+
+module(
+    name = "backend_server",
+    version = "0.1.0",
+)
+
+# Rust rules
+bazel_dep(name = "rules_rust", version = "0.69.0")
+
+# OCI container rules
+bazel_dep(name = "rules_oci", version = "2.2.0")
+
+# Packaging rules (for creating tarballs)
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+
+# Register Rust toolchain
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    versions = ["1.85.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# Pull base images for OCI
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "distroless_cc",
+    # Multi-platform manifest list digest for cc-debian12:latest
+    digest = "sha256:329e54034ce498f9c6b345044e8f530c6691f99e94a92446f68c0adf9baa8464",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64/v8",
+    ],
+)
+use_repo(oci, "distroless_cc", "distroless_cc_linux_amd64", "distroless_cc_linux_arm64_v8")
+
+# Crate dependencies via crate_universe
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+
+# Core server dependencies
+crate.spec(
+    package = "tokio",
+    version = "1.36",
+    features = ["full"],
+)
+crate.spec(
+    package = "axum",
+    version = "0.7",
+    features = ["tokio"],
+)
+crate.spec(
+    package = "axum-server",
+    version = "0.6",
+    features = ["tls-rustls"],
+)
+crate.spec(
+    package = "tower-http",
+    version = "0.5",
+    features = ["cors"],
+)
+crate.spec(
+    package = "axum-extra",
+    version = "0.9",
+)
+crate.spec(
+    package = "tower",
+    version = "0.4",
+)
+crate.spec(
+    package = "reqwest",
+    version = "0.12",
+    default_features = False,
+    features = ["json", "rustls-tls"],
+)
+
+# Logging
+crate.spec(
+    package = "log",
+    version = "0.4",
+)
+crate.spec(
+    package = "env_logger",
+    version = "0.11",
+)
+crate.spec(
+    package = "colored",
+    version = "3.0",
+)
+
+# Environment
+crate.spec(
+    package = "dotenv",
+    version = "0.15",
+)
+
+# Serialization
+crate.spec(
+    package = "serde",
+    version = "1.0",
+    features = ["derive"],
+)
+crate.spec(
+    package = "serde_json",
+    version = "1.0",
+)
+
+# Utilities (for api_types compatibility)
+crate.spec(
+    package = "chrono",
+    version = "0.4",
+    features = ["serde"],
+)
+crate.spec(
+    package = "validator",
+    version = "0.18",
+    features = ["derive"],
+)
+crate.spec(
+    package = "uuid",
+    version = "1.3",
+    features = ["serde", "v4"],
+)
+
+crate.from_specs()
+use_repo(crate, "crates")

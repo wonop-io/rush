@@ -1,0 +1,152 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust_wasm_bindgen//:defs.bzl", "rust_wasm_bindgen")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_image_index", "oci_load", "oci_push")
+
+###############################################################################
+# WASM Binary
+###############################################################################
+
+rust_binary(
+    name = "webui_wasm",
+    srcs = glob(["*.rs"]),
+    edition = "2021",
+    deps = [
+        "@crates//:yew",
+        "@crates//:yew-router",
+        "@crates//:yewdux",
+        "@crates//:wasm-bindgen",
+        "@crates//:wasm-bindgen-futures",
+        "@crates//:serde-wasm-bindgen",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:gloo",
+        "@crates//:tracing-web",
+        "@crates//:tracing-subscriber",
+        "@crates//:validator",
+        "@crates//:chrono",
+        "@crates//:uuid",
+        "//api/types:api_types",
+    ],
+    crate_features = [],
+    rustc_flags = [
+        "--cfg=web_sys_unstable_apis",
+    ],
+)
+
+###############################################################################
+# Generate JS/WASM bindings
+###############################################################################
+
+rust_wasm_bindgen(
+    name = "webui",
+    target = "web",
+    wasm_file = ":webui_wasm",
+    visibility = ["//visibility:public"],
+)
+
+###############################################################################
+# OCI Image Layers
+###############################################################################
+
+# WASM and JS layer
+pkg_tar(
+    name = "wasm_layer",
+    srcs = [":webui"],
+    package_dir = "/usr/share/nginx/html",
+    mode = "0644",
+)
+
+# Static files layer (HTML, CSS, assets)
+pkg_tar(
+    name = "static_layer",
+    srcs = [
+        "//:index.bazel.html",
+        "//:tailwind.css",
+    ],
+    remap_paths = {
+        "/index.bazel.html": "/usr/share/nginx/html/index.html",
+        "/tailwind.css": "/usr/share/nginx/html/tailwind.css",
+    },
+    mode = "0644",
+)
+
+# Nginx config for SPA routing
+pkg_tar(
+    name = "nginx_config_layer",
+    srcs = ["//:nginx.conf"],
+    package_dir = "/etc/nginx/conf.d",
+    mode = "0644",
+)
+
+###############################################################################
+# OCI Images (platform-specific)
+###############################################################################
+
+oci_image(
+    name = "image_amd64",
+    base = "@nginx_linux_amd64",
+    tars = [
+        ":wasm_layer",
+        ":static_layer",
+        ":nginx_config_layer",
+    ],
+    exposed_ports = ["80/tcp"],
+    labels = {
+        "org.opencontainers.image.title": "webui",
+        "org.opencontainers.image.description": "Yew WASM Frontend",
+    },
+)
+
+oci_image(
+    name = "image_arm64",
+    base = "@nginx_linux_arm64_v8",
+    tars = [
+        ":wasm_layer",
+        ":static_layer",
+        ":nginx_config_layer",
+    ],
+    exposed_ports = ["80/tcp"],
+    labels = {
+        "org.opencontainers.image.title": "webui",
+        "org.opencontainers.image.description": "Yew WASM Frontend",
+    },
+)
+
+###############################################################################
+# Multi-architecture Image Index
+###############################################################################
+
+oci_image_index(
+    name = "image",
+    images = [
+        ":image_amd64",
+        ":image_arm64",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+###############################################################################
+# Local Docker Load (for testing)
+###############################################################################
+
+oci_load(
+    name = "load",
+    image = select({
+        "@platforms//cpu:arm64": ":image_arm64",
+        "@platforms//cpu:x86_64": ":image_amd64",
+        "//conditions:default": ":image_amd64",
+    }),
+    repo_tags = ["webui:latest"],
+)
+
+###############################################################################
+# Push to Registry
+###############################################################################
+
+oci_push(
+    name = "push",
+    image = ":image",
+    repository = "ghcr.io/wonop-io/helloworld/webui",
+    remote_tags = ["latest"],
+)

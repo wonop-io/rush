@@ -1,0 +1,4 @@
+# Root BUILD.bazel file required by rules_rust crate_universe extension
+# This file must exist in the Bazel module root directory
+
+package(default_visibility = ["//visibility:public"])

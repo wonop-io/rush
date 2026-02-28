@@ -1,30 +1,40 @@
 # Multi-stage Dockerfile for building Rust binaries inside Docker
 # This avoids cross-compilation issues by building in a Linux environment
+# Note: This builds from the product root directory to include workspace deps
 
 # Stage 1: Build the Rust binary
-FROM rust:1.75-bookworm AS builder
+FROM rust:1.85-bookworm AS builder
 
 WORKDIR /usr/src
 
-# Create a new empty shell project
-RUN USER=root cargo new --bin server
-WORKDIR /usr/src/server
+# Copy workspace root first - we'll modify it to exclude frontend
+COPY Cargo.toml ./Cargo.toml.orig
 
-# Copy manifests
-COPY ./server/Cargo.toml ./server/Cargo.lock ./
+# Modify workspace to exclude frontend (backend doesn't need it)
+RUN sed 's|"frontend/webui",*||g' Cargo.toml.orig | sed 's|, ]|]|g' | sed 's|\[, |[|g' > Cargo.toml
 
-# Cache dependencies - this layer will be cached unless Cargo.toml changes
-RUN cargo build --release
-RUN rm src/*.rs target/release/deps/server*
+# Create stub directories for workspace members
+RUN mkdir -p api/types backend/server
 
-# Copy source code and build the real application
-COPY ./server/src ./src
-COPY ./server/build.rs ./build.rs 2>/dev/null || :
-COPY ./server/migrations ./migrations 2>/dev/null || :
+# Copy api/types (dependency)
+COPY api/types ./api/types
+
+# Copy backend/server Cargo.toml
+COPY backend/server/Cargo.toml ./backend/server/
+
+# Create a stub main.rs for dependency caching
+RUN mkdir -p backend/server/src && echo "fn main() {}" > backend/server/src/main.rs
+
+# Build dependencies (cached layer)
+RUN cargo build --release -p server 2>/dev/null || true
+
+# Now copy the actual source
+RUN rm -rf backend/server/src
+COPY backend/server/src ./backend/server/src
 
 # Build for release
 ENV SQLX_OFFLINE=true
-RUN cargo build --release
+RUN cargo build --release -p server
 
 # Stage 2: Create the runtime image
 FROM debian:bookworm-slim
@@ -44,7 +54,7 @@ RUN groupadd $APP_USER \
     && mkdir -p ${APP}
 
 # Copy the binary from builder
-COPY --from=builder /usr/src/server/target/release/server /server
+COPY --from=builder /usr/src/target/release/server /server
 
 RUN chown -R $APP_USER:$APP_USER ${APP}
 

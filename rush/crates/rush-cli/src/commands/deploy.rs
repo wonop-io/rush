@@ -6,6 +6,7 @@ use colored::*;
 use log::{debug, info, warn};
 use rush_config::Config;
 use rush_core::error::{Error, Result};
+use rush_core::TargetArchitecture;
 use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
 use tokio::time::sleep;
 
@@ -353,6 +354,7 @@ async fn create_reactor(
     );
 
     // Create reactor
+    // Note: We use Native architecture by default
     let reactor = rush_container::reactor::Reactor::from_product_dir(
         config.clone(),
         vault,
@@ -361,6 +363,7 @@ async fn create_reactor(
         Vec::new(),
         network_manager,
         k8s_encoder,
+        &TargetArchitecture::Native,
     )
     .await?;
 

@@ -1,0 +1,13 @@
+# Bazel configuration for backend-server
+
+# Use bzlmod (Bazel 6+)
+common --enable_bzlmod
+
+# Platform-aware builds
+build --incompatible_enable_cc_toolchain_resolution
+
+# Optimize builds
+build:release --compilation_mode=opt
+
+# Build for host platform by default (for local Docker load)
+# Cross-compilation can be done via: bazel run //src:load --platforms=//platforms:linux_amd64

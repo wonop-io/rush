@@ -220,6 +220,85 @@ impl DockerClient for ReliableDockerClient {
         .await
     }
 
+    async fn build_image_with_platform(
+        &self,
+        tag: &str,
+        dockerfile: &str,
+        context: &str,
+        platform: &str,
+    ) -> Result<()> {
+        let tag = tag.to_string();
+        let dockerfile = dockerfile.to_string();
+        let context = context.to_string();
+        let platform = platform.to_string();
+        let inner = Arc::clone(&self.inner);
+
+        // Building images can take a long time, so we don't retry
+        // but we do add timeout protection
+        with_timeout(
+            inner.build_image_with_platform(&tag, &dockerfile, &context, &platform),
+            Duration::from_secs(600), // 10 minute timeout for builds
+            "docker build",
+        )
+        .await
+    }
+
+    async fn run_container_with_platform(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+        platform: &str,
+    ) -> Result<String> {
+        let image = image.to_string();
+        let name = name.to_string();
+        let network = network.to_string();
+        let env_vars = env_vars.to_vec();
+        let ports = ports.to_vec();
+        let volumes = volumes.to_vec();
+        let command = command.map(|c| c.to_vec());
+        let platform = platform.to_string();
+        let inner = Arc::clone(&self.inner);
+
+        with_retry(
+            || {
+                let inner = Arc::clone(&inner);
+                let image = image.clone();
+                let name = name.clone();
+                let network = network.clone();
+                let env_vars = env_vars.clone();
+                let ports = ports.clone();
+                let volumes = volumes.clone();
+                let command = command.clone();
+                let platform = platform.clone();
+                async move {
+                    inner
+                        .run_container_with_platform(
+                            &image,
+                            &name,
+                            &network,
+                            &env_vars,
+                            &ports,
+                            &volumes,
+                            command.as_deref(),
+                            &platform,
+                        )
+                        .await
+                }
+            },
+            self.retry_config.clone(),
+        )
+        .await
+    }
+
+    fn target_platform(&self) -> &str {
+        self.inner.target_platform()
+    }
+
     async fn stop_container(&self, container_id: &str) -> Result<()> {
         let container_id = container_id.to_string();
         let inner = Arc::clone(&self.inner);

@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 use crate::simple_output::{OutputLine, SinkExt};
 
 /// Options for running a container
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RunOptions {
     /// Container name
     pub name: String,
@@ -40,6 +40,26 @@ pub struct RunOptions {
     pub command: Option<Vec<String>>,
     /// Run detached (for services that don't need output streaming)
     pub detached: bool,
+    /// Target platform (e.g., "linux/amd64" or "linux/arm64")
+    pub platform: String,
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            image: String::new(),
+            network: None,
+            env_vars: Vec::new(),
+            ports: Vec::new(),
+            volumes: Vec::new(),
+            extra_args: Vec::new(),
+            workdir: None,
+            command: None,
+            detached: false,
+            platform: rush_core::constants::docker_platform_native().to_string(),
+        }
+    }
 }
 
 impl RunOptions {
@@ -50,9 +70,9 @@ impl RunOptions {
             // This provides TTY without requiring stdin to be a TTY
             "-d".to_string(),
             "-t".to_string(),
-            // Add platform for consistency
+            // Add platform
             "--platform".to_string(),
-            "linux/amd64".to_string(),
+            self.platform.clone(),
             // Container name
             "--name".to_string(),
             self.name.clone(),
@@ -512,6 +532,7 @@ mod tests {
             command: None,
             detached: false,
             extra_args: vec!["--rm".to_string()],
+            platform: "linux/amd64".to_string(),
         };
 
         let args = options.to_args();

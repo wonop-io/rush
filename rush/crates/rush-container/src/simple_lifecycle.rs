@@ -39,6 +39,8 @@ pub struct SimpleLifecycleConfig {
     pub health_check_interval: std::time::Duration,
     /// Maximum restart attempts (compatibility field)
     pub max_restart_attempts: u32,
+    /// Target platform for Docker containers (e.g., "linux/amd64" or "linux/arm64")
+    pub target_platform: String,
 }
 
 impl Default for SimpleLifecycleConfig {
@@ -52,6 +54,7 @@ impl Default for SimpleLifecycleConfig {
             enable_health_checks: true,
             health_check_interval: std::time::Duration::from_secs(30),
             max_restart_attempts: 3,
+            target_platform: rush_core::constants::docker_platform_native().to_string(),
         }
     }
 }
@@ -366,7 +369,7 @@ impl SimpleLifecycleManager {
             self.docker.remove(&container_name).await?;
         }
 
-        // Create run options
+        // Create run options - use configured target platform
         let run_options = RunOptions {
             name: container_name.clone(),
             image: image_name,
@@ -378,6 +381,7 @@ impl SimpleLifecycleManager {
             workdir: None,
             command: None,
             detached: false,
+            platform: self.config.target_platform.clone(),
         };
 
         // Run the container interactively with output streaming

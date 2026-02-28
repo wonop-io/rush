@@ -132,20 +132,23 @@ pub enum BuildType {
         command: Option<String>,
     },
 
-    /// A Bazel-based build that produces an OCI image
+    /// A Bazel-based build that produces an OCI image using rules_oci
     Bazel {
         /// Path to the Bazel workspace directory
         location: String,
         /// Output directory for build artifacts (relative or absolute)
         output_dir: String,
-        /// Optional context directory for Docker build
+        /// Optional context directory for Docker build (legacy, not used with oci_load_target)
         context_dir: Option<String>,
-        /// Optional list of Bazel targets to build (defaults to "//...")
+        /// Optional list of Bazel targets to build (legacy, not used with oci_load_target)
         targets: Option<Vec<String>>,
         /// Optional additional Bazel arguments
         additional_args: Option<Vec<String>>,
-        /// Optional base image for OCI generation (defaults to "scratch")
+        /// Optional base image for OCI generation (legacy, not used with oci_load_target)
         base_image: Option<String>,
+        /// Bazel target that loads OCI image into Docker (e.g., "//src:load")
+        /// When set, Rush uses `bazel run <oci_load_target>` instead of docker build
+        oci_load_target: Option<String>,
     },
 }
 
@@ -206,5 +209,16 @@ impl BuildType {
     /// Returns whether this build type has server-side rendering
     pub fn has_ssr(&self) -> bool {
         matches!(self, BuildType::TrunkWasm { ssr: true, .. })
+    }
+
+    /// Returns whether this build type has a local source directory to watch
+    pub fn has_local_directory(&self) -> bool {
+        match self {
+            BuildType::PureKubernetes => false,
+            BuildType::KubernetesInstallation { .. } => false,
+            BuildType::PureDockerImage { .. } => false,
+            BuildType::LocalService { .. } => false,
+            _ => true,
+        }
     }
 }

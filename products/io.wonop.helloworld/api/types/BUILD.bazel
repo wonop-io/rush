@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+# Shared API types library
+# This library is used by both the frontend (WASM) and backend (native)
+rust_library(
+    name = "api_types",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:chrono",
+        "@crates//:validator",
+        "@crates//:uuid",
+    ],
+    visibility = ["//visibility:public"],
+)

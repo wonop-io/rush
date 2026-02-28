@@ -10,6 +10,7 @@ use std::time::Duration;
 use log::{debug, error, info, warn};
 use rush_build::{BuildType, ComponentBuildSpec};
 use rush_core::error::{Error, Result};
+use rush_core::TargetArchitecture;
 use rush_core::shutdown::{self, ShutdownEvent, ShutdownPhase};
 use tera;
 use tokio::sync::broadcast;
@@ -1496,6 +1497,18 @@ impl Reactor {
 
     /// Check if a component needs rebuild based on tag change
     pub async fn needs_rebuild(&self, spec: &ComponentBuildSpec) -> Result<bool> {
+        use rush_build::BuildType;
+
+        // Bazel builds always rebuild - Bazel has its own caching mechanism
+        // and we want to ensure OCI images are always up-to-date
+        if matches!(spec.build_type, BuildType::Bazel { .. }) {
+            debug!(
+                "Component '{}' needs rebuild: Bazel builds always rebuild",
+                spec.component_name
+            );
+            return Ok(true);
+        }
+
         // Get current tag
         let current_tag = self.build_orchestrator.tag_generator.compute_tag(spec)?;
 
@@ -2388,6 +2401,7 @@ impl Reactor {
         silence_components: Vec<String>,
         network_manager: Arc<crate::network::NetworkManager>,
         k8s_encoder: Arc<dyn rush_k8s::encoder::K8sEncoder>,
+        target_arch: &TargetArchitecture,
     ) -> Result<Self> {
         use std::collections::HashSet;
         use std::fs;
@@ -2503,6 +2517,10 @@ impl Reactor {
         // Configure lifecycle manager with the product name and network name
         modular_config.lifecycle.product_name = config.product_name().to_string();
         modular_config.lifecycle.network_name = network_name;
+        
+        // Set target architecture for both container runs and builds
+        modular_config.lifecycle.target_platform = target_arch.to_docker_platform().to_string();
+        modular_config.build.target_arch = target_arch.clone();
 
         // Resolve ports for all components before creating the reactor
         Self::resolve_component_ports(&mut component_specs, &config);

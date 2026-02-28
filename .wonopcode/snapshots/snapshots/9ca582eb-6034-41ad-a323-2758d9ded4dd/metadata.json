@@ -1,0 +1,11 @@
+{
+  "id": "9ca582eb-6034-41ad-a323-2758d9ded4dd",
+  "session_id": "native-agent-mcp",
+  "message_id": "native-mcp",
+  "timestamp": "2026-02-28T12:40:43.758742Z",
+  "description": "Before edit: /Users/tfr/Documents/Projects/.worktrees/feature-447--rush-make-it-arm-based/rush/crates/rush-container/src/build/orchestrator.rs",
+  "files": [
+    "rush/crates/rush-container/src/build/orchestrator.rs"
+  ],
+  "trigger": null
+}

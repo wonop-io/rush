@@ -1,0 +1,11 @@
+{
+  "id": "75cf8e06-494d-4d66-8747-e73a6546891a",
+  "session_id": "native-agent-mcp",
+  "message_id": "native-mcp",
+  "timestamp": "2026-02-28T15:41:10.731177Z",
+  "description": "Before edit: /Users/tfr/Documents/Projects/.worktrees/feature-447--rush-make-it-arm-based/products/io.wonop.helloworld/frontend/webui/nginx.conf",
+  "files": [
+    "products/io.wonop.helloworld/frontend/webui/nginx.conf"
+  ],
+  "trigger": null
+}

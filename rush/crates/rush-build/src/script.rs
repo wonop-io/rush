@@ -138,6 +138,7 @@ mod tests {
             env: HashMap::new(),
             secrets: HashMap::new(),
             cross_compile: "native".to_string(),
+            skip_host_build: false,
         }
     }
 

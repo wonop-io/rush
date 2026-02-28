@@ -1,0 +1,24 @@
+###############################################################################
+# Root BUILD file for webui - exports static files for OCI image
+###############################################################################
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "index.bazel.html",
+    "tailwind.css",
+    "nginx.conf",
+])
+
+filegroup(
+    name = "static_files",
+    srcs = [
+        "index.bazel.html",
+        "tailwind.css",
+    ],
+)
+
+filegroup(
+    name = "assets",
+    srcs = glob(["assets/**"]),
+)

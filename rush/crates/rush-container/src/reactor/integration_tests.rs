@@ -171,6 +171,36 @@ mod tests {
         async fn image_exists(&self, _image: &str) -> Result<bool> {
             Ok(false)
         }
+
+        async fn build_image_with_platform(
+            &self,
+            tag: &str,
+            _dockerfile: &str,
+            _context: &str,
+            _platform: &str,
+        ) -> Result<()> {
+            self.record_operation(&format!("build_image_with_platform:{tag}"));
+            if *self.should_fail.lock().unwrap() {
+                return Err(rush_core::error::Error::Docker("Build failed".into()));
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Ok(())
+        }
+
+        async fn run_container_with_platform(
+            &self,
+            image: &str,
+            name: &str,
+            _network: &str,
+            _env_vars: &[String],
+            _ports: &[String],
+            _volumes: &[String],
+            _command: Option<&[String]>,
+            _platform: &str,
+        ) -> Result<String> {
+            self.record_operation(&format!("run_container_with_platform:{image}:{name}"));
+            Ok(format!("mock-{name}"))
+        }
     }
 
     fn create_test_component_specs() -> Vec<ComponentBuildSpec> {

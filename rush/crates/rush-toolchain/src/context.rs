@@ -47,21 +47,39 @@ impl Default for ToolchainContext {
 }
 
 impl ToolchainContext {
-    /// Creates a new ToolchainContext for the specified host and target platforms
+    /// Creates a new ToolchainContext for the specified host and target platforms.
+    /// Panics if no suitable toolchain is found. For fallible version, use `try_create_with_platforms`.
     pub fn create_with_platforms(host: Platform, target: Platform) -> Self {
+        Self::try_create_with_platforms(host, target)
+            .expect("No suitable toolchain found")
+    }
+
+    /// Creates a new ToolchainContext for the specified host and target platforms.
+    /// Returns an error with helpful instructions if no suitable toolchain is found.
+    pub fn try_create_with_platforms(host: Platform, target: Platform) -> Result<Self, String> {
         trace!("Creating new ToolchainContext with host: {host:?}, target: {target:?}");
 
         let mut ret = if host.arch == target.arch && host.os == target.os {
             Self::default()
         } else {
             // Handle cross-compilation toolchains
-            Self::find_cross_compilation_toolchain(&host, &target)
-                .unwrap_or_else(|| panic!("No suitable toolchain found for {target:?}"))
+            Self::find_cross_compilation_toolchain(&host, &target).ok_or_else(|| {
+                let target_triple = format!(
+                    "{}-unknown-{}-gnu",
+                    target.arch.to_string().to_lowercase(),
+                    target.os.to_string().to_lowercase()
+                );
+                format!(
+                    "No suitable cross-compilation toolchain found for {} -> {}\n\
+                     Looking for toolchain: {}",
+                    host, target, target_triple
+                )
+            })?
         };
 
         ret.host = host;
         ret.target = target;
-        ret
+        Ok(ret)
     }
 
     /// Returns the default toolchain for the current platform

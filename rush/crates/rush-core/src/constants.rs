@@ -60,7 +60,24 @@ pub const HOME_VAR: &str = "HOME";
 // Docker Constants
 pub const DOCKER_COMMAND: &str = "docker";
 pub const DOCKER_PLATFORM_LINUX_AMD64: &str = "linux/amd64";
+pub const DOCKER_PLATFORM_LINUX_ARM64: &str = "linux/arm64";
 pub const DOCKER_TAG_LATEST: &str = "latest";
+
+/// Returns the Docker platform string for the current host architecture
+pub fn docker_platform_native() -> &'static str {
+    match std::env::consts::ARCH {
+        "aarch64" => DOCKER_PLATFORM_LINUX_ARM64,
+        _ => DOCKER_PLATFORM_LINUX_AMD64,
+    }
+}
+
+/// Returns the Docker platform string for the given architecture
+pub fn docker_platform_for_arch(arch: &str) -> &'static str {
+    match arch {
+        "aarch64" | "arm64" => DOCKER_PLATFORM_LINUX_ARM64,
+        _ => DOCKER_PLATFORM_LINUX_AMD64,
+    }
+}
 
 // Network Constants
 pub const NETWORK_PREFIX: &str = "net-";

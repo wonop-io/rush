@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use log::{debug, error, info, warn};
 use rush_build::{BuildType, ComponentBuildSpec};
 use rush_core::error::Result;
+use rush_core::TargetArchitecture;
 use rush_core::shutdown::global_shutdown;
 use rush_output::simple::Sink;
 use rush_toolchain::ToolchainContext;
@@ -42,6 +43,8 @@ pub struct BuildOrchestratorConfig {
     pub enable_cache: bool,
     /// Cache directory
     pub cache_dir: PathBuf,
+    /// Target architecture for image builds
+    pub target_arch: TargetArchitecture,
 }
 
 impl BuildOrchestratorConfig {
@@ -91,6 +94,7 @@ impl Default for BuildOrchestratorConfig {
             max_parallel: 4,
             enable_cache: true,
             cache_dir: PathBuf::new(),  // Will be resolved from product_dir
+            target_arch: TargetArchitecture::default(),
         }
     }
 }
@@ -338,7 +342,9 @@ impl BuildOrchestrator {
             let full_image_name = format!("{image_name}:{current_tag}");
 
             // Check if image already exists with this tag (unless force rebuild)
-            if !force_rebuild {
+            // Bazel components always rebuild - Bazel handles its own caching
+            let is_bazel = matches!(spec.build_type, BuildType::Bazel { .. });
+            if !force_rebuild && !is_bazel {
                 info!(
                     "[BUILD DECISION] Component '{}': Checking if image '{}' exists",
                     spec.component_name, full_image_name
@@ -393,6 +399,9 @@ impl BuildOrchestrator {
                     info!("[BUILD DECISION] Component '{}': Unable to check image existence, will build",
                         spec.component_name);
                 }
+            } else if is_bazel {
+                info!("[BUILD DECISION] Component '{}': Bazel component - always rebuilding (Bazel handles caching)",
+                    spec.component_name);
             } else {
                 info!("[BUILD DECISION] Component '{}': Force rebuild requested, ignoring existing images",
                     spec.component_name);
@@ -553,9 +562,15 @@ impl BuildOrchestrator {
             let full_image_name = format!("{image_name}:{current_tag}");
 
             // For ingress, we always rebuild if force_ingress_rebuild is true
+            // Bazel components always rebuild (Bazel handles its own caching)
             // Otherwise, check if image exists
+            let is_bazel = matches!(spec.build_type, BuildType::Bazel { .. });
             let should_build = if force_ingress_rebuild {
                 info!("[BUILD DECISION] Component '{}': Force rebuild - will rebuild regardless of existing image",
+                    spec.component_name);
+                true
+            } else if is_bazel {
+                info!("[BUILD DECISION] Component '{}': Bazel component - always rebuilding (Bazel handles caching)",
                     spec.component_name);
                 true
             } else {
@@ -957,6 +972,7 @@ impl BuildOrchestrator {
                 targets,
                 additional_args,
                 base_image,
+                oci_load_target,
                 ..
             } => {
                 info!("Building Bazel component: {}", spec.component_name);
@@ -964,53 +980,95 @@ impl BuildOrchestrator {
                 // Resolve workspace path
                 let workspace_path = self.config.product_dir.join(location);
 
-                // Validate workspace exists
-                if !workspace_path.join("WORKSPACE").exists()
+                // Validate workspace exists (check for MODULE.bazel for bzlmod, or WORKSPACE for legacy)
+                if !workspace_path.join("MODULE.bazel").exists()
+                    && !workspace_path.join("WORKSPACE").exists()
                     && !workspace_path.join("WORKSPACE.bazel").exists()
                 {
                     return Err(rush_core::error::Error::Build(format!(
-                        "No WORKSPACE file found in {}",
+                        "No MODULE.bazel or WORKSPACE file found in {}",
                         workspace_path.display()
                     )));
                 }
 
-                // Execute Bazel build
-                self.run_bazel_build(&workspace_path, targets.as_ref(), additional_args.as_ref())
-                    .await?;
+                // Ensure .bazelrc exists with correct toolchain configuration (macOS)
+                Self::ensure_bazelrc(&workspace_path).await?;
 
-                // Resolve output directory
-                let output_path = if std::path::Path::new(output_dir).is_absolute() {
-                    std::path::PathBuf::from(output_dir)
-                } else {
-                    workspace_path.join(output_dir)
-                };
-
-                // Create output directory if needed
-                tokio::fs::create_dir_all(&output_path)
-                    .await
-                    .map_err(rush_core::error::Error::Io)?;
-
-                // Generate Dockerfile for OCI image
-                let dockerfile_path = self
-                    .generate_bazel_dockerfile(&output_path, &workspace_path, base_image.as_deref())
-                    .await?;
-
-                // Build Docker image
-                self.docker_client
-                    .build_image(
+                // Check if using rules_oci (oci_load_target is set)
+                if let Some(load_target) = oci_load_target {
+                    // Determine if this project needs cross-compilation
+                    // WASM projects don't need --platforms flag, only native binary projects do
+                    let bazel_platform = if Self::needs_cross_compilation(&workspace_path).await {
+                        // Ensure platform definitions exist for cross-compilation
+                        Self::ensure_platforms_build_file(&workspace_path).await?;
+                        self.config.target_arch.to_bazel_platform()
+                    } else {
+                        debug!(
+                            "Skipping cross-compilation for {} (WASM or no toolchains_musl)",
+                            spec.component_name
+                        );
+                        None
+                    };
+                    
+                    // Use Bazel to build and load OCI image directly into Docker
+                    // Pass the expected Rush image name so it can be re-tagged after loading
+                    self.run_bazel_oci_load(
+                        &workspace_path,
+                        load_target,
                         &full_image_name,
-                        &dockerfile_path.to_string_lossy(),
-                        &output_path.to_string_lossy(),
+                        additional_args.as_ref(),
+                        bazel_platform.as_deref(),
                     )
                     .await?;
 
-                info!(
-                    "Built Bazel component {} in {:?}",
-                    spec.component_name,
-                    start_time.elapsed()
-                );
+                    info!(
+                        "Built and loaded Bazel OCI image for {} in {:?}",
+                        spec.component_name,
+                        start_time.elapsed()
+                    );
 
-                Ok(full_image_name)
+                    // The image is now tagged with the Rush image name
+                    Ok(full_image_name)
+                } else {
+                    // Legacy path: Bazel build + Dockerfile generation
+                    // Execute Bazel build
+                    self.run_bazel_build(&workspace_path, targets.as_ref(), additional_args.as_ref())
+                        .await?;
+
+                    // Resolve output directory
+                    let output_path = if std::path::Path::new(output_dir).is_absolute() {
+                        std::path::PathBuf::from(output_dir)
+                    } else {
+                        workspace_path.join(output_dir)
+                    };
+
+                    // Create output directory if needed
+                    tokio::fs::create_dir_all(&output_path)
+                        .await
+                        .map_err(rush_core::error::Error::Io)?;
+
+                    // Generate Dockerfile for OCI image
+                    let dockerfile_path = self
+                        .generate_bazel_dockerfile(&output_path, &workspace_path, base_image.as_deref())
+                        .await?;
+
+                    // Build Docker image
+                    self.docker_client
+                        .build_image(
+                            &full_image_name,
+                            &dockerfile_path.to_string_lossy(),
+                            &output_path.to_string_lossy(),
+                        )
+                        .await?;
+
+                    info!(
+                        "Built Bazel component {} in {:?}",
+                        spec.component_name,
+                        start_time.elapsed()
+                    );
+
+                    Ok(full_image_name)
+                }
             }
         }
     }
@@ -1209,6 +1267,181 @@ impl BuildOrchestrator {
         })
     }
 
+    /// Find the bazel/bazelisk binary path
+    /// 
+    /// Searches common installation locations for bazel or bazelisk
+    fn find_bazel_binary() -> Result<String> {
+        // First check if 'bazel' is in PATH
+        if let Ok(path) = std::env::var("PATH") {
+            for dir in path.split(':') {
+                let bazel_path = std::path::Path::new(dir).join("bazel");
+                if bazel_path.exists() {
+                    return Ok(bazel_path.to_string_lossy().to_string());
+                }
+                let bazelisk_path = std::path::Path::new(dir).join("bazelisk");
+                if bazelisk_path.exists() {
+                    return Ok(bazelisk_path.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        // Common locations for bazel/bazelisk on macOS and Linux
+        let common_paths = [
+            "/opt/homebrew/bin/bazel",           // Homebrew on Apple Silicon
+            "/opt/homebrew/bin/bazelisk",        // Bazelisk on Apple Silicon
+            "/usr/local/bin/bazel",              // Homebrew on Intel Mac / Linux
+            "/usr/local/bin/bazelisk",           // Bazelisk on Intel Mac
+            "/home/linuxbrew/.linuxbrew/bin/bazel", // Linuxbrew
+            "/home/linuxbrew/.linuxbrew/bin/bazelisk",
+            "/usr/bin/bazel",                    // System install
+            "/usr/bin/bazelisk",
+        ];
+
+        for path in common_paths {
+            if std::path::Path::new(path).exists() {
+                return Ok(path.to_string());
+            }
+        }
+
+        Err(rush_core::error::Error::Build(
+            "Could not find bazel or bazelisk binary. Please install bazel and ensure it's in your PATH".to_string()
+        ))
+    }
+
+    /// Ensures the Bazel workspace has a .bazelrc with correct toolchain configuration
+    ///
+    /// On macOS, if Homebrew LLVM is installed, Bazel may pick up clang-20 which
+    /// doesn't know how to find the system linker (ld). This function creates a
+    /// .bazelrc file that forces use of Apple's toolchain and ensures the correct
+    /// PATH for docker-credential-desktop.
+    async fn ensure_bazelrc(workspace_path: &Path) -> Result<()> {
+        let bazelrc_path = workspace_path.join(".bazelrc");
+        
+        // Check if .bazelrc already exists
+        if bazelrc_path.exists() {
+            debug!(".bazelrc already exists at {}", bazelrc_path.display());
+            return Ok(());
+        }
+
+        // Only create .bazelrc on macOS where the Homebrew LLVM issue occurs
+        #[cfg(target_os = "macos")]
+        {
+            let bazelrc_content = r#"# Auto-generated by Rush to fix macOS toolchain issues
+# This fixes "ld not found" errors when Homebrew LLVM is installed
+
+# Force use of Apple's clang instead of Homebrew's clang
+build --action_env=CC=/usr/bin/clang
+build --action_env=CXX=/usr/bin/clang++
+
+# Ensure the linker and docker-credential-desktop can be found
+build --action_env=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+
+# Use the Xcode toolchain
+build --apple_crosstool_top=@local_config_apple_cc//:toolchain
+build --crosstool_top=@local_config_apple_cc//:toolchain
+build --host_crosstool_top=@local_config_apple_cc//:toolchain
+"#;
+
+            info!("Creating .bazelrc at {} for macOS toolchain configuration", bazelrc_path.display());
+            tokio::fs::write(&bazelrc_path, bazelrc_content)
+                .await
+                .map_err(|e| rush_core::error::Error::Build(format!(
+                    "Failed to write .bazelrc: {}", e
+                )))?;
+        }
+
+        Ok(())
+    }
+
+    /// Check if a Bazel workspace requires cross-compilation
+    ///
+    /// Projects using `toolchains_musl` in MODULE.bazel need the `--platforms=` flag
+    /// for cross-compilation. WASM projects (using `rules_rust_wasm_bindgen`) don't
+    /// need it because WASM is platform-independent.
+    ///
+    /// Returns `true` if the project has cross-compilation toolchains configured.
+    async fn needs_cross_compilation(workspace_path: &Path) -> bool {
+        let module_bazel = workspace_path.join("MODULE.bazel");
+        
+        if let Ok(content) = tokio::fs::read_to_string(&module_bazel).await {
+            // Check for toolchains_musl which indicates cross-compilation setup
+            if content.contains("toolchains_musl") {
+                debug!(
+                    "Found toolchains_musl in {} - enabling cross-compilation",
+                    module_bazel.display()
+                );
+                return true;
+            }
+            
+            // WASM projects use rules_rust_wasm_bindgen but don't need cross-compilation
+            if content.contains("rules_rust_wasm_bindgen") {
+                debug!(
+                    "Found rules_rust_wasm_bindgen in {} - WASM project, skipping cross-compilation",
+                    module_bazel.display()
+                );
+                return false;
+            }
+        }
+        
+        // Default: don't pass --platforms flag (let Bazel use host defaults)
+        false
+    }
+
+    /// Ensures the Bazel workspace has platform definitions for cross-compilation
+    ///
+    /// Creates a `platforms/BUILD.bazel` file with `linux_amd64` and `linux_arm64`
+    /// platform targets. These are required for the `--platforms=` flag to work
+    /// with `select()` in oci_load targets.
+    async fn ensure_platforms_build_file(workspace_path: &Path) -> Result<()> {
+        let platforms_dir = workspace_path.join("platforms");
+        let build_file = platforms_dir.join("BUILD.bazel");
+        
+        // Check if platforms/BUILD.bazel already exists
+        if build_file.exists() {
+            debug!("platforms/BUILD.bazel already exists at {}", build_file.display());
+            return Ok(());
+        }
+        
+        // Create platforms directory
+        tokio::fs::create_dir_all(&platforms_dir)
+            .await
+            .map_err(|e| rush_core::error::Error::Build(format!(
+                "Failed to create platforms directory: {}", e
+            )))?;
+        
+        // Write platform definitions
+        let platforms_content = r#"# Auto-generated by Rush for cross-compilation support
+# These platform definitions enable the --platforms= flag for oci_load targets
+
+package(default_visibility = ["//visibility:public"])
+
+platform(
+    name = "linux_amd64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+platform(
+    name = "linux_arm64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+"#;
+        
+        info!("Creating platforms/BUILD.bazel at {} for cross-compilation support", build_file.display());
+        tokio::fs::write(&build_file, platforms_content)
+            .await
+            .map_err(|e| rush_core::error::Error::Build(format!(
+                "Failed to write platforms/BUILD.bazel: {}", e
+            )))?;
+        
+        Ok(())
+    }
+
     /// Execute Bazel build command in the workspace
     async fn run_bazel_build(
         &self,
@@ -1218,6 +1451,8 @@ impl BuildOrchestrator {
     ) -> Result<()> {
         use rush_utils::{CommandConfig, CommandRunner};
 
+        let bazel_binary = Self::find_bazel_binary()?;
+        
         let mut args = vec!["build".to_string()];
 
         // Add targets or default to all
@@ -1241,7 +1476,7 @@ impl BuildOrchestrator {
             args
         );
 
-        let config = CommandConfig::new("bazel")
+        let config = CommandConfig::new(&bazel_binary)
             .args(args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
             .working_dir(workspace_path.to_str().unwrap())
             .capture(true);
@@ -1258,6 +1493,158 @@ impl BuildOrchestrator {
         }
 
         info!("Bazel build completed successfully");
+        Ok(())
+    }
+
+    /// Parse repo_tags from a BUILD.bazel file for an oci_load target
+    /// 
+    /// This extracts the first tag from the repo_tags list to know what
+    /// image name will be loaded into Docker.
+    fn parse_oci_load_repo_tag(workspace_path: &Path, load_target: &str) -> Option<String> {
+        // Determine the BUILD.bazel path from the load target
+        // e.g., "//src:load" -> "src/BUILD.bazel"
+        let target_path = load_target.trim_start_matches("//");
+        let (package, _target_name) = target_path.split_once(':').unwrap_or((target_path, ""));
+        
+        let build_file = workspace_path.join(package).join("BUILD.bazel");
+        let content = std::fs::read_to_string(&build_file).ok()?;
+        
+        // Look for repo_tags = ["name:tag"] pattern
+        // This is a simple regex-free parser for the common case
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("repo_tags") {
+                // Extract the first tag from repo_tags = ["tag"]
+                if let Some(start) = trimmed.find('[') {
+                    if let Some(end) = trimmed.find(']') {
+                        let tags_str = &trimmed[start+1..end];
+                        // Extract first quoted string
+                        if let Some(q1) = tags_str.find('"') {
+                            if let Some(q2) = tags_str[q1+1..].find('"') {
+                                return Some(tags_str[q1+1..q1+1+q2].to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Execute `bazel run` to build and load an OCI image into Docker
+    ///
+    /// This method is used when the Bazel workspace uses rules_oci to produce
+    /// container images. The oci_load target builds the image and loads it
+    /// directly into the local Docker daemon.
+    /// 
+    /// After loading, the image is re-tagged to the expected Rush image name.
+    ///
+    /// # Arguments
+    /// * `workspace_path` - Path to the Bazel workspace
+    /// * `oci_load_target` - The Bazel target to run (e.g., "//src:load")
+    /// * `expected_image_name` - The Rush image name to re-tag to
+    /// * `additional_args` - Extra Bazel arguments
+    /// * `target_platform` - Optional Bazel platform for cross-compilation (e.g., "//platforms:linux_arm64")
+    async fn run_bazel_oci_load(
+        &self,
+        workspace_path: &Path,
+        oci_load_target: &str,
+        expected_image_name: &str,
+        additional_args: Option<&Vec<String>>,
+        target_platform: Option<&str>,
+    ) -> Result<()> {
+        use rush_utils::{CommandConfig, CommandRunner};
+
+        let bazel_binary = Self::find_bazel_binary()?;
+        
+        // Parse the repo_tags from BUILD.bazel to know what image bazel will load
+        let bazel_image_tag = Self::parse_oci_load_repo_tag(workspace_path, oci_load_target);
+        
+        let mut args = vec!["run".to_string()];
+
+        // Add the OCI load target
+        args.push(oci_load_target.to_string());
+
+        // Add compilation mode for optimized builds
+        args.push("--compilation_mode=opt".to_string());
+
+        // Add platform flag for cross-compilation
+        if let Some(platform) = target_platform {
+            args.push(format!("--platforms={}", platform));
+            info!(
+                "Cross-compiling for platform: {}",
+                platform
+            );
+        }
+
+        // Add additional arguments
+        if let Some(extra) = additional_args {
+            args.extend(extra.clone());
+        }
+
+        info!(
+            "Running Bazel OCI load in {} with target: {}{}",
+            workspace_path.display(),
+            oci_load_target,
+            target_platform.map(|p| format!(" (platform: {})", p)).unwrap_or_default()
+        );
+
+        // Ensure Docker is findable by Bazel's load.sh script
+        // Add common Docker locations to PATH
+        let current_path = std::env::var("PATH").unwrap_or_default();
+        let docker_paths = "/usr/local/bin:/opt/homebrew/bin:/usr/bin";
+        let enhanced_path = format!("{}:{}", docker_paths, current_path);
+
+        let config = CommandConfig::new(&bazel_binary)
+            .args(args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+            .working_dir(workspace_path.to_str().unwrap())
+            .env("PATH", &enhanced_path)
+            .capture(true);
+
+        let output = CommandRunner::run(config)
+            .await
+            .map_err(|e| rush_core::error::Error::Build(format!("Bazel OCI load failed: {}", e)))?;
+
+        if !output.success() {
+            return Err(rush_core::error::Error::Build(format!(
+                "Bazel OCI load failed:\n{}",
+                output.stderr
+            )));
+        }
+
+        info!("Bazel OCI image loaded successfully into Docker");
+
+        // Re-tag the image to the expected Rush image name
+        if let Some(bazel_tag) = bazel_image_tag {
+            info!(
+                "Re-tagging image from '{}' to '{}'",
+                bazel_tag, expected_image_name
+            );
+
+            let tag_config = CommandConfig::new("docker")
+                .args(["tag", &bazel_tag, expected_image_name])
+                .capture(true);
+
+            let tag_output = CommandRunner::run(tag_config)
+                .await
+                .map_err(|e| rush_core::error::Error::Build(format!("Failed to re-tag image: {}", e)))?;
+
+            if !tag_output.success() {
+                return Err(rush_core::error::Error::Build(format!(
+                    "Failed to re-tag image from '{}' to '{}': {}",
+                    bazel_tag, expected_image_name, tag_output.stderr
+                )));
+            }
+
+            info!("Successfully re-tagged image to '{}'", expected_image_name);
+        } else {
+            warn!(
+                "Could not parse repo_tags from BUILD.bazel for target '{}', image may have unexpected name",
+                oci_load_target
+            );
+        }
+
         Ok(())
     }
 
@@ -1375,23 +1762,54 @@ CMD ["python", "hello.py"]
 
         info!("Running build script for {}", spec.component_name);
 
-        // Create toolchain context for cross-compilation
+        // Create toolchain context - use native host platform
         let host_platform = Platform::default();
-        let target_platform = Platform::new("linux", "x86_64");
-        let toolchain =
-            ToolchainContext::create_with_platforms(host_platform.clone(), target_platform.clone());
-        toolchain.setup_env();
+        let target_platform = Platform::for_docker(); // Docker containers always run Linux
+        
+        // Check if cross-compilation is needed (host OS != target OS)
+        let needs_cross_compile = host_platform.os != target_platform.os;
+        
+        // Try to create toolchain context, falling back to native if cross-compilation not available
+        let (toolchain, cross_compile_available) = match ToolchainContext::try_create_with_platforms(
+            host_platform.clone(),
+            target_platform.clone(),
+        ) {
+            Ok(tc) => {
+                tc.setup_env();
+                (tc, true)
+            }
+            Err(e) => {
+                // Cross-compilation not available - check if we can use native toolchain
+                // This is OK for build types that use Docker multi-stage builds
+                debug!("Cross-compilation toolchain not available: {}. Using native toolchain.", e);
+                (ToolchainContext::default(), false)
+            }
+        };
 
         // Get location from build type
         let location = spec.build_type.location().unwrap_or(".");
+        
+        // Determine if we should skip host cargo build
+        // Skip when:
+        // 1. Cross-compilation is needed but not available
+        // 2. AND we have a multi-stage Dockerfile (detected by "multistage" in filename)
+        let dockerfile_path = spec.build_type.dockerfile_path();
+        let is_multistage_dockerfile = dockerfile_path
+            .map(|d| d.to_lowercase().contains("multistage"))
+            .unwrap_or(false);
+        let skip_host_build = needs_cross_compile && !cross_compile_available && is_multistage_dockerfile;
+        
+        if skip_host_build {
+            info!("Skipping host cargo build for {} - using multi-stage Dockerfile instead", spec.component_name);
+        }
 
         // Create build context
         let context = BuildContext {
             build_type: spec.build_type.clone(),
             location: Some(location.to_string()),
-            target: target_platform,
-            host: host_platform,
-            rust_target: "x86_64-unknown-linux-gnu".to_string(),
+            target: target_platform.clone(),
+            host: host_platform.clone(),
+            rust_target: target_platform.to_rust_target(),
             toolchain,
             services: Default::default(),
             environment: "local".to_string(),
@@ -1413,6 +1831,7 @@ CMD ["python", "hello.py"]
             },
             secrets: Default::default(),
             cross_compile: spec.cross_compile.clone(),
+            skip_host_build,
         };
 
         // Generate and run build script
@@ -1496,9 +1915,9 @@ CMD ["python", "hello.py"]
             artifact_count, spec.component_name
         );
 
-        // Create build context for rendering
+        // Create build context for rendering - use native platform
         let host_platform = Platform::default();
-        let target_platform = Platform::new("linux", "x86_64");
+        let target_platform = Platform::for_docker(); // Docker containers always run Linux
         let toolchain = ToolchainContext::default();
 
         let location = spec.build_type.location().unwrap_or(".");
@@ -1545,9 +1964,9 @@ CMD ["python", "hello.py"]
         let context = BuildContext {
             build_type: spec.build_type.clone(),
             location: Some(location.to_string()),
-            target: target_platform,
+            target: target_platform.clone(),
             host: host_platform,
-            rust_target: "x86_64-unknown-linux-gnu".to_string(),
+            rust_target: target_platform.to_rust_target(),
             toolchain,
             services,
             environment: "local".to_string(),
@@ -1569,6 +1988,7 @@ CMD ["python", "hello.py"]
             },
             secrets: Default::default(),
             cross_compile: spec.cross_compile.clone(),
+            skip_host_build: false, // Artifact rendering doesn't need this
         };
 
         // Render each artifact from the spec

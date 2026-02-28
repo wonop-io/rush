@@ -1,0 +1,11 @@
+{
+  "id": "2ae481e0-a5a8-41a5-893f-2499f0390d89",
+  "session_id": "native-agent-mcp",
+  "message_id": "native-mcp",
+  "timestamp": "2026-02-28T11:38:24.070363Z",
+  "description": "Before edit: /Users/tfr/Documents/Projects/.worktrees/feature-447--rush-make-it-arm-based/products/io.wonop.helloworld/stack.spec.yaml",
+  "files": [
+    "products/io.wonop.helloworld/stack.spec.yaml"
+  ],
+  "trigger": null
+}

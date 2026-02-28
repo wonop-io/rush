@@ -17,6 +17,8 @@ pub struct DockerExecutor {
     use_sudo: bool,
     /// Default timeout for operations in seconds
     timeout: u64,
+    /// Target platform for builds and runs (e.g., "linux/amd64" or "linux/arm64")
+    platform: String,
 }
 
 impl Default for DockerExecutor {
@@ -24,6 +26,7 @@ impl Default for DockerExecutor {
         Self {
             use_sudo: false,
             timeout: 300,
+            platform: rush_core::constants::docker_platform_native().to_string(),
         }
     }
 }
@@ -40,6 +43,11 @@ impl DockerExecutor {
 
     pub fn with_timeout(mut self, timeout: u64) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    pub fn with_platform(mut self, platform: &str) -> Self {
+        self.platform = platform.to_string();
         self
     }
 
@@ -164,7 +172,12 @@ impl DockerClient for DockerExecutor {
 
     #[instrument(level = "info", skip(self), fields(tag = %tag, dockerfile = %dockerfile, context = %context))]
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()> {
+        // Use native platform by default to ensure architecture consistency
+        let platform = self.target_platform();
         let mut args = vec!["build".to_string()];
+
+        args.push("--platform".to_string());
+        args.push(platform.to_string());
 
         args.push("--tag".to_string());
         args.push(tag.to_string());
@@ -175,7 +188,7 @@ impl DockerClient for DockerExecutor {
         args.push(context.to_string());
 
         info!("Docker build command: docker {}", args.join(" "));
-        debug!("Building from context: {context}");
+        debug!("Building from context: {context} for platform: {platform}");
 
         let output = self.execute(args).await?;
 
@@ -184,7 +197,7 @@ impl DockerClient for DockerExecutor {
             debug!("Docker build output:\n{output}");
         }
 
-        info!("Built Docker image: {tag}");
+        info!("Built Docker image: {tag} for platform: {platform}");
         Ok(())
     }
 
@@ -274,6 +287,94 @@ impl DockerClient for DockerExecutor {
         let container_id = output.trim().to_string();
         info!("Started container {name} with ID: {container_id}");
         Ok(container_id)
+    }
+
+    #[instrument(level = "info", skip(self), fields(tag = %tag, dockerfile = %dockerfile, context = %context, platform = %platform))]
+    async fn build_image_with_platform(
+        &self,
+        tag: &str,
+        dockerfile: &str,
+        context: &str,
+        platform: &str,
+    ) -> Result<()> {
+        let mut args = vec!["build".to_string()];
+
+        args.push("--platform".to_string());
+        args.push(platform.to_string());
+
+        args.push("--tag".to_string());
+        args.push(tag.to_string());
+
+        args.push("--file".to_string());
+        args.push(dockerfile.to_string());
+
+        args.push(context.to_string());
+
+        info!("Docker build command: docker {}", args.join(" "));
+        debug!("Building from context: {context} for platform: {platform}");
+
+        let output = self.execute(args).await?;
+
+        // Log the build output for debugging
+        if !output.trim().is_empty() {
+            debug!("Docker build output:\n{output}");
+        }
+
+        info!("Built Docker image: {tag} for platform: {platform}");
+        Ok(())
+    }
+
+    #[instrument(level = "info", skip(self, env_vars, ports, volumes, command), fields(image = %image, container_name = %name, network = %network, platform = %platform))]
+    async fn run_container_with_platform(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+        platform: &str,
+    ) -> Result<String> {
+        let mut args = vec!["run".to_string()];
+
+        args.push("-d".to_string()); // detach by default
+        args.push("--platform".to_string());
+        args.push(platform.to_string());
+        args.push("--name".to_string());
+        args.push(name.to_string());
+        args.push("--network".to_string());
+        args.push(network.to_string());
+
+        for env_var in env_vars {
+            args.push("-e".to_string());
+            args.push(env_var.clone());
+        }
+
+        for port in ports {
+            args.push("-p".to_string());
+            args.push(port.clone());
+        }
+
+        for volume in volumes {
+            args.push("-v".to_string());
+            args.push(volume.clone());
+        }
+
+        args.push(image.to_string());
+
+        if let Some(cmd) = command {
+            args.extend(cmd.iter().cloned());
+        }
+
+        let output = self.execute(args).await?;
+        let container_id = output.trim().to_string();
+        info!("Started container {name} with ID: {container_id} on platform: {platform}");
+        Ok(container_id)
+    }
+
+    fn target_platform(&self) -> &str {
+        &self.platform
     }
 
     #[instrument(level = "info", skip(self), fields(container_id = %container_id))]

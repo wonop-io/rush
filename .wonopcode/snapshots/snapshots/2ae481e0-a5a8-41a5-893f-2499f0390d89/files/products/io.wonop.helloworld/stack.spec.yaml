@@ -1,0 +1,95 @@
+frontend:
+  ssr: false
+  build_type: "Bazel"
+  location: "frontend/webui"
+  color: "purple"
+  mount_point: "/"
+  k8s: frontend/infrastructure
+  # Bazel OCI configuration
+  oci_image_target: "//src:image"
+  oci_load_target: "//src:load"
+  oci_push_target: "//src:push"
+  depends_on:
+    - backend
+
+# Legacy TrunkWasm frontend (kept for fallback)
+# frontend-trunk:
+#   ssr: false
+#   build_type: "TrunkWasm"
+#   location: "frontend/webui"
+#   context_dir: ".."
+#   dockerfile: "frontend/Dockerfile"
+#   color: "purple"
+#   mount_point: "/"
+#   k8s: frontend/infrastructure
+#   depends_on:
+#     - backend
+
+backend:
+  build_type: "RustBinary"
+  location: "backend/server"
+  context_dir: "."
+  dockerfile: "backend/Dockerfile.multistage"  # Use multi-stage build for ARM64 compatibility
+  color: "blue"
+  mount_point: "/api"
+  k8s: backend/infrastructure
+  priority: 50
+
+database:
+  build_type: "LocalService"
+  service_type: "postgresql"
+  version: "16"
+  color: "yellow"
+  persist_data: true
+  env:
+    POSTGRES_DB: backend
+    POSTGRES_PASSWORD: admin
+    POSTGRES_USER: admin
+    POSTGRES_PORT: "5432"
+  health_check: "pg_isready -U admin -p 5432"
+  init_scripts:
+    - "echo 'Database initialized for backend service'"
+
+stripe:
+  build_type: "LocalService"
+  service_type: "stripe-cli"
+  color: "orange"
+  persist_data: false
+  env:
+    STRIPE_WEBHOOK_URL: "http://localhost:9000/api/stripe/webhook"
+    # Set STRIPE_API_KEY in your .env file or secrets to avoid interactive auth
+    # STRIPE_API_KEY: "sk_test_..."
+  command: "listen --forward-to http://localhost:9000/api/stripe/webhook --skip-verify"
+
+ingress:
+  build_type: "Ingress"
+  port: 9000
+  target_port: 80
+  location: "./ingress"
+  dockerfile: "./ingress/Dockerfile"
+  color: "green"
+  components:
+    - "backend"
+    - "frontend"
+    - "api-server"
+  artefacts:
+    "./ingress/nginx.conf": nginx.conf
+  watch:
+    - "**/*_app"
+    - "**/*_api"
+  depends_on:
+    - frontend
+    - backend
+
+api-server:
+  build_type: "Bazel"
+  location: "api-server"
+  color: "cyan"
+  port: 8080
+  target_port: 8080
+  mount_point: "/api-server"
+  k8s: api-server/infrastructure
+  # Bazel OCI configuration
+  oci_image_target: "//src:image"
+  oci_load_target: "//src:load"
+  oci_push_target: "//src:push"

@@ -505,6 +505,45 @@ impl DockerClient for PooledDockerClient {
             .await
     }
 
+    async fn build_image_with_platform(
+        &self,
+        tag: &str,
+        dockerfile: &str,
+        context: &str,
+        platform: &str,
+    ) -> Result<()> {
+        let guard = self.pool.clone().acquire().await?;
+        guard
+            .client()
+            .build_image_with_platform(tag, dockerfile, context, platform)
+            .await
+    }
+
+    async fn run_container_with_platform(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+        platform: &str,
+    ) -> Result<String> {
+        let guard = self.pool.clone().acquire().await?;
+        guard
+            .client()
+            .run_container_with_platform(
+                image, name, network, env_vars, ports, volumes, command, platform,
+            )
+            .await
+    }
+
+    fn target_platform(&self) -> &str {
+        // Return native platform as we don't track per-pool platform
+        rush_core::constants::docker_platform_native()
+    }
+
     async fn follow_container_logs(
         &self,
         container_id: &str,

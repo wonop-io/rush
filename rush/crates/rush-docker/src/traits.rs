@@ -22,8 +22,22 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
     /// Pulls a Docker image
     async fn pull_image(&self, image: &str) -> Result<()>;
 
-    /// Builds a Docker image
+    /// Builds a Docker image (uses native platform by default)
     async fn build_image(&self, tag: &str, dockerfile: &str, context: &str) -> Result<()>;
+
+    /// Builds a Docker image for a specific platform
+    async fn build_image_with_platform(
+        &self,
+        tag: &str,
+        dockerfile: &str,
+        context: &str,
+        platform: &str,
+    ) -> Result<()>;
+
+    /// Returns the target platform for this client (e.g., "linux/amd64" or "linux/arm64")
+    fn target_platform(&self) -> &str {
+        rush_core::constants::docker_platform_native()
+    }
 
     /// Runs a container with the specified configuration
     async fn run_container(
@@ -47,6 +61,20 @@ pub trait DockerClient: Send + Sync + fmt::Debug {
         ports: &[String],
         volumes: &[String],
         command: Option<&[String]>,
+    ) -> Result<String>; // Returns container ID
+
+    /// Runs a container with the specified configuration, command, and platform
+    #[allow(clippy::too_many_arguments)]
+    async fn run_container_with_platform(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+        platform: &str,
     ) -> Result<String>; // Returns container ID
 
     /// Stops a running container

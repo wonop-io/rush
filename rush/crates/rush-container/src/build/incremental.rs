@@ -275,7 +275,19 @@ impl IncrementalBuilder {
 
     /// Check if a component needs rebuilding
     pub async fn needs_rebuild(&self, spec: &ComponentBuildSpec) -> Result<bool> {
+        use rush_build::BuildType;
+
         let start = Instant::now();
+
+        // Bazel builds always rebuild - Bazel has its own caching mechanism
+        // and we want to ensure OCI images are always up-to-date
+        if matches!(spec.build_type, BuildType::Bazel { .. }) {
+            info!(
+                "Component {} needs rebuild: Bazel builds always rebuild",
+                spec.component_name
+            );
+            return Ok(true);
+        }
 
         // Compute current content hash
         let current_hash = self.hasher.compute_hash(spec).await?;

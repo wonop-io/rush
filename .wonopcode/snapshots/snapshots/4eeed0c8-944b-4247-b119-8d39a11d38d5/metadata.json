@@ -1,0 +1,11 @@
+{
+  "id": "4eeed0c8-944b-4247-b119-8d39a11d38d5",
+  "session_id": "native-agent-mcp",
+  "message_id": "native-mcp",
+  "timestamp": "2026-02-28T12:42:40.597880Z",
+  "description": "Before edit: /Users/tfr/Documents/Projects/.worktrees/feature-447--rush-make-it-arm-based/rush/crates/rush-cli/src/commands/dev.rs",
+  "files": [
+    "rush/crates/rush-cli/src/commands/dev.rs"
+  ],
+  "trigger": null
+}

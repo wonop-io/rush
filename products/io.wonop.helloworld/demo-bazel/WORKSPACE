@@ -1,2 +1,0 @@
-# Bazel WORKSPACE file
-workspace(name = "demo_bazel")

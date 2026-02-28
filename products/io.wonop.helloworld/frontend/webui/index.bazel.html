@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello World - Bazel Build</title>
+    <!-- Tailwind CSS - pre-built for Bazel -->
+    <link rel="stylesheet" href="tailwind.css">
+</head>
+<body>
+    <script type="module">
+        // Import the Bazel-built WASM module
+        import init from './webui.js';
+        
+        // Initialize the WASM application
+        init().then(() => {
+            console.log('WASM application initialized');
+        }).catch((error) => {
+            console.error('Failed to initialize WASM:', error);
+        });
+    </script>
+</body>
+</html>

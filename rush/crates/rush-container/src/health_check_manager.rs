@@ -475,6 +475,28 @@ mod tests {
         async fn image_exists(&self, _image: &str) -> Result<bool> {
             Ok(true)
         }
+        async fn build_image_with_platform(
+            &self,
+            _tag: &str,
+            _dockerfile: &str,
+            _context: &str,
+            _platform: &str,
+        ) -> Result<()> {
+            Ok(())
+        }
+        async fn run_container_with_platform(
+            &self,
+            _image: &str,
+            _name: &str,
+            _network: &str,
+            _env_vars: &[String],
+            _ports: &[String],
+            _volumes: &[String],
+            _command: Option<&[String]>,
+            _platform: &str,
+        ) -> Result<String> {
+            Ok("container-id".to_string())
+        }
     }
 
     #[tokio::test]

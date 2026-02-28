@@ -62,12 +62,25 @@ impl HealthStatus {
 pub struct DockerCliClient {
     /// Path to the docker executable
     docker_path: String,
+    /// Target platform for builds and runs (e.g., "linux/amd64" or "linux/arm64")
+    platform: String,
 }
 
 impl DockerCliClient {
-    /// Creates a new DockerCliClient
+    /// Creates a new DockerCliClient with native platform
     pub fn new(docker_path: String) -> Self {
-        Self { docker_path }
+        Self {
+            docker_path,
+            platform: rush_core::constants::docker_platform_native().to_string(),
+        }
+    }
+
+    /// Creates a new DockerCliClient with a specific platform
+    pub fn with_platform(docker_path: String, platform: &str) -> Self {
+        Self {
+            docker_path,
+            platform: platform.to_string(),
+        }
     }
 }
 
@@ -215,7 +228,7 @@ impl DockerClient for DockerCliClient {
             .args([
                 "build",
                 "--platform",
-                "linux/amd64", // Always build for x86_64
+                &self.platform,
                 "--tag",
                 tag,
                 "--file",
@@ -320,7 +333,7 @@ impl DockerClient for DockerCliClient {
             "-i", // Keep STDIN open
             "-t", // Allocate a pseudo-TTY to preserve colors
             "--platform",
-            "linux/amd64", // Always run as x86_64
+            &self.platform,
             "--name",
             name,
             "--network",
@@ -373,6 +386,142 @@ impl DockerClient for DockerCliClient {
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
         info!("Successfully started Docker container: {name} (ID: {container_id})");
         Ok(container_id)
+    }
+
+    async fn build_image_with_platform(
+        &self,
+        tag: &str,
+        dockerfile: &str,
+        context: &str,
+        platform: &str,
+    ) -> Result<()> {
+        use std::path::Path;
+
+        trace!("Building Docker image: {tag} for platform: {platform}");
+        let build_start = std::time::Instant::now();
+
+        let context_path = Path::new(context);
+        let dockerfile_path = Path::new(dockerfile);
+
+        let dockerfile_relative = if dockerfile_path.is_absolute() && context_path.is_absolute() {
+            dockerfile_path
+                .strip_prefix(context_path)
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|_| dockerfile_path.to_path_buf())
+        } else {
+            dockerfile_path.to_path_buf()
+        };
+
+        let dockerfile_arg = dockerfile_relative.to_string_lossy();
+
+        info!("Docker build: Running from directory '{context}' for platform '{platform}'");
+        info!("Docker build command: docker build --platform {platform} --tag {tag} --file {dockerfile_arg} .");
+
+        let _dir_guard = rush_utils::Directory::chdir(context);
+
+        let output = Command::new(&self.docker_path)
+            .args([
+                "build",
+                "--platform",
+                platform,
+                "--tag",
+                tag,
+                "--file",
+                dockerfile_arg.as_ref(),
+                ".",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to execute docker build: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("Docker build failed for {tag}: {stderr}");
+            return Err(Error::Docker(format!("Docker build failed for {tag}")));
+        }
+
+        debug!("Successfully built Docker image: {tag} for platform: {platform}");
+
+        crate::profiling::global_tracker()
+            .record_with_component("docker_build", "total", build_start.elapsed())
+            .await;
+
+        Ok(())
+    }
+
+    async fn run_container_with_platform(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+        platform: &str,
+    ) -> Result<String> {
+        trace!("Running Docker container {name} from image {image} on platform {platform}");
+
+        let mut args = vec![
+            "run",
+            "-d",
+            "-i",
+            "-t",
+            "--platform",
+            platform,
+            "--name",
+            name,
+            "--network",
+            network,
+        ];
+
+        for env in env_vars {
+            args.push("-e");
+            args.push(env);
+        }
+
+        for port in ports {
+            args.push("-p");
+            args.push(port);
+        }
+
+        for volume in volumes {
+            args.push("-v");
+            args.push(volume);
+        }
+
+        args.push(image);
+
+        if let Some(cmd) = command {
+            for arg in cmd {
+                args.push(arg);
+            }
+        }
+
+        println!("RUNNING: {}", args.join(" "));
+        let output = Command::new(&self.docker_path)
+            .args(&args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| Error::Docker(format!("Failed to run container: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            error!("Failed to run Docker container: {stderr}");
+            return Err(Error::Docker(format!("Container run failed: {stderr}")));
+        }
+
+        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        info!("Successfully started Docker container: {name} (ID: {container_id}) on platform: {platform}");
+        Ok(container_id)
+    }
+
+    fn target_platform(&self) -> &str {
+        &self.platform
     }
 
     async fn stop_container(&self, container_id: &str) -> Result<()> {
@@ -1219,6 +1368,28 @@ mod tests {
             async fn image_exists(&self, _image: &str) -> Result<bool> {
                 Ok(false)
             }
+            async fn build_image_with_platform(
+                &self,
+                _tag: &str,
+                _dockerfile: &str,
+                _context: &str,
+                _platform: &str,
+            ) -> Result<()> {
+                unimplemented!()
+            }
+            async fn run_container_with_platform(
+                &self,
+                _image: &str,
+                _name: &str,
+                _network: &str,
+                _env_vars: &[String],
+                _ports: &[String],
+                _volumes: &[String],
+                _command: Option<&[String]>,
+                _platform: &str,
+            ) -> Result<String> {
+                unimplemented!()
+            }
         }
 
         let mock = Arc::new(MockDockerClient {
@@ -1356,6 +1527,28 @@ mod tests {
 
             async fn image_exists(&self, _image: &str) -> Result<bool> {
                 Ok(false)
+            }
+            async fn build_image_with_platform(
+                &self,
+                _tag: &str,
+                _dockerfile: &str,
+                _context: &str,
+                _platform: &str,
+            ) -> Result<()> {
+                unimplemented!()
+            }
+            async fn run_container_with_platform(
+                &self,
+                _image: &str,
+                _name: &str,
+                _network: &str,
+                _env_vars: &[String],
+                _ports: &[String],
+                _volumes: &[String],
+                _command: Option<&[String]>,
+                _platform: &str,
+            ) -> Result<String> {
+                unimplemented!()
             }
         }
 

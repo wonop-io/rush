@@ -1,0 +1,28 @@
+ticket_id: '447'
+ticket_title: Rush Make It Arm Based
+ticket_source: null
+created_at: 2026-02-27T20:46:10.929019Z
+updated_at: 2026-02-27T20:46:10.929023Z
+workflow:
+  current_phase: requirements
+  phases:
+    design:
+      status: pending
+    requirements:
+      status: in_progress
+      started_at: 2026-02-27T20:46:10.929019Z
+    verification:
+      status: pending
+    analysis:
+      status: pending
+    implementation:
+      status: pending
+    deployment:
+      status: pending
+active_task: null
+sequences:
+  use-case: 0
+  requirement: 0
+  design: 0
+  test-case: 0
+  task: 0

@@ -383,6 +383,9 @@ impl ComponentBuildSpec {
                 base_image: yaml_section
                     .get("base_image")
                     .map(|v| v.as_str().unwrap().to_string()),
+                oci_load_target: yaml_section
+                    .get("oci_load_target")
+                    .map(|v| v.as_str().unwrap().to_string()),
             },
             _ => panic!("Invalid build_type"),
         };
@@ -812,6 +815,7 @@ impl ComponentBuildSpec {
             domains,
             env: self.dotenv.clone(),
             cross_compile: self.cross_compile.clone(),
+            skip_host_build: false, // This is determined at build time by orchestrator
         }
     }
 }

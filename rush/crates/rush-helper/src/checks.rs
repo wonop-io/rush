@@ -20,10 +20,11 @@ pub fn check_all_requirements() -> HelperResult<()> {
         commands.extend(e.get_fix_commands());
     }
 
-    // Check trunk for WASM builds
+    // Trunk check is optional - only needed for TrunkWasm builds
+    // Bazel WASM builds don't require trunk
     if let Err(e) = check_trunk() {
-        errors.push(e.get_message());
-        commands.extend(e.get_fix_commands());
+        eprintln!("⚠️  {}", e.get_message());
+        eprintln!("   (Only needed for TrunkWasm builds, not Bazel)\n");
     }
 
     // Check platform-specific tools
@@ -69,23 +70,37 @@ pub fn check_rust_targets() -> HelperResult<()> {
     let installed_targets = String::from_utf8_lossy(&output.stdout);
 
     // Check for required targets
-    let mut missing_targets = Vec::new();
+    let mut missing_targets: Vec<&str> = Vec::new();
+    let mut optional_missing_targets: Vec<&str> = Vec::new();
 
-    // Always need wasm target for frontend
+    // WASM target is optional - only needed for TrunkWasm/DixiousWasm builds
+    // Bazel WASM builds handle their own toolchain
     if !installed_targets.contains("wasm32-unknown-unknown") {
-        missing_targets.push("wasm32-unknown-unknown");
+        optional_missing_targets.push("wasm32-unknown-unknown");
     }
 
-    // Check for x86_64 Linux target (needed for cross-compilation)
-    if !installed_targets.contains("x86_64-unknown-linux-gnu") {
-        missing_targets.push("x86_64-unknown-linux-gnu");
+    // Linux target is optional - only needed for RustBinary/Script builds
+    // Bazel builds with rules_oci handle their own toolchain
+    let native_linux_target = match std::env::consts::ARCH {
+        "aarch64" => "aarch64-unknown-linux-gnu",
+        _ => "x86_64-unknown-linux-gnu",
+    };
+    
+    if !installed_targets.contains(native_linux_target) {
+        optional_missing_targets.push(native_linux_target);
     }
 
-    // On Apple Silicon, also check for x86_64 Darwin target
-    if crate::is_apple_silicon() && !installed_targets.contains("x86_64-apple-darwin") {
-        missing_targets.push("x86_64-apple-darwin");
+    // Print warnings for optional missing targets (but don't fail)
+    if !optional_missing_targets.is_empty() {
+        eprintln!("\n⚠️  Optional Rust targets not installed (needed for some build types):");
+        for target in &optional_missing_targets {
+            eprintln!("   - {target}");
+        }
+        eprintln!("   Install with: rustup target add <target>");
+        eprintln!("   (Bazel builds don't require these targets)\n");
     }
 
+    // Only fail if there are required missing targets
     if !missing_targets.is_empty() {
         let mut errors = Vec::new();
         let mut commands = Vec::new();
@@ -162,14 +177,20 @@ pub fn check_trunk() -> HelperResult<()> {
 }
 
 pub fn check_platform_specific() -> HelperResult<()> {
-    if crate::is_apple_silicon() {
-        check_apple_silicon_toolchain()
-    } else {
-        Ok(())
-    }
+    // Platform-specific checks are now optional since we default to native architecture.
+    // Cross-compilation toolchains are only needed when explicitly targeting a different architecture.
+    // Users who want to cross-compile can install the necessary toolchains manually.
+    Ok(())
 }
 
-fn check_apple_silicon_toolchain() -> HelperResult<()> {
+/// Check for x86_64 cross-compilation toolchain on Apple Silicon.
+/// This is an optional check - only needed when targeting x86_64 from ARM64.
+#[allow(dead_code)]
+fn check_apple_silicon_x86_toolchain() -> HelperResult<()> {
+    if !crate::is_apple_silicon() {
+        return Ok(());
+    }
+
     // Check for x86_64-unknown-linux-gnu toolchain
     let output = Command::new("brew").args(["list", "--formula"]).output();
 
@@ -189,7 +210,7 @@ fn check_apple_silicon_toolchain() -> HelperResult<()> {
 
     if !installed_formulae.contains("x86_64-unknown-linux-gnu") {
         return Err(HelperError::MissingTool {
-            message: "x86_64-unknown-linux-gnu toolchain not installed (required for cross-compilation on Apple Silicon)".to_string(),
+            message: "x86_64-unknown-linux-gnu toolchain not installed (required for cross-compilation to x86_64 on Apple Silicon)".to_string(),
             command: vec![
                 "arch".to_string(),
                 "-arm64".to_string(),
@@ -200,7 +221,6 @@ fn check_apple_silicon_toolchain() -> HelperResult<()> {
         });
     }
 
-    // Rush handles linker configuration through environment variables, no need to check cargo config
     Ok(())
 }
 

@@ -1,0 +1,11 @@
+{
+  "id": "3a4a337b-149c-47c8-bc49-72d7b7e0b25b",
+  "session_id": "native-agent-mcp",
+  "message_id": "native-mcp",
+  "timestamp": "2026-02-28T11:56:12.623216Z",
+  "description": "Before write: /Users/tfr/Documents/Projects/.worktrees/feature-447--rush-make-it-arm-based/PLAN.md",
+  "files": [
+    "PLAN.md"
+  ],
+  "trigger": null
+}

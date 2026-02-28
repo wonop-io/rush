@@ -322,16 +322,22 @@ fn print_component_image_info(info: &ComponentImageInfo, product_path: &std::pat
             targets,
             output_dir,
             base_image,
+            oci_load_target,
             ..
         } => {
-            if let Some(targets) = targets {
-                println!("  Bazel Targets: {}", targets.join(", "));
+            if let Some(oci_target) = oci_load_target {
+                println!("  OCI Mode: rules_oci");
+                println!("  OCI Load Target: {oci_target}");
             } else {
-                println!("  Bazel Targets: //... (all)");
-            }
-            println!("  Output Directory: {output_dir}");
-            if let Some(base) = base_image {
-                println!("  Base Image: {base}");
+                if let Some(targets) = targets {
+                    println!("  Bazel Targets: {}", targets.join(", "));
+                } else {
+                    println!("  Bazel Targets: //... (all)");
+                }
+                println!("  Output Directory: {output_dir}");
+                if let Some(base) = base_image {
+                    println!("  Base Image: {base}");
+                }
             }
         }
         _ => {}

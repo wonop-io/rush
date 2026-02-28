@@ -82,6 +82,7 @@ pub async fn execute(config: Arc<Config>, matches: &clap::ArgMatches) -> Result<
             domains: HashMap::new(), // Empty domains map, would be populated from product
             env: HashMap::new(),     // Default to empty environment variables
             cross_compile: "native".to_string(), // Default to native compilation
+            skip_host_build: false,
         };
 
         print!("Building {component_name} ... ");
@@ -162,6 +163,7 @@ fn parse_build_type(build_type_str: &str) -> Result<BuildType> {
             targets: None,
             additional_args: None,
             base_image: None,
+            oci_load_target: None,
         }),
         _ => Err(Error::InvalidInput(format!(
             "Unknown build type: {build_type_str}"

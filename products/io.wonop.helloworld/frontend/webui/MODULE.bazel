@@ -1,0 +1,124 @@
+###############################################################################
+# Bazel module configuration for webui (Yew WASM frontend)
+# Builds OCI images using rules_oci
+###############################################################################
+
+module(
+    name = "webui",
+    version = "0.1.0",
+)
+
+# Rust rules
+bazel_dep(name = "rules_rust", version = "0.69.0")
+
+# WASM bindgen rules (separate module in bzlmod)
+bazel_dep(name = "rules_rust_wasm_bindgen", version = "0.69.0")
+
+# OCI container rules
+bazel_dep(name = "rules_oci", version = "2.2.0")
+
+# Packaging rules (for creating tarballs)
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+
+# Configure Rust toolchain with WASM target
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    versions = ["1.85.0"],
+    extra_target_triples = ["wasm32-unknown-unknown"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# Pull base images for OCI (nginx for serving static files)
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "nginx",
+    # Multi-platform manifest list digest for nginx:alpine
+    digest = "sha256:1d13701a5f9f3fb01aaa88cef2344d65b6b5bf6b7d9fa4cf0dca557a8d7702ba",
+    image = "index.docker.io/library/nginx",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64/v8",  # arm64 with v8 variant
+    ],
+)
+use_repo(oci, "nginx", "nginx_linux_amd64", "nginx_linux_arm64_v8")
+
+# Crate dependencies via crate_universe
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+
+# Yew framework
+crate.spec(
+    package = "yew",
+    version = "0.21",
+    features = ["csr"],
+)
+crate.spec(
+    package = "yew-router",
+    version = "0.18",
+)
+crate.spec(
+    package = "yewdux",
+    version = "0.11",
+)
+
+# WASM bindings - pin to exact version to match wasm-bindgen-cli 0.2.105
+crate.spec(
+    package = "wasm-bindgen",
+    version = "=0.2.105",
+    features = ["serde-serialize"],
+)
+crate.spec(
+    package = "wasm-bindgen-futures",
+    version = "=0.4.55",
+)
+crate.spec(
+    package = "serde-wasm-bindgen",
+    version = "0.6.3",
+)
+
+# Core dependencies
+crate.spec(
+    package = "serde",
+    version = "1.0",
+    features = ["derive"],
+)
+crate.spec(
+    package = "serde_json",
+    version = "1.0",
+)
+crate.spec(
+    package = "gloo",
+    version = "0.11",
+)
+
+# Tracing
+crate.spec(
+    package = "tracing-web",
+    version = "0.1.3",
+)
+crate.spec(
+    package = "tracing-subscriber",
+    version = "0.3.18",
+)
+
+# Utilities (for api_types compatibility)
+crate.spec(
+    package = "validator",
+    version = "0.18.1",
+    features = ["derive"],
+)
+crate.spec(
+    package = "chrono",
+    version = "0.4.23",
+    features = ["serde", "wasmbind"],
+)
+crate.spec(
+    package = "uuid",
+    version = "1.3",
+    features = ["serde", "v4", "js"],
+)
+
+crate.from_specs()
+use_repo(crate, "crates")

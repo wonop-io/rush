@@ -1,0 +1,66 @@
+# Multi-stage Dockerfile for building Rust binaries inside Docker
+# This avoids cross-compilation issues by building in a Linux environment
+# Note: This builds from the product root directory to include workspace deps
+
+# Stage 1: Build the Rust binary
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /usr/src
+
+# Copy workspace root first - we'll modify it to exclude frontend
+COPY Cargo.toml ./Cargo.toml.orig
+
+# Modify workspace to exclude frontend (backend doesn't need it)
+RUN sed 's|"frontend/webui",*||g' Cargo.toml.orig | sed 's|, ]|]|g' | sed 's|\[, |[|g' > Cargo.toml
+
+# Create stub directories for workspace members
+RUN mkdir -p api/types backend/server
+
+# Copy api/types (dependency)
+COPY api/types ./api/types
+
+# Copy backend/server Cargo.toml
+COPY backend/server/Cargo.toml ./backend/server/
+
+# Create a stub main.rs for dependency caching
+RUN mkdir -p backend/server/src && echo "fn main() {}" > backend/server/src/main.rs
+
+# Build dependencies (cached layer)
+RUN cargo build --release -p server 2>/dev/null || true
+
+# Now copy the actual source
+RUN rm -rf backend/server/src
+COPY backend/server/src ./backend/server/src
+
+# Build for release
+ENV SQLX_OFFLINE=true
+RUN cargo build --release -p server
+
+# Stage 2: Create the runtime image
+FROM debian:bookworm-slim
+ARG APP=/usr/src/app
+
+ENV TZ=Etc/UTC \
+    APP_USER=appuser
+
+# Install OpenSSL and required libraries for runtime
+RUN apt-get update \
+    && apt-get install -y ca-certificates tzdata openssl libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create appuser
+RUN groupadd $APP_USER \
+    && useradd -g $APP_USER $APP_USER \
+    && mkdir -p ${APP}
+
+# Copy the binary from builder
+COPY --from=builder /usr/src/target/release/server /server
+
+RUN chown -R $APP_USER:$APP_USER ${APP}
+
+USER $APP_USER
+WORKDIR ${APP}
+
+EXPOSE 8000
+
+CMD ["/server"]

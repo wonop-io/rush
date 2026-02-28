@@ -1,0 +1,11 @@
+{
+  "id": "71352915-f470-4f4b-9816-0c8ff937b429",
+  "session_id": "native-agent-mcp",
+  "message_id": "native-mcp",
+  "timestamp": "2026-02-28T15:26:04.366520Z",
+  "description": "Before edit: /Users/tfr/Documents/Projects/.worktrees/feature-447--rush-make-it-arm-based/products/io.wonop.helloworld/frontend/webui/src/BUILD.bazel",
+  "files": [
+    "products/io.wonop.helloworld/frontend/webui/src/BUILD.bazel"
+  ],
+  "trigger": null
+}

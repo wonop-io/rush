@@ -7,6 +7,7 @@ use rush_config::Config;
 use rush_container::{DevEnvironment, DockerCliClient, Reactor};
 use rush_core::constants::DOCKER_TAG_LATEST;
 use rush_core::error::{Error, Result};
+use rush_core::TargetArchitecture;
 use rush_k8s::encoder::{K8sEncoder, NoopEncoder as K8sNoopEncoder, SealedSecretsEncoder};
 // Legacy imports removed - this module is deprecated
 // use rush_output::OutputDirectorFactory;
@@ -105,6 +106,8 @@ impl DevCommand {
         );
 
         // Create the container reactor from product directory
+        // Note: We use Native architecture by default
+        // The main CLI path in context_builder.rs handles explicit --arch flag
         let mut reactor = Reactor::from_product_dir(
             self.config.clone(),
             vault_adapter,
@@ -113,6 +116,7 @@ impl DevCommand {
             self.silence_components.clone(),
             network_manager.clone(),
             k8s_encoder,
+            &TargetArchitecture::Native,
         )
         .await
         .map_err(|e| Error::Setup(format!("Failed to initialize container reactor: {e}")))?;

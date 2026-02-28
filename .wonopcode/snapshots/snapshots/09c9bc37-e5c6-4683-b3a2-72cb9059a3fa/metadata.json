@@ -1,0 +1,11 @@
+{
+  "id": "09c9bc37-e5c6-4683-b3a2-72cb9059a3fa",
+  "session_id": "native-agent-mcp",
+  "message_id": "native-mcp",
+  "timestamp": "2026-02-28T11:30:42.762049Z",
+  "description": "Before edit: /Users/tfr/Documents/Projects/.worktrees/feature-447--rush-make-it-arm-based/rush/templates/build/rust_binary.sh",
+  "files": [
+    "rush/templates/build/rust_binary.sh"
+  ],
+  "trigger": null
+}

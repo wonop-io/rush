@@ -296,8 +296,18 @@ impl ImageBuilder {
             .trim()
             .to_string();
 
-        // We always target linux/amd64, which should show as "amd64" architecture
-        let expected_arch = "amd64";
+        // Get expected architecture from toolchain
+        let expected_arch = self
+            .toolchain
+            .as_ref()
+            .map(|tc| tc.target().arch.to_docker_target())
+            .unwrap_or_else(|| {
+                // Fall back to native architecture
+                match std::env::consts::ARCH {
+                    "aarch64" => "arm64".to_string(),
+                    _ => "amd64".to_string(),
+                }
+            });
 
         if arch != expected_arch {
             log::warn!(
@@ -348,8 +358,10 @@ impl ImageBuilder {
                 build_type: self.build_config.build_type.clone(),
                 // Add fields that match your BuildContext struct
                 location: None,
-                target: Platform::new("linux", "x86_64"), // Use explicit Platform creation instead of Default
-                host: Platform::new("linux", "x86_64"), // Use explicit Platform creation instead of Default
+                target: self.toolchain.as_ref()
+                    .map(|tc| tc.target().clone())
+                    .unwrap_or_else(Platform::default),
+                host: Platform::default(),
                 rust_target: String::new(),
                 toolchain: (**self.toolchain.as_ref().unwrap()).clone(), // Dereference the Arc<ToolchainContext>
                 services: Default::default(),
@@ -368,6 +380,7 @@ impl ImageBuilder {
                 } else {
                     "native".to_string()
                 },
+                skip_host_build: false,
             };
 
             Ok(context)
@@ -421,12 +434,12 @@ impl ImageBuilder {
             let target = if let Some(toolchain) = &self.toolchain {
                 toolchain.target().to_docker_target()
             } else {
-                "linux/amd64".to_string() // Default target
+                rush_core::constants::docker_platform_native().to_string()
             };
             (cross_compile, target)
         } else {
-            // Default values if spec is not available
-            ("native".to_string(), "linux/amd64".to_string())
+            // Default values if spec is not available - use native platform
+            ("native".to_string(), rush_core::constants::docker_platform_native().to_string())
         };
 
         // Create cross-compilation guard for native compilation only

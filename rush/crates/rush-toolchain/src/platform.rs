@@ -103,8 +103,20 @@ impl Platform {
         }
     }
 
+    /// Returns a Platform configured for Docker containers.
+    /// Docker containers always run Linux, so this returns Linux with native architecture.
+    pub fn for_docker() -> Self {
+        Self {
+            os: OperatingSystem::Linux,
+            arch: ArchType::default(), // Use native architecture
+        }
+    }
+
     pub fn to_rust_target(&self) -> String {
-        format!("{}-unknown-{}-gnu", self.arch, self.os)
+        match self.os {
+            OperatingSystem::Linux => format!("{}-unknown-linux-gnu", self.arch),
+            OperatingSystem::MacOS => format!("{}-apple-darwin", self.arch),
+        }
     }
 
     pub fn to_docker_target(&self) -> String {

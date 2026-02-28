@@ -1,0 +1,143 @@
+###############################################################################
+# Bazel module configuration for api-server (Rust/Axum)
+# Builds OCI images using rules_oci with cross-compilation support
+###############################################################################
+
+module(
+    name = "api_server",
+    version = "0.1.0",
+)
+
+# Platform definitions (needed for select() in oci_load)
+bazel_dep(name = "platforms", version = "0.0.11")
+
+# Rust rules
+bazel_dep(name = "rules_rust", version = "0.69.0")
+
+# OCI container rules
+bazel_dep(name = "rules_oci", version = "2.2.0")
+
+# Packaging rules (for creating tarballs)
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+
+# MUSL toolchain for cross-compilation to Linux
+bazel_dep(name = "toolchains_musl", version = "0.1.27")
+
+# Rust edition and version
+RUST_EDITION = "2021"
+RUST_VERSION = "1.85.0"
+
+# Register the musl toolchain for cross-compilation
+toolchains_musl = use_extension("@toolchains_musl//:toolchains_musl.bzl", "toolchains_musl")
+toolchains_musl.config()
+
+# Configure Rust toolchains
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+
+# Default toolchain for host builds
+rust.toolchain(
+    edition = RUST_EDITION,
+    versions = [RUST_VERSION],
+)
+
+# Cross-compilation: macOS ARM64 -> Linux ARM64 (musl)
+rust.repository_set(
+    name = "rust_darwin_aarch64_to_linux_aarch64_musl",
+    edition = RUST_EDITION,
+    exec_triple = "aarch64-apple-darwin",
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    target_triple = "aarch64-unknown-linux-musl",
+    versions = [RUST_VERSION],
+)
+
+# Cross-compilation: macOS ARM64 -> Linux x86_64 (musl)
+rust.repository_set(
+    name = "rust_darwin_aarch64_to_linux_x86_64_musl",
+    edition = RUST_EDITION,
+    exec_triple = "aarch64-apple-darwin",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_triple = "x86_64-unknown-linux-musl",
+    versions = [RUST_VERSION],
+)
+
+# Cross-compilation: macOS x86_64 -> Linux ARM64 (musl)
+rust.repository_set(
+    name = "rust_darwin_x86_64_to_linux_aarch64_musl",
+    edition = RUST_EDITION,
+    exec_triple = "x86_64-apple-darwin",
+    target_compatible_with = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+    target_triple = "aarch64-unknown-linux-musl",
+    versions = [RUST_VERSION],
+)
+
+# Cross-compilation: macOS x86_64 -> Linux x86_64 (musl)
+rust.repository_set(
+    name = "rust_darwin_x86_64_to_linux_x86_64_musl",
+    edition = RUST_EDITION,
+    exec_triple = "x86_64-apple-darwin",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    target_triple = "x86_64-unknown-linux-musl",
+    versions = [RUST_VERSION],
+)
+
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# Pull base images for OCI (using distroless/static for statically linked binaries)
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "distroless_static",
+    # Multi-platform manifest list digest for distroless/static-debian12:latest
+    digest = "sha256:3f2b64ef97bd285e36132c684e6b2ae8f2723293d09aae046196cca64251acac",
+    image = "gcr.io/distroless/static-debian12",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64/v8",
+    ],
+)
+use_repo(oci, "distroless_static", "distroless_static_linux_amd64", "distroless_static_linux_arm64_v8")
+
+# Crate dependencies via crate_universe
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+crate.spec(
+    package = "tokio",
+    version = "1.41",
+    features = ["full"],
+)
+crate.spec(
+    package = "axum",
+    version = "0.7",
+)
+crate.spec(
+    package = "serde",
+    version = "1.0",
+    features = ["derive"],
+)
+crate.spec(
+    package = "serde_json",
+    version = "1.0",
+)
+crate.spec(
+    package = "tracing",
+    version = "0.1",
+)
+crate.spec(
+    package = "tracing-subscriber",
+    version = "0.3",
+    features = ["env-filter"],
+)
+crate.from_specs()
+use_repo(crate, "crates")

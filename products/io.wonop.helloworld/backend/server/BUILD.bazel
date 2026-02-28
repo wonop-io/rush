@@ -1,0 +1,6 @@
+# Root BUILD.bazel for backend-server workspace
+# Exports static files that may be needed by the build
+
+exports_files([
+    "Cargo.toml",
+])

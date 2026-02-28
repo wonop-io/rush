@@ -63,4 +63,8 @@ pub struct BuildContext {
 
     /// Cross-compilation method ("native" or "cross-rs")
     pub cross_compile: String,
+    
+    /// Skip host cargo build (used for multi-stage Dockerfiles that compile inside Docker)
+    #[serde(default)]
+    pub skip_host_build: bool,
 }

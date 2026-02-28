@@ -1,0 +1,11 @@
+{
+  "id": "b792ea0d-b55e-4507-b052-dbbe271b9803",
+  "session_id": "native-agent-mcp",
+  "message_id": "native-mcp",
+  "timestamp": "2026-02-28T11:38:16.238610Z",
+  "description": "Before write: /Users/tfr/Documents/Projects/.worktrees/feature-447--rush-make-it-arm-based/products/io.wonop.helloworld/backend/Dockerfile.multistage",
+  "files": [
+    "products/io.wonop.helloworld/backend/Dockerfile.multistage"
+  ],
+  "trigger": null
+}

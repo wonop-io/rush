@@ -326,6 +326,57 @@ impl DockerClient for DockerClientWrapper {
             .await
     }
 
+    async fn build_image_with_platform(
+        &self,
+        tag: &str,
+        dockerfile: &str,
+        context: &str,
+        platform: &str,
+    ) -> Result<()> {
+        let tag = tag.to_string();
+        let dockerfile = dockerfile.to_string();
+        let context = context.to_string();
+        let platform = platform.to_string();
+
+        self.execute_with_retry("build_image_with_platform", || {
+            let client = self.inner.clone();
+            let tag = tag.clone();
+            let dockerfile = dockerfile.clone();
+            let context = context.clone();
+            let platform = platform.clone();
+            Box::pin(async move {
+                client
+                    .build_image_with_platform(&tag, &dockerfile, &context, &platform)
+                    .await
+            })
+        })
+        .await
+    }
+
+    async fn run_container_with_platform(
+        &self,
+        image: &str,
+        name: &str,
+        network: &str,
+        env_vars: &[String],
+        ports: &[String],
+        volumes: &[String],
+        command: Option<&[String]>,
+        platform: &str,
+    ) -> Result<String> {
+        // Call underlying client directly - don't retry container creation
+        // as the lifecycle manager handles retries with proper cleanup
+        self.inner
+            .run_container_with_platform(
+                image, name, network, env_vars, ports, volumes, command, platform,
+            )
+            .await
+    }
+
+    fn target_platform(&self) -> &str {
+        self.inner.target_platform()
+    }
+
     async fn stop_container(&self, id: &str) -> Result<()> {
         let id = id.to_string();
 

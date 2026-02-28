@@ -174,6 +174,15 @@ impl ImageTagGenerator {
         let mut files = Vec::new();
         let mut dirs = Vec::new();
 
+        // Skip components that don't have local directories (LocalService, PureDockerImage, etc.)
+        if !spec.build_type.has_local_directory() {
+            log::debug!(
+                "Skipping directory watch for '{}' - build type has no local directory",
+                spec.component_name
+            );
+            return (files, dirs);
+        }
+
         // Main component directory
         let component_dir = self.get_component_directory(spec);
         if !component_dir.exists() {

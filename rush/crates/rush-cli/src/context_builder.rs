@@ -14,6 +14,7 @@ use rush_k8s::encoder::{K8sEncoder, NoopEncoder, SealedSecretsEncoder};
 use rush_output::simple::Sink;
 use rush_output::sink_proxy::SinkProxy;
 use rush_security::{EnvironmentDefinitions, SecretsDefinitions, SecretsEncoder, Vault};
+use rush_core::TargetArchitecture;
 use rush_toolchain::{Platform, ToolchainContext};
 use rush_utils::Directory;
 use tokio::sync::Mutex as TokioMutex;
@@ -34,6 +35,7 @@ pub async fn create_context(
     let force_rebuild = parse_force_rebuild(matches);
 
     let target_arch = get_target_arch(matches);
+    let toolchain_mode = get_toolchain(matches, &target_arch);
     let target_os = get_target_os(matches);
     let environment = get_environment(matches);
     let docker_registry = get_docker_registry(matches);
@@ -59,7 +61,11 @@ pub async fn create_context(
     )?;
 
     // Create docker client FIRST (needed by local services and network manager)
-    let docker_client = Arc::new(rush_docker::DockerExecutor::new());
+    // Configure it with the target platform from CLI
+    let docker_client = Arc::new(
+        rush_docker::DockerExecutor::new()
+            .with_platform(target_arch.to_docker_platform())
+    );
 
     // Determine if this command needs full container support
     let needs_container_support = matches.subcommand_matches("dev").is_some()
@@ -125,7 +131,8 @@ pub async fn create_context(
     setup_environment_files(&config, &product_name, &environment)?;
 
     // Create toolchain
-    let toolchain = create_toolchain(&target_os, &target_arch);
+    let target_arch_str = get_target_arch_string(&target_arch);
+    let toolchain = create_toolchain(&target_os, &target_arch_str, &toolchain_mode)?;
 
     // Create reactor only for commands that need it
     let reactor = if needs_container_support {
@@ -142,6 +149,7 @@ pub async fn create_context(
             local_service_env_vars,
             force_rebuild,
             net_manager,
+            &target_arch,
         )
         .await?;
 
@@ -160,7 +168,7 @@ pub async fn create_context(
         // For non-container commands, create a minimal reactor
         // that won't actually be used for container operations
         debug!("Creating minimal reactor for non-container command");
-        create_minimal_reactor(config.clone(), vault.clone()).await?
+        create_minimal_reactor(config.clone(), vault.clone(), &target_arch).await?
     };
 
     Ok(CliContext::new(
@@ -223,6 +231,7 @@ fn parse_force_rebuild(matches: &ArgMatches) -> bool {
 async fn create_minimal_reactor(
     config: Arc<Config>,
     vault: Arc<Mutex<dyn Vault + Send>>,
+    target_arch: &TargetArchitecture,
 ) -> Result<Reactor> {
     // Create a minimal reactor for non-container commands
     // This reactor won't be used for container operations
@@ -234,7 +243,10 @@ async fn create_minimal_reactor(
     // Create a dummy network manager that won't be used
     // We need this because Reactor::new expects one, but we could refactor
     // Reactor to make it truly optional in the future
-    let docker_client = Arc::new(rush_docker::DockerExecutor::new());
+    let docker_client = Arc::new(
+        rush_docker::DockerExecutor::new()
+            .with_platform(target_arch.to_docker_platform())
+    );
     let product_name = config.product_name().to_string();
 
     // Try to create network manager, but if it fails for minimal reactor, that's ok
@@ -264,6 +276,7 @@ async fn create_minimal_reactor(
         Vec::new(),     // No silence components for minimal reactor
         network_manager,
         k8s_encoder,
+        target_arch,
     )
     .await
     {
@@ -286,16 +299,21 @@ pub fn setup_logging(matches: &ArgMatches) {
     trace!("Starting Rush application");
 }
 
-fn get_target_arch(matches: &ArgMatches) -> String {
+fn get_target_arch(matches: &ArgMatches) -> TargetArchitecture {
     if let Some(target_arch) = matches.get_one::<String>("target_arch") {
-        let arch = target_arch.clone();
-        info!("Target architecture: {arch}");
+        let arch: TargetArchitecture = target_arch.as_str().into();
+        info!("Target architecture: {} (docker platform: {})", arch, arch.to_docker_platform());
         arch
     } else {
-        let default_arch = "x86_64".to_string();
-        info!("Target architecture: {default_arch}");
-        default_arch
+        // Default to native (host) architecture
+        info!("Target architecture: native (docker platform: {})", TargetArchitecture::Native.to_docker_platform());
+        TargetArchitecture::Native
     }
+}
+
+/// Get the target architecture as a string for backwards compatibility
+fn get_target_arch_string(target_arch: &TargetArchitecture) -> String {
+    target_arch.arch_name().to_string()
 }
 
 fn get_target_os(matches: &ArgMatches) -> String {
@@ -307,6 +325,36 @@ fn get_target_os(matches: &ArgMatches) -> String {
         let default_os = "linux".to_string();
         info!("Target OS: {default_os}");
         default_os
+    }
+}
+
+/// Get the toolchain mode from CLI arguments.
+/// Returns "native" to use system tools, or the target architecture for cross-compilation.
+fn get_toolchain(matches: &ArgMatches, target_arch: &TargetArchitecture) -> String {
+    let target_arch_str = target_arch.arch_name();
+    
+    if let Some(toolchain) = matches.get_one::<String>("toolchain") {
+        let tc = match toolchain.as_str() {
+            "native" => "native".to_string(),
+            "x86" | "x86_64" | "amd64" => "x86_64".to_string(),
+            "arm64" | "aarch64" => "aarch64".to_string(),
+            other => {
+                warn!("Unknown toolchain '{other}', defaulting to match target architecture");
+                target_arch_str.to_string()
+            }
+        };
+        info!("Toolchain mode: {tc}");
+        tc
+    } else {
+        // Default to matching the target architecture
+        // If target_arch is native or same as host, this means "native"
+        if target_arch.is_native() || !target_arch.requires_cross_compilation() {
+            info!("Toolchain mode: native (host architecture matches target)");
+            "native".to_string()
+        } else {
+            info!("Toolchain mode: {target_arch_str} (cross-compilation)");
+            target_arch_str.to_string()
+        }
     }
 }
 
@@ -460,14 +508,39 @@ fn setup_environment_files(config: &Config, product_name: &str, environment: &st
     }
 }
 
-fn create_toolchain(target_os: &str, target_arch: &str) -> Arc<ToolchainContext> {
-    let toolchain = Arc::new(ToolchainContext::create_with_platforms(
-        Platform::default(),
-        Platform::new(target_os, target_arch),
-    ));
+fn create_toolchain(
+    target_os: &str,
+    target_arch: &str,
+    toolchain_mode: &str,
+) -> Result<Arc<ToolchainContext>> {
+    let host = Platform::default();
+    let target = Platform::new(target_os, target_arch);
+
+    // If toolchain_mode is "native", use the default toolchain without cross-compilation
+    let toolchain = if toolchain_mode == "native" {
+        debug!("Using native toolchain (no cross-compilation)");
+        Arc::new(ToolchainContext::new())
+    } else {
+        // Cross-compilation mode - try to find the appropriate toolchain
+        match ToolchainContext::try_create_with_platforms(host.clone(), target.clone()) {
+            Ok(tc) => Arc::new(tc),
+            Err(e) => {
+                // Provide helpful error message with installation instructions
+                let target_triple = format!("{}-unknown-linux-gnu", target_arch);
+                eprintln!("\n❌ {}", e);
+                eprintln!("\n📦 To install the cross-compilation toolchain, run:");
+                eprintln!("   arch -arm64 brew install SergioBenitez/osxct/{}", target_triple);
+                eprintln!("   rustup target add {}", target_triple);
+                eprintln!("\n💡 Alternatively, use --toolchain native to skip cross-compilation");
+                eprintln!("   (Note: This will use host tools, which may not work for all builds)\n");
+                return Err(rush_core::error::Error::Setup(e));
+            }
+        }
+    };
+
     toolchain.setup_env();
     debug!("Toolchain set up");
-    toolchain
+    Ok(toolchain)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -480,6 +553,7 @@ async fn create_reactor(
     local_service_env_vars: HashMap<String, String>,
     force_rebuild: bool,
     network_manager: Arc<rush_container::network::NetworkManager>,
+    target_arch: &TargetArchitecture,
 ) -> Result<Reactor> {
     // Note: NoopEncoder refers to rush_k8s::encoder::NoopEncoder (imported above)
     // rush_security::NoopEncoder is used here (fully qualified to avoid confusion)
@@ -507,6 +581,7 @@ async fn create_reactor(
         silence_components,
         network_manager,
         k8s_encoder,
+        target_arch,
     )
     .await
     {
