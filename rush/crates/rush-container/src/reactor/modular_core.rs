@@ -1067,7 +1067,7 @@ impl Reactor {
 
         for spec in &self.component_specs {
             // Skip components that don't require Docker builds (LocalService, PureKubernetes, etc.)
-            if !spec.build_type.requires_docker_build() {
+            if !spec.build_type.needs_container_runtime() {
                 continue;
             }
 
@@ -2554,7 +2554,7 @@ impl Reactor {
 
         for spec in specs.iter_mut() {
             // Skip components that don't require Docker builds
-            if !spec.build_type.requires_docker_build() {
+            if !spec.build_type.needs_container_runtime() {
                 continue;
             }
 

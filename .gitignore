@@ -67,3 +67,4 @@ postgres.db/
 **/postgres.db
 postgres.db/**
 .rush
+.wonopcode

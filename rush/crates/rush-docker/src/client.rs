@@ -436,6 +436,17 @@ impl DockerClient for DockerExecutor {
         Ok(())
     }
 
+    #[instrument(level = "info", skip(self), fields(source = %source, target = %target))]
+    async fn tag_image(&self, source: &str, target: &str) -> Result<()> {
+        info!("Tagging Docker image {source} as {target}");
+        let args = vec!["tag".to_string(), source.to_string(), target.to_string()];
+
+        self.execute(args).await?;
+
+        info!("Successfully tagged Docker image: {target}");
+        Ok(())
+    }
+
     #[instrument(level = "debug", skip(self), fields(image = %image))]
     async fn image_exists(&self, image: &str) -> Result<bool> {
         let args = vec![

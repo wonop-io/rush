@@ -55,8 +55,16 @@ impl ToolchainContext {
             Self::default()
         } else {
             // Handle cross-compilation toolchains
+            // Fall back to default toolchain if no cross-compilation toolchain is found
+            // (e.g., when using Bazel which handles cross-compilation internally)
             Self::find_cross_compilation_toolchain(&host, &target)
-                .unwrap_or_else(|| panic!("No suitable toolchain found for {target:?}"))
+                .unwrap_or_else(|| {
+                    warn!(
+                        "No system cross-compilation toolchain found for {:?} -> {:?}.                         Using native toolchain (Bazel builds handle cross-compilation internally).",
+                        host, target
+                    );
+                    Self::default()
+                })
         };
 
         ret.host = host;

@@ -60,6 +60,16 @@ pub const HOME_VAR: &str = "HOME";
 // Docker Constants
 pub const DOCKER_COMMAND: &str = "docker";
 pub const DOCKER_PLATFORM_LINUX_AMD64: &str = "linux/amd64";
+pub const DOCKER_PLATFORM_LINUX_ARM64: &str = "linux/arm64";
+
+/// Returns the Docker platform string matching the host architecture
+pub fn docker_platform_for_host() -> &'static str {
+    if cfg!(target_arch = "aarch64") {
+        DOCKER_PLATFORM_LINUX_ARM64
+    } else {
+        DOCKER_PLATFORM_LINUX_AMD64
+    }
+}
 pub const DOCKER_TAG_LATEST: &str = "latest";
 
 // Network Constants

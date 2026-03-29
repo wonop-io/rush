@@ -10,7 +10,7 @@ env:
   STAGING_DOMAIN: "{%-if subdomain-%}{{ subdomain }}-{%-endif-%}{{ product_uri }}-staging.wonop.dev"
   PROD_DOMAIN: "{%-if subdomain-%}{{ subdomain }}.{%-endif-%}{{ product_name }}"
 
-  LOCAL_VAULT: ".env"
+  LOCAL_VAULT: "json"
   DEV_VAULT: "1Password"
   STAGING_VAULT: "json"
   PROD_VAULT: "json"
@@ -24,6 +24,8 @@ env:
   K8S_VERSION_DEV: "1.29.13"
   K8S_VERSION_STAGING: "1.29.13"
   K8S_VERSION_PROD: "1.29.13"
+
+  JSON_VAULT_DIR: "~/.rush/devvaults"
 
   ONE_PASSWORD_ACCOUNT: hello.1password.com
 

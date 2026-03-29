@@ -292,8 +292,13 @@ fn get_target_arch(matches: &ArgMatches) -> String {
         info!("Target architecture: {arch}");
         arch
     } else {
-        let default_arch = "x86_64".to_string();
-        info!("Target architecture: {default_arch}");
+        // Detect host architecture and use matching Linux architecture
+        let default_arch = if cfg!(target_arch = "aarch64") {
+            "aarch64".to_string()
+        } else {
+            "x86_64".to_string()
+        };
+        info!("Target architecture (auto-detected): {default_arch}");
         default_arch
     }
 }
@@ -406,11 +411,18 @@ fn create_vault(product_path: &Path, config: &Config, name: &str) -> Arc<Mutex<d
             Arc::new(Mutex::new(OnePassword::new(account_name))) as Arc<Mutex<dyn Vault + Send>>
         }
         "json" => {
-            let json_path = PathBuf::from(
-                config
-                    .json_vault_dir()
-                    .expect("JSON path not found. Please set this in rushd.yaml"),
-            );
+            let json_path_str = config
+                .json_vault_dir()
+                .expect("JSON path not found. Please set this in rushd.yaml");
+            // Expand ~ to home directory
+            let json_path = if json_path_str.starts_with("~/") {
+                let home = env::var("HOME").expect("HOME environment variable not set");
+                PathBuf::from(json_path_str.replacen("~", &home, 1))
+            } else if json_path_str == "~" {
+                PathBuf::from(env::var("HOME").expect("HOME environment variable not set"))
+            } else {
+                PathBuf::from(json_path_str)
+            };
             info!("JSON Vault: {}", json_path.display());
             Arc::new(Mutex::new(FileVault::new(json_path, None))) as Arc<Mutex<dyn Vault + Send>>
         }

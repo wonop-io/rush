@@ -383,6 +383,19 @@ impl ComponentBuildSpec {
                 base_image: yaml_section
                     .get("base_image")
                     .map(|v| v.as_str().unwrap().to_string()),
+                // OCI target fields for native Bazel image loading
+                oci_load_target: yaml_section
+                    .get("oci_load_target")
+                    .map(|v| v.as_str().unwrap().to_string()),
+                oci_image_target: yaml_section
+                    .get("oci_image_target")
+                    .map(|v| v.as_str().unwrap().to_string()),
+                oci_push_target: yaml_section
+                    .get("oci_push_target")
+                    .map(|v| v.as_str().unwrap().to_string()),
+                ssr: yaml_section
+                    .get("ssr")
+                    .map(|v| v.as_bool().unwrap_or(false)),
             },
             _ => panic!("Invalid build_type"),
         };

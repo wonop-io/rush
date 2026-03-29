@@ -51,11 +51,15 @@ impl RunOptions {
             "-d".to_string(),
             "-t".to_string(),
             // Add platform for consistency
-            "--platform".to_string(),
-            "linux/amd64".to_string(),
+            // Platform removed - use native images for local dev
+            // "--platform".to_string(),
+            // "linux/amd64".to_string(),
             // Container name
             "--name".to_string(),
             self.name.clone(),
+            // Don't try to pull - use local images only
+            "--pull".to_string(),
+            "never".to_string(),
         ];
 
         // Network

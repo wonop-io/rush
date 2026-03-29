@@ -1996,6 +1996,7 @@ dependencies = [
  "clap",
  "colored",
  "ctrlc",
+ "dirs",
  "dotenv",
  "env_logger",
  "log",

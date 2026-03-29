@@ -477,6 +477,10 @@ impl DockerClient for DockerClientWrapper {
         .await
     }
 
+    async fn tag_image(&self, source: &str, target: &str) -> Result<()> {
+        self.inner.tag_image(source, target).await
+    }
+
     async fn image_exists(&self, image: &str) -> Result<bool> {
         let image = image.to_string();
 

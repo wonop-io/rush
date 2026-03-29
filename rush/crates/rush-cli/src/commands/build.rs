@@ -162,6 +162,10 @@ fn parse_build_type(build_type_str: &str) -> Result<BuildType> {
             targets: None,
             additional_args: None,
             base_image: None,
+            oci_load_target: None,
+            oci_image_target: None,
+            oci_push_target: None,
+            ssr: None,
         }),
         _ => Err(Error::InvalidInput(format!(
             "Unknown build type: {build_type_str}"

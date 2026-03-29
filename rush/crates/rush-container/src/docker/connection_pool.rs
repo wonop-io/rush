@@ -483,6 +483,11 @@ impl DockerClient for PooledDockerClient {
         guard.client().push_image(image).await
     }
 
+    async fn tag_image(&self, source: &str, target: &str) -> Result<()> {
+        let guard = self.pool.clone().acquire().await?;
+        guard.client().tag_image(source, target).await
+    }
+
     async fn image_exists(&self, image: &str) -> Result<bool> {
         let guard = self.pool.clone().acquire().await?;
         guard.client().image_exists(image).await

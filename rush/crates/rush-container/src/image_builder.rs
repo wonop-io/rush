@@ -296,8 +296,8 @@ impl ImageBuilder {
             .trim()
             .to_string();
 
-        // We always target linux/amd64, which should show as "amd64" architecture
-        let expected_arch = "amd64";
+        // Target architecture matches host for local development
+        let expected_arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
 
         if arch != expected_arch {
             log::warn!(
@@ -421,12 +421,12 @@ impl ImageBuilder {
             let target = if let Some(toolchain) = &self.toolchain {
                 toolchain.target().to_docker_target()
             } else {
-                "linux/amd64".to_string() // Default target
+                if cfg!(target_arch = "aarch64") { "linux/arm64".to_string() } else { "linux/amd64".to_string() } // Default target
             };
             (cross_compile, target)
         } else {
             // Default values if spec is not available
-            ("native".to_string(), "linux/amd64".to_string())
+            ("native".to_string(), if cfg!(target_arch = "aarch64") { "linux/arm64".to_string() } else { "linux/amd64".to_string() })
         };
 
         // Create cross-compilation guard for native compilation only

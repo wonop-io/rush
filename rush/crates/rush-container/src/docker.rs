@@ -215,7 +215,7 @@ impl DockerClient for DockerCliClient {
             .args([
                 "build",
                 "--platform",
-                "linux/amd64", // Always build for x86_64
+                if cfg!(target_arch = "aarch64") { "linux/arm64" } else { "linux/amd64" }, // Match host architecture
                 "--tag",
                 tag,
                 "--file",
@@ -319,8 +319,9 @@ impl DockerClient for DockerCliClient {
             "-d",
             "-i", // Keep STDIN open
             "-t", // Allocate a pseudo-TTY to preserve colors
-            "--platform",
-            "linux/amd64", // Always run as x86_64
+            // Platform removed - use native images for local dev
+            // "--platform",
+            // "linux/amd64", // Always run as x86_64
             "--name",
             name,
             "--network",
@@ -717,6 +718,29 @@ impl DockerClient for DockerCliClient {
         }
 
         debug!("Successfully pushed Docker image: {image}");
+        Ok(())
+    }
+
+    async fn tag_image(&self, source: &str, target: &str) -> Result<()> {
+        debug!("Tagging Docker image {source} as {target}");
+
+        let output = Command::new(&self.docker_path)
+            .args(["tag", source, target])
+            .output()
+            .await
+            .map_err(|e| {
+                Error::Docker(format!("Failed to execute docker tag: {}", e))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::Docker(format!(
+                "Failed to tag Docker image: {}",
+                stderr
+            )));
+        }
+
+        debug!("Successfully tagged Docker image: {target}");
         Ok(())
     }
 

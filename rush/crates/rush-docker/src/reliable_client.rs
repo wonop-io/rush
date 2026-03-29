@@ -384,6 +384,23 @@ impl DockerClient for ReliableDockerClient {
         .await
     }
 
+    async fn tag_image(&self, source: &str, target: &str) -> Result<()> {
+        let source = source.to_string();
+        let target = target.to_string();
+        let inner = Arc::clone(&self.inner);
+
+        with_retry(
+            || {
+                let inner = Arc::clone(&inner);
+                let source = source.clone();
+                let target = target.clone();
+                async move { inner.tag_image(&source, &target).await }
+            },
+            self.retry_config.clone(),
+        )
+        .await
+    }
+
     async fn image_exists(&self, image: &str) -> Result<bool> {
         let image = image.to_string();
         let inner = Arc::clone(&self.inner);

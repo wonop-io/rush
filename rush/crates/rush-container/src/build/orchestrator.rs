@@ -337,8 +337,12 @@ impl BuildOrchestrator {
             let image_name = format!("{}/{}", self.config.product_name, spec.component_name);
             let full_image_name = format!("{image_name}:{current_tag}");
 
-            // Check if image already exists with this tag (unless force rebuild)
-            if !force_rebuild {
+            // Check if this is a Bazel OCI component - always rebuild since Bazel has its own caching
+            let is_bazel_oci = matches!(&spec.build_type, BuildType::Bazel { oci_load_target: Some(_), .. });
+            
+            // Check if image already exists with this tag (unless force rebuild or Bazel OCI)
+            // Bazel OCI components are always rebuilt to avoid architecture mismatches with old images
+            if !force_rebuild && !is_bazel_oci {
                 info!(
                     "[BUILD DECISION] Component '{}': Checking if image '{}' exists",
                     spec.component_name, full_image_name
@@ -394,7 +398,7 @@ impl BuildOrchestrator {
                         spec.component_name);
                 }
             } else {
-                info!("[BUILD DECISION] Component '{}': Force rebuild requested, ignoring existing images",
+                info!("[BUILD DECISION] Component '{}': Force rebuild (force=true or Bazel OCI), will build fresh",
                     spec.component_name);
             }
 
@@ -957,60 +961,96 @@ impl BuildOrchestrator {
                 targets,
                 additional_args,
                 base_image,
+                oci_load_target,
+                oci_image_target: _,
+                oci_push_target: _,
+                ssr: _,
                 ..
             } => {
                 info!("Building Bazel component: {}", spec.component_name);
-
                 // Resolve workspace path
-                let workspace_path = self.config.product_dir.join(location);
+                let component_path = self.config.product_dir.join(location);
 
-                // Validate workspace exists
-                if !workspace_path.join("WORKSPACE").exists()
-                    && !workspace_path.join("WORKSPACE.bazel").exists()
-                {
-                    return Err(rush_core::error::Error::Build(format!(
-                        "No WORKSPACE file found in {}",
-                        workspace_path.display()
-                    )));
-                }
-
-                // Execute Bazel build
-                self.run_bazel_build(&workspace_path, targets.as_ref(), additional_args.as_ref())
-                    .await?;
-
-                // Resolve output directory
-                let output_path = if std::path::Path::new(output_dir).is_absolute() {
-                    std::path::PathBuf::from(output_dir)
-                } else {
-                    workspace_path.join(output_dir)
-                };
-
-                // Create output directory if needed
-                tokio::fs::create_dir_all(&output_path)
-                    .await
-                    .map_err(rush_core::error::Error::Io)?;
-
-                // Generate Dockerfile for OCI image
-                let dockerfile_path = self
-                    .generate_bazel_dockerfile(&output_path, &workspace_path, base_image.as_deref())
-                    .await?;
-
-                // Build Docker image
-                self.docker_client
-                    .build_image(
-                        &full_image_name,
-                        &dockerfile_path.to_string_lossy(),
-                        &output_path.to_string_lossy(),
-                    )
-                    .await?;
+                // Find the Bazel workspace root (may be above the component directory)
+                let workspace_path = self.find_bazel_workspace_root(&component_path)
+                    .ok_or_else(|| rush_core::error::Error::Build(format!(
+                        "No WORKSPACE or MODULE.bazel file found in {} or any parent directory",
+                        component_path.display()
+                    )))?;
 
                 info!(
-                    "Built Bazel component {} in {:?}",
-                    spec.component_name,
-                    start_time.elapsed()
+                    "Found Bazel workspace at {} for component {}",
+                    workspace_path.display(),
+                    spec.component_name
                 );
 
-                Ok(full_image_name)
+
+                // Check if this is an OCI build (has oci_load_target)
+                if let Some(load_target) = oci_load_target {
+                    // Use bazel run to load the OCI image directly into Docker
+                    info!(
+                        "Loading OCI image for {} using target: {}",
+                        spec.component_name, load_target
+                    );
+                    self.run_bazel_oci_load(&workspace_path, load_target, additional_args.as_ref())?;
+
+                    // Retag the image from :latest to the expected tag
+                    // Bazel oci_load uses repo_tags which defaults to :latest
+                    // but Rush expects images tagged with the git hash
+                    let latest_image = format!("{image_name}:latest");
+                    info!(
+                        "Retagging {} as {}",
+                        latest_image, full_image_name
+                    );
+                    self.docker_client.tag_image(&latest_image, &full_image_name).await?;
+
+                    info!(
+                        "Built Bazel OCI component {} in {:?}",
+                        spec.component_name,
+                        start_time.elapsed()
+                    );
+
+                    Ok(full_image_name)
+                } else {
+                    // Legacy path: build with Bazel then generate Dockerfile
+                    // Execute Bazel build
+                    self.run_bazel_build(&workspace_path, targets.as_ref(), additional_args.as_ref())
+                        .await?;
+
+                    // Resolve output directory
+                    let output_path = if std::path::Path::new(output_dir).is_absolute() {
+                        std::path::PathBuf::from(output_dir)
+                    } else {
+                        workspace_path.join(output_dir)
+                    };
+
+                    // Create output directory if needed
+                    tokio::fs::create_dir_all(&output_path)
+                        .await
+                        .map_err(rush_core::error::Error::Io)?;
+
+                    // Generate Dockerfile for OCI image
+                    let dockerfile_path = self
+                        .generate_bazel_dockerfile(&output_path, &workspace_path, base_image.as_deref())
+                        .await?;
+
+                    // Build Docker image
+                    self.docker_client
+                        .build_image(
+                            &full_image_name,
+                            &dockerfile_path.to_string_lossy(),
+                            &output_path.to_string_lossy(),
+                        )
+                        .await?;
+
+                    info!(
+                        "Built Bazel component {} in {:?}",
+                        spec.component_name,
+                        start_time.elapsed()
+                    );
+
+                    Ok(full_image_name)
+                }
             }
         }
     }
@@ -1258,6 +1298,80 @@ impl BuildOrchestrator {
         }
 
         info!("Bazel build completed successfully");
+        Ok(())
+    }
+
+
+    /// Execute Bazel run command to load an OCI image into Docker
+    /// 
+    /// This is used for Bazel builds that have oci_load_target set.
+    /// The target should be a rules_oci oci_tarball or oci_load target.
+
+    /// Find the Bazel workspace root by searching up the directory tree
+    fn find_bazel_workspace_root(&self, start_path: &Path) -> Option<PathBuf> {
+        let mut current = start_path.to_path_buf();
+        loop {
+            if current.join("MODULE.bazel").exists()
+                || current.join("WORKSPACE.bazel").exists()
+                || current.join("WORKSPACE").exists()
+            {
+                return Some(current);
+            }
+            if !current.pop() {
+                return None;
+            }
+        }
+    }
+
+    fn run_bazel_oci_load(
+        &self,
+        workspace_path: &Path,
+        load_target: &str,
+        additional_args: Option<&Vec<String>>,
+    ) -> Result<()> {
+        use rush_utils::{CommandConfig, CommandRunner};
+        use std::process::{Command, Stdio};
+        
+
+        // Detect host architecture for cross-compilation config
+        let cross_config = if cfg!(target_arch = "aarch64") {
+            "--config=linux-arm64"
+        } else {
+            "--config=linux-amd64"
+        };
+
+        info!(
+            "Running Bazel OCI load in {} with target: {} ({})",
+            workspace_path.display(),
+            load_target,
+            cross_config
+        );
+
+        let mut cmd = Command::new("bazel");
+        cmd.arg("run")
+            .arg(load_target)
+            .arg(cross_config)
+            .arg("--compilation_mode=opt")
+            .current_dir(workspace_path)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        if let Some(extra) = additional_args {
+            for arg in extra {
+                cmd.arg(arg);
+            }
+        }
+
+        let status = cmd.status()
+            .map_err(|e| rush_core::error::Error::Build(format!("Failed to run bazel: {}", e)))?;
+
+        if !status.success() {
+            return Err(rush_core::error::Error::Build(
+                "Bazel OCI load failed (see output above)".to_string()
+            ));
+        }
+
+        info!("Bazel OCI image loaded into Docker successfully");
         Ok(())
     }
 

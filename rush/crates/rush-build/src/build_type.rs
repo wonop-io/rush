@@ -146,6 +146,15 @@ pub enum BuildType {
         additional_args: Option<Vec<String>>,
         /// Optional base image for OCI generation (defaults to "scratch")
         base_image: Option<String>,
+        /// Bazel target that loads the OCI image into Docker (e.g., "//app:load")
+        /// When set, Rush will run `bazel run <target>` instead of building a Dockerfile
+        oci_load_target: Option<String>,
+        /// Bazel target for the OCI image (e.g., "//app:image")
+        oci_image_target: Option<String>,
+        /// Bazel target to push the image to a registry (e.g., "//app:push")
+        oci_push_target: Option<String>,
+        /// Whether server-side rendering is enabled (for frontend builds)
+        ssr: Option<bool>,
     },
 }
 
@@ -199,12 +208,52 @@ impl BuildType {
             BuildType::KubernetesInstallation { .. } => false,
             BuildType::PureDockerImage { .. } => false,
             BuildType::LocalService { .. } => false, // LocalServices use pre-built images
+            // Bazel OCI builds use bazel run to load images, not Docker build
+            BuildType::Bazel { oci_load_target: Some(_), .. } => false,
             _ => true,
         }
     }
 
     /// Returns whether this build type has server-side rendering
+    
+    /// Returns true if this build type produces a Docker container that needs to be run
+    /// This is different from requires_docker_build - Bazel OCI doesn't use docker build
+    /// but still produces containers that need to be started
+    pub fn needs_container_runtime(&self) -> bool {
+        match self {
+            BuildType::PureKubernetes => false,
+            BuildType::KubernetesInstallation { .. } => false,
+            BuildType::LocalService { .. } => false, // LocalServices are handled separately
+            _ => true, // All others (including Bazel OCI) produce containers to run
+        }
+    }
+
     pub fn has_ssr(&self) -> bool {
-        matches!(self, BuildType::TrunkWasm { ssr: true, .. })
+        match self {
+            BuildType::TrunkWasm { ssr: true, .. } => true,
+            BuildType::Bazel { ssr: Some(true), .. } => true,
+            _ => false,
+        }
+    }
+
+    /// Returns whether this is a Bazel OCI build (using oci_load_target)
+    pub fn is_bazel_oci(&self) -> bool {
+        matches!(self, BuildType::Bazel { oci_load_target: Some(_), .. })
+    }
+
+    /// Returns the OCI load target for Bazel builds
+    pub fn oci_load_target(&self) -> Option<&str> {
+        match self {
+            BuildType::Bazel { oci_load_target: Some(target), .. } => Some(target),
+            _ => None,
+        }
+    }
+
+    /// Returns the OCI push target for Bazel builds
+    pub fn oci_push_target(&self) -> Option<&str> {
+        match self {
+            BuildType::Bazel { oci_push_target: Some(target), .. } => Some(target),
+            _ => None,
+        }
     }
 }
