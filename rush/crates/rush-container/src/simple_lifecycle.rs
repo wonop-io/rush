@@ -45,7 +45,7 @@ impl Default for SimpleLifecycleConfig {
     fn default() -> Self {
         Self {
             product_name: String::new(),
-            environment: "dev".to_string(),
+            environment: "local".to_string(),
             network_name: "rush-network".to_string(),
             redirected_components: HashMap::new(),
             auto_restart: true,
@@ -546,7 +546,7 @@ mod tests {
     #[test]
     fn test_simple_lifecycle_config_default() {
         let config = SimpleLifecycleConfig::default();
-        assert_eq!(config.environment, "dev");
+        assert_eq!(config.environment, "local");
         assert_eq!(config.network_name, "rush-network");
         assert!(config.redirected_components.is_empty());
     }

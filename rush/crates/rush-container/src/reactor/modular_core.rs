@@ -111,16 +111,17 @@ impl Reactor {
         config: ModularReactorConfig,
         component_specs: Vec<ComponentBuildSpec>,
     ) -> Result<Self> {
-        // Use default toolchain
+        // Use default toolchain and no vault
         let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
-        Self::with_toolchain(config, component_specs, toolchain).await
+        Self::with_toolchain(config, component_specs, toolchain, None).await
     }
 
-    /// Create a new modular reactor with custom toolchain
+    /// Create a new modular reactor with custom toolchain and optional vault
     pub async fn with_toolchain(
         config: ModularReactorConfig,
         component_specs: Vec<ComponentBuildSpec>,
         toolchain: Arc<rush_toolchain::ToolchainContext>,
+        vault: Option<Arc<std::sync::Mutex<dyn rush_security::Vault + Send>>>,
     ) -> Result<Self> {
         info!("Initializing modular container reactor");
 
@@ -133,7 +134,6 @@ impl Reactor {
         // Set up shutdown coordination
         let (shutdown_sender, shutdown_receiver) = broadcast::channel(1);
 
-        // Create lifecycle manager with a mock vault for now
         // Phase 4 validation: Ensure product_dir is set before creating vault path
         if config.base.product_dir.as_os_str().is_empty() {
             return Err(Error::Config(
@@ -141,18 +141,19 @@ impl Reactor {
             ));
         }
 
-        let vault_path = config.base.product_dir.join(".rush/vault");
-        debug!("Vault path resolved to: {}", vault_path.display());
-
-        let vault: Arc<std::sync::Mutex<dyn rush_security::Vault + Send>> =
+        // Use provided vault or create a fallback FileVault
+        let vault: Arc<std::sync::Mutex<dyn rush_security::Vault + Send>> = vault.unwrap_or_else(|| {
+            let vault_path = config.base.product_dir.join(".rush/vault");
+            debug!("No vault provided, using fallback FileVault at: {}", vault_path.display());
             Arc::new(std::sync::Mutex::new(rush_security::FileVault::new(
                 vault_path,
                 None,
-            )));
+            )))
+        });
 
         let lifecycle_manager = SimpleLifecycleManager::new(
             config.lifecycle.clone(),
-            vault,
+            vault.clone(),
             event_bus.clone(),
             state.clone(),
         );
@@ -201,7 +202,7 @@ impl Reactor {
                 rush_output::simple::StdoutSink::new(),
             ))),
             k8s_manifest_dir: None,
-            vault: None,
+            vault: Some(vault),
             secrets_encoder: None,
             k8s_encoder: Arc::new(rush_k8s::encoder::NoopEncoder),
             deployment_versions: Vec::new(),
@@ -2507,11 +2508,11 @@ impl Reactor {
         // Resolve ports for all components before creating the reactor
         Self::resolve_component_ports(&mut component_specs, &config);
 
-        // Create the reactor using the existing new() method
-        let mut reactor = Self::new(modular_config, component_specs).await?;
+        // Create the reactor with the vault
+        let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
+        let mut reactor = Self::with_toolchain(modular_config, component_specs, toolchain, Some(vault)).await?;
 
-        // Set the vault and secrets encoder
-        reactor.vault = Some(vault);
+        // Set the secrets encoder
         reactor.secrets_encoder = Some(secrets_encoder);
         reactor.k8s_encoder = k8s_encoder;
 

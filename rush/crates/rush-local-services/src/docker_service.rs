@@ -552,11 +552,7 @@ impl LocalService for DockerLocalService {
 
         // Add connection string if applicable
         if let Some(conn_str) = self.generate_connection_string() {
-            let key = format!(
-                "{}_{}_URL",
-                self.name.to_uppercase().replace('-', "_"),
-                self.service_type.env_var_suffix()
-            );
+            let key = format!("{}_URL", self.service_type.env_var_suffix());
             vars.insert(key, conn_str);
         }
 
