@@ -642,6 +642,7 @@ mod tests {
             dotenv: Default::default(),
             dotenv_secrets: Default::default(),
             domain: "test.local".to_string(),
+            namespace: None,
             cross_compile: "native".to_string(),
             health_check: None,
             startup_probe: None,

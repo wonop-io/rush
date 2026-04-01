@@ -814,6 +814,7 @@ mod tests {
             dotenv: HashMap::new(),
             dotenv_secrets: HashMap::new(),
             domain: "test.local".to_string(),
+            namespace: None,
             cross_compile: "native".to_string(),
             health_check: None,
             startup_probe: None,

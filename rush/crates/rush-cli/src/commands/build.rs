@@ -143,7 +143,7 @@ fn parse_build_type(build_type_str: &str) -> Result<BuildType> {
         }),
         "PureKubernetes" => Ok(BuildType::PureKubernetes),
         "KubernetesInstallation" => Ok(BuildType::KubernetesInstallation {
-            namespace: String::new(),
+            namespace: None,
         }),
         "Ingress" => Ok(BuildType::Ingress {
             components: Vec::new(),

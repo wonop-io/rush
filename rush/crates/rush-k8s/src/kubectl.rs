@@ -189,6 +189,73 @@ impl Kubectl {
         Ok(results)
     }
 
+    /// Apply a manifest file with an explicit namespace override
+    pub async fn apply_in_namespace(&self, manifest_path: &Path, namespace: &str) -> Result<KubectlResult> {
+        let mut args = vec![
+            "apply".to_string(),
+            "-f".to_string(),
+            manifest_path.display().to_string(),
+            "-n".to_string(),
+            namespace.to_string(),
+        ];
+
+        if self.config.dry_run {
+            args.push("--dry-run=client".to_string());
+            args.push("-o".to_string());
+            args.push("yaml".to_string());
+        }
+
+        self.execute_without_namespace(args).await
+    }
+
+    /// Apply all manifests in a directory with an explicit namespace override
+    pub async fn apply_dir_in_namespace(&self, dir_path: &Path, namespace: &str) -> Result<Vec<KubectlResult>> {
+        if !dir_path.is_dir() {
+            return Err(Error::Filesystem(format!(
+                "{} is not a directory",
+                dir_path.display()
+            )));
+        }
+
+        info!("Applying manifests from directory: {} (namespace: {})", dir_path.display(), namespace);
+
+        let yaml_files = Self::collect_yaml_files_recursive(dir_path)?;
+
+        if yaml_files.is_empty() {
+            warn!("No YAML files found in directory: {}", dir_path.display());
+            return Ok(Vec::new());
+        }
+
+        info!("Found {} YAML files to apply", yaml_files.len());
+
+        let mut results = Vec::new();
+
+        for file in yaml_files {
+            info!("Applying manifest: {}", file.display());
+
+            match self.apply_in_namespace(&file, namespace).await {
+                Ok(result) => {
+                    if result.success {
+                        info!("Successfully applied: {}", file.display());
+                    } else {
+                        warn!(
+                            "Failed to apply {}: {}",
+                            file.display(),
+                            result.stderr
+                        );
+                    }
+                    results.push(result);
+                }
+                Err(e) => {
+                    error!("Error applying {}: {}", file.display(), e);
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     /// Delete resources from a manifest file
     pub async fn delete(&self, manifest_path: &Path) -> Result<KubectlResult> {
         let mut args = vec![
@@ -302,6 +369,21 @@ impl Kubectl {
         ];
 
         self.execute(args).await
+    }
+
+    /// Wait for all deployments in a namespace to be ready
+    pub async fn wait_for_rollout_in_namespace(&self, namespace: &str, timeout_secs: u64) -> Result<KubectlResult> {
+        let args = vec![
+            "wait".to_string(),
+            "--for=condition=Available".to_string(),
+            "deployment".to_string(),
+            "--all".to_string(),
+            "-n".to_string(),
+            namespace.to_string(),
+            format!("--timeout={}s", timeout_secs),
+        ];
+
+        self.execute_without_namespace(args).await
     }
 
     /// Execute a kubectl command without adding namespace

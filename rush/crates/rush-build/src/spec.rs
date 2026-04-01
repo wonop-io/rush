@@ -93,6 +93,9 @@ pub struct ComponentBuildSpec {
     /// Computed domain for the component
     pub domain: String,
 
+    /// Kubernetes namespace for this component
+    pub namespace: Option<String>,
+
     /// Cross-compilation method for Rust builds ("native" or "cross-rs")
     pub cross_compile: String,
 
@@ -346,10 +349,8 @@ impl ComponentBuildSpec {
             "K8sInstall" => BuildType::KubernetesInstallation {
                 namespace: yaml_section
                     .get("namespace")
-                    .expect("namespace is required for KubernetesInstallation")
-                    .as_str()
-                    .unwrap()
-                    .to_string(),
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             },
             "LocalService" => Self::parse_local_service(yaml_section, &variables),
             "Bazel" => BuildType::Bazel {
@@ -610,6 +611,9 @@ impl ComponentBuildSpec {
             dotenv_secrets,
             domain,
             domains: None,
+            namespace: yaml_section
+                .get("namespace")
+                .map(|v| v.as_str().unwrap().to_string()),
             cross_compile: yaml_section
                 .get("cross_compile")
                 .map(|v| v.as_str().unwrap().to_string())

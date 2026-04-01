@@ -68,7 +68,9 @@ pub async fn create_context(
         || matches.subcommand_matches("rollout").is_some()
         || matches.subcommand_matches("deploy").is_some()
         || matches.subcommand_matches("apply").is_some()
-        || matches.subcommand_matches("unapply").is_some();
+        || matches.subcommand_matches("unapply").is_some()
+        || matches.subcommand_matches("install").is_some()
+        || matches.subcommand_matches("uninstall").is_some();
 
     // Create network manager only for commands that need it
     let network_manager = if needs_container_support {
@@ -493,9 +495,8 @@ async fn create_reactor(
     force_rebuild: bool,
     network_manager: Arc<rush_container::network::NetworkManager>,
 ) -> Result<Reactor> {
-    // Note: NoopEncoder refers to rush_k8s::encoder::NoopEncoder (imported above)
-    // rush_security::NoopEncoder is used here (fully qualified to avoid confusion)
-    let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::NoopEncoder);
+    // Base64-encode secrets for K8s manifest data: fields
+    let secrets_encoder: Arc<dyn SecretsEncoder> = Arc::new(rush_security::Base64SecretsEncoder);
     let k8s_encoder = match config.k8s_encoder() {
         "kubeseal" => {
             info!("Encrypting K8s secrets with kubeseal");

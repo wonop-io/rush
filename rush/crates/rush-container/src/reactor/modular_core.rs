@@ -2057,23 +2057,324 @@ impl Reactor {
         self.deployment_versions.clone()
     }
 
-    /// Install Kubernetes manifests
+    /// Install Kubernetes manifests (build + apply per component in priority order)
+    ///
+    /// Unlike build_manifests + apply, this method processes each component sequentially:
+    /// build its manifests, then apply them before moving to the next component.
+    /// This ensures dependencies like sealed-secrets are running before later components
+    /// attempt to use kubeseal for secret encryption.
+    #[allow(clippy::await_holding_lock)]
     pub async fn install_manifests(&mut self) -> Result<()> {
         info!("Installing Kubernetes manifests...");
 
-        // TODO: Install manifests
-        debug!("Kubernetes manifest installation not implemented yet");
+        // Validate product_dir
+        if self.config.base.product_dir.as_os_str().is_empty() {
+            return Err(Error::Config(
+                "Cannot install manifests: product_dir is not set".to_string()
+            ));
+        }
 
-        Ok(())
+        // Create output directory for manifests
+        let output_dir = self.config.base.product_dir.join(".rush/k8s");
+        if output_dir.exists() {
+            std::fs::remove_dir_all(&output_dir)
+                .map_err(|e| Error::Filesystem(format!("Failed to remove k8s directory: {e}")))?;
+        }
+        std::fs::create_dir_all(&output_dir)
+            .map_err(|e| Error::Filesystem(format!("Failed to create k8s directory: {e}")))?;
+
+        // Global namespace fallback
+        let namespace = std::env::var("K8S_NAMESPACE").unwrap_or_else(|_| {
+            format!(
+                "{}-{}",
+                self.config.base.product_name, self.config.base.environment
+            )
+        });
+        let environment = self.config.base.environment.clone();
+
+        // Kubectl config (shared across all components)
+        let mut kubectl_config = rush_k8s::KubectlConfig::default();
+        kubectl_config.dry_run =
+            std::env::var("K8S_DRY_RUN").unwrap_or_else(|_| "false".to_string()) == "true";
+        kubectl_config.verbose = true;
+        let kubectl = rush_k8s::Kubectl::new(kubectl_config);
+
+        // Sort components by priority for sequential install
+        let mut specs_with_k8s: Vec<_> = self.component_specs.iter()
+            .filter(|s| s.k8s.is_some())
+            .collect();
+        specs_with_k8s.sort_by_key(|s| s.priority);
+
+        let mut total_applied = 0usize;
+        let mut total_failed = 0usize;
+
+        for spec in &specs_with_k8s {
+            let k8s_path = spec.k8s.as_ref().unwrap();
+            info!("Installing component: {} (priority {})", spec.component_name, spec.priority);
+
+            // Create component output directory
+            let component_dir_name = format!("{:04}_{}", spec.priority, spec.component_name);
+            let component_output_dir = output_dir.join(&component_dir_name);
+            std::fs::create_dir_all(&component_output_dir).map_err(|e| {
+                Error::Filesystem(format!("Failed to create component k8s directory: {e}"))
+            })?;
+
+            // Find template directory
+            let template_dir =
+                std::path::PathBuf::from(&self.config.base.product_dir).join(k8s_path);
+            if !template_dir.exists() {
+                warn!(
+                    "K8s template directory not found for {}: {}",
+                    spec.component_name, template_dir.display()
+                );
+                continue;
+            }
+
+            // Get component secrets from vault
+            let component_secrets = if let Some(vault) = &self.vault {
+                match vault
+                    .lock()
+                    .unwrap()
+                    .get(&spec.product_name, &spec.component_name, &environment)
+                    .await
+                {
+                    Ok(secrets) => {
+                        if let Some(encoder) = &self.secrets_encoder {
+                            encoder.encode_secrets(secrets)
+                        } else {
+                            secrets
+                        }
+                    }
+                    Err(e) => {
+                        debug!("No secrets found for component {}: {}", spec.component_name, e);
+                        HashMap::new()
+                    }
+                }
+            } else {
+                HashMap::new()
+            };
+
+            // Build Tera context
+            let toolchain = Arc::new(rush_toolchain::ToolchainContext::default());
+            let build_context = spec.generate_build_context(Some(toolchain), component_secrets);
+            let mut tera_context = tera::Context::from_serialize(&build_context)
+                .map_err(|e| Error::Template(format!("Failed to create context: {e}")))?;
+            let component_namespace = spec.namespace.as_deref().unwrap_or(&namespace);
+            tera_context.insert("namespace", &component_namespace);
+            tera_context.insert("environment", &environment);
+            tera_context.insert("docker_registry", spec.config.docker_registry());
+            tera_context.insert("component", &spec.component_name);
+            tera_context.insert("product_uri", &spec.product_name.replace('.', "-"));
+            if let Some(image_tag) = self.built_images.get(&spec.component_name) {
+                tera_context.insert("image_name", image_tag);
+            }
+
+            // Render templates
+            let template_files = std::fs::read_dir(&template_dir).map_err(|e| {
+                Error::Filesystem(format!("Failed to read template directory: {e}"))
+            })?;
+
+            for entry in template_files {
+                let entry = entry.map_err(|e| {
+                    Error::Filesystem(format!("Failed to read directory entry: {e}"))
+                })?;
+                let path = entry.path();
+                if !path.extension().is_some_and(|ext| ext == "yaml" || ext == "yml") {
+                    continue;
+                }
+
+                let file_name = path.file_name().unwrap().to_str().unwrap();
+                let template_content = std::fs::read_to_string(&path).map_err(|e| {
+                    Error::Filesystem(format!("Failed to read template {file_name}: {e}"))
+                })?;
+
+                let mut tera = tera::Tera::default();
+                tera.add_raw_template(file_name, &template_content)
+                    .map_err(|e| Error::Template(format!("Failed to add template: {e}")))?;
+                let rendered = tera.render(file_name, &tera_context).map_err(|e| {
+                    Error::Template(format!("Failed to render template {file_name}: {e}"))
+                })?;
+
+                let output_path = component_output_dir.join(file_name);
+                std::fs::write(&output_path, rendered)
+                    .map_err(|e| Error::Filesystem(format!("Failed to write manifest: {e}")))?;
+
+                // Apply K8s encoder (e.g. kubeseal) for secrets files
+                if file_name.contains("secret") {
+                    if let Err(e) = self.k8s_encoder.encode_file(output_path.to_str().unwrap()) {
+                        warn!("Failed to encode secrets: {e}. Secrets may remain unencrypted.");
+                    }
+                }
+            }
+
+            // Apply this component's manifests immediately, using the component's namespace
+            let results = if let Some(ns) = &spec.namespace {
+                kubectl.apply_dir_in_namespace(&component_output_dir, ns).await?
+            } else {
+                kubectl.apply_dir(&component_output_dir).await?
+            };
+            let failed = results.iter().filter(|r| !r.success).count();
+            total_applied += results.len() - failed;
+            total_failed += failed;
+
+            if failed > 0 {
+                error!(
+                    "Failed to apply {} out of {} manifests for component {}",
+                    failed, results.len(), spec.component_name
+                );
+            } else {
+                info!(
+                    "Successfully installed component {} ({} manifests)",
+                    spec.component_name, results.len()
+                );
+
+                // Wait for deployments to become ready
+                // This ensures controllers (e.g. cert-manager webhook) are running
+                // before the next component tries to use their CRDs
+
+                // Collect namespaces to wait on: the component's own namespace,
+                // plus any namespaces found in the rendered manifests
+                let mut wait_namespaces = std::collections::HashSet::new();
+                if let Some(ns) = &spec.namespace {
+                    wait_namespaces.insert(ns.clone());
+                }
+                // Scan rendered manifests for namespace references
+                if let Ok(entries) = std::fs::read_dir(&component_output_dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(content) = std::fs::read_to_string(entry.path()) {
+                            for line in content.lines() {
+                                let trimmed = line.trim();
+                                if trimmed.starts_with("namespace:") {
+                                    if let Some(ns) = trimmed.strip_prefix("namespace:") {
+                                        let ns = ns.trim().trim_matches('"').trim_matches('\'');
+                                        if !ns.is_empty() {
+                                            wait_namespaces.insert(ns.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for ns in &wait_namespaces {
+                    info!("Waiting for deployments in namespace {} to be ready...", ns);
+                    match kubectl.wait_for_rollout_in_namespace(ns, 120).await {
+                        Ok(result) => {
+                            if result.success {
+                                info!("All deployments in namespace {} are ready", ns);
+                            } else {
+                                warn!("Timed out waiting for deployments in namespace {}: {}", ns, result.stderr);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Error waiting for deployments in namespace {}: {}", ns, e);
+                        }
+                    }
+                }
+
+                // If cert-manager was just installed, wait extra time for the webhook's
+                // self-signed CA bundle to be injected by the cainjector controller
+                if wait_namespaces.contains("cert-manager") {
+                    info!("Waiting for cert-manager webhook CA bundle to be ready...");
+                    let webhook_ready = Self::wait_for_cert_manager_webhook(&kubectl, 60).await;
+                    if !webhook_ready {
+                        warn!("cert-manager webhook may not be fully ready; proceeding anyway");
+                    }
+                }
+            }
+        }
+
+        // Store output directory for potential later use
+        self.k8s_manifest_dir = Some(output_dir);
+
+        if total_failed > 0 {
+            Err(Error::External(format!(
+                "Failed to apply {} out of {} manifests",
+                total_failed, total_applied + total_failed
+            )))
+        } else {
+            info!("Kubernetes manifest installation completed successfully ({} manifests)", total_applied);
+            Ok(())
+        }
     }
 
-    /// Uninstall Kubernetes manifests
+    /// Wait for the cert-manager webhook to be fully ready by attempting a dry-run
+    /// creation of a ClusterIssuer. Returns true when the webhook responds successfully.
+    async fn wait_for_cert_manager_webhook(kubectl: &rush_k8s::Kubectl, timeout_secs: u64) -> bool {
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+
+        loop {
+            // Try a dry-run apply of a minimal ClusterIssuer to probe the webhook
+            let args = vec![
+                "apply".to_string(),
+                "--dry-run=server".to_string(),
+                "-f".to_string(),
+                "-".to_string(),
+            ];
+
+            let test_manifest = r#"apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: webhook-readiness-probe
+spec:
+  selfSigned: {}"#;
+
+            // Use a direct command since we need stdin
+            let output = std::process::Command::new("kubectl")
+                .args(&args)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut child| {
+                    use std::io::Write;
+                    if let Some(ref mut stdin) = child.stdin {
+                        let _ = stdin.write_all(test_manifest.as_bytes());
+                    }
+                    child.wait_with_output()
+                });
+
+            match output {
+                Ok(output) if output.status.success() => {
+                    info!("cert-manager webhook is ready");
+                    return true;
+                }
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    if stderr.contains("x509") || stderr.contains("connection refused") || stderr.contains("operation not permitted") {
+                        if start.elapsed() >= timeout {
+                            warn!("Timed out waiting for cert-manager webhook after {}s", timeout_secs);
+                            return false;
+                        }
+                        debug!("cert-manager webhook not ready yet, retrying in 5s...");
+                        std::thread::sleep(std::time::Duration::from_secs(5));
+                    } else {
+                        // Some other error (e.g. validation), but webhook is responding
+                        info!("cert-manager webhook is responding");
+                        return true;
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to probe cert-manager webhook: {}", e);
+                    if start.elapsed() >= timeout {
+                        return false;
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                }
+            }
+        }
+    }
+
+    /// Uninstall Kubernetes manifests (build + delete)
     pub async fn uninstall_manifests(&mut self) -> Result<()> {
         info!("Uninstalling Kubernetes manifests...");
 
-        // TODO: Uninstall manifests
-        debug!("Kubernetes manifest uninstallation not implemented yet");
+        self.build_manifests().await?;
+        self.unapply().await?;
 
+        info!("Kubernetes manifest uninstallation completed successfully");
         Ok(())
     }
 
@@ -2123,7 +2424,7 @@ impl Reactor {
             info!("Building manifests for component: {}", spec.component_name);
 
             // Create component-specific output directory with priority
-            let component_dir_name = format!("{}_{}", spec.priority, spec.component_name);
+            let component_dir_name = format!("{:04}_{}", spec.priority, spec.component_name);
             let component_output_dir = output_dir.join(&component_dir_name);
             std::fs::create_dir_all(&component_output_dir).map_err(|e| {
                 Error::Filesystem(format!("Failed to create component k8s directory: {e}"))
@@ -2177,7 +2478,9 @@ impl Reactor {
             // Add additional context variables
             let mut tera_context = tera::Context::from_serialize(&build_context)
                 .map_err(|e| Error::Template(format!("Failed to create context: {e}")))?;
-            tera_context.insert("namespace", &namespace);
+            // Use per-component namespace if specified, otherwise fall back to global
+            let component_namespace = spec.namespace.as_deref().unwrap_or(&namespace);
+            tera_context.insert("namespace", &component_namespace);
             tera_context.insert("environment", &environment);
             tera_context.insert("docker_registry", spec.config.docker_registry());
             tera_context.insert("component", &spec.component_name);

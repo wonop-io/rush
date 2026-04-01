@@ -107,6 +107,7 @@ fn test_gitignore_integration_in_hash_computation() {
         dotenv: Default::default(),
         dotenv_secrets: Default::default(),
         domain: "localhost".to_string(),
+        namespace: None,
         cross_compile: "native".to_string(),
         health_check: None,
         startup_probe: None,

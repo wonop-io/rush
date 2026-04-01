@@ -53,6 +53,7 @@ mod tests {
             cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
             domain: format!("{name}.test.local"),
+            namespace: None,
             health_check,
             startup_probe: None,
         }

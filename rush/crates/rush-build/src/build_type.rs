@@ -106,8 +106,8 @@ pub enum BuildType {
 
     /// A Kubernetes installation package
     KubernetesInstallation {
-        /// Target namespace for the installation
-        namespace: String,
+        /// Target namespace for the installation (optional for multi-namespace manifests)
+        namespace: Option<String>,
     },
 
     /// A persistent local service for development

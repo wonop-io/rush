@@ -167,6 +167,7 @@ mod tests {
             cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
             domain: "test1.test.app".to_string(),
+            namespace: None,
             health_check: None,
             startup_probe: None,
         };
@@ -206,6 +207,7 @@ mod tests {
             cross_compile: "native".to_string(),
             dotenv_secrets: HashMap::new(),
             domain: "test2.test.app".to_string(),
+            namespace: None,
             health_check: None,
             startup_probe: None,
         };
