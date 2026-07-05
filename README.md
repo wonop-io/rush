@@ -1,8 +1,10 @@
-# Rush README
+# Rush
+
+`Rush` is a Rust deployment tool for monorepos, local multi-container development, and cross-compiling Docker images from Apple Silicon to x86 production targets.
 
 ## Overview
 
-`Rush` (Rush Deployment) is a Rust-based deployment tool that aims to bridge the gap between development and production environments by allowing cross-compilation of `x86` Docker images on `arm64` platforms, such as Apple Silicon. This ensures developers can build and deploy `x86` images from Apple Silicon without the need for separate environments. It also simplifies managing multiple products in a single repository and running multiple containers locally for development with ingress routing traffic.
+`Rush` (Rush Deployment) aims to bridge the gap between development and production environments by allowing cross-compilation of `x86` Docker images on `arm64` platforms, such as Apple Silicon. This ensures developers can build and deploy `x86` images from Apple Silicon without the need for separate environments. It also simplifies managing multiple products in a single repository and running multiple containers locally for development with ingress routing traffic.
 
 ## Key Features
 
@@ -196,4 +198,3 @@ For Apple Silicon users, `rush` cross-compiles `x86` images for deployment onto 
 ```
 
 Running `rush` from the repository root will manage all products simultaneously. This simplifies development workflows when working with large, multi-product projects.
-
